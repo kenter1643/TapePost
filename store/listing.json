@@ -52,7 +52,7 @@
   },
   "privacy_policy_url": "https://kenter1643.github.io/TapePost/privacy.html",
   "privacy_policy_local": "docs/privacy.html",
-  "privacy_policy_note": "正式地址由 GitHub Pages 托管（仓库 kenter1643/TapePost 的 main 分支 /docs 目录），无需 sharecode、无第三方分享域名。备用可独立部署副本在 store/privacy-site/index.html；产品介绍页为 https://kenter1643.github.io/TapePost/ 。",
+  "privacy_policy_note": "正式地址由 GitHub Pages 托管（仓库 kenter1643/TapePost 的 main 分支 /docs 目录），已实测 HTTP 200，无需 sharecode、无第三方分享域名。备用可独立部署副本在 store/privacy-site/index.html；产品介绍页为 https://kenter1643.github.io/TapePost/ ，源码与 1.0.0 商店包在 https://github.com/kenter1643/TapePost 。",
   "assets": {
     "icon": "icons/icon128.png",
     "screenshots": [
