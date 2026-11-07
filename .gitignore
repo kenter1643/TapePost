@@ -6,5 +6,4 @@ __pycache__/
 .env.*
 *.pem
 *.key
-# 商店提交包是构建产物，随 GitHub Release 分发，不入库
-store/*.zip
+# 商店提交包体积很小，随仓库分发（docs/assets 下另有一份供介绍页下载）

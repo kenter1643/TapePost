@@ -44,7 +44,7 @@
 3. 点「加载已解压的扩展程序」，选择**仓库根目录**（`manifest.json` 所在目录）
 4. 打开任一支持的站点，内容右上角出现「一键转发」即可使用
 
-商店提交包 `store/TapePost_1.0.0_store.zip` 是构建产物，不入库，可在 GitHub Releases 的 `v1.0.0` 附件下载；也可自行打包：
+商店提交包 `store/TapePost_1.0.0_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.0.0_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
 
 ```bash
 zip -q store/TapePost_1.0.0_store.zip \
