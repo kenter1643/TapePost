@@ -1,0 +1,1202 @@
+/*
+ * test-harness.js — 在 Node 里模拟 Chrome MV3 扩展运行时，端到端跑一次「一键转发」。
+ *
+ * 覆盖：content / background / offscreen 三者消息链路、文字 # 清洗、
+ *       剪贴板多格式（text/plain + image/png + video/mp4 降级）、
+ *       视频提取（DOM / 公开接口兜底）与下载、按钮位置、正文/图片归属。
+ *
+ * 运行：node test-harness.js     详细流水：WBX_VERBOSE=1 node test-harness.js
+ */
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const DIR = __dirname;
+const read = (f) => fs.readFileSync(path.join(DIR, f), 'utf8');
+
+const log = [];
+const note = (tag, s) => { log.push(`[${tag}] ${s}`); };
+
+// ---------- 共享 Blob / URL / ClipboardItem ----------
+class FakeBlob {
+  constructor(parts, opts) { this.parts = parts || []; this.type = (opts && opts.type) || ''; }
+  get size() {
+    return this.parts.reduce((n, p) => n + (p && p.byteLength != null ? p.byteLength : (p && p.length) || 0), 0);
+  }
+  arrayBuffer() {
+    const first = this.parts[0];
+    if (first instanceof Uint8Array) return Promise.resolve(first.buffer.slice(first.byteOffset, first.byteOffset + first.byteLength));
+    return Promise.resolve(new ArrayBuffer(this.size || 8));
+  }
+}
+const FakeURL = {
+  createObjectURL: () => 'blob:fake/' + Math.random().toString(36).slice(2),
+  revokeObjectURL: () => {}
+};
+class ClipboardItem { constructor(o) { this.items = o; } }
+
+// ---------- 精简 DOM 模拟 ----------
+class MiniNode {
+  constructor(tag, opts = {}) {
+    this.tagName = (tag || 'div').toUpperCase();
+    this.className = opts.className || '';
+    this.attrs = Object.assign({}, opts.attrs || {});
+    if (this.className) this.attrs.class = this.className;
+    this.innerText = opts.text || '';
+    this.textContent = this.innerText;
+    this.innerHTML = opts.innerHTML || '';
+    this.children = [];
+    this.parentElement = null;
+    this.dataset = {};
+    this.style = {};
+    this.title = '';
+    this.disabled = false;
+    this.classList = { add: (c) => { this.className += ' ' + c; } };
+  }
+  get href() { return this.attrs.href || ''; }
+  get src() { return this.attrs.src || ''; }
+  appendChild(n) { n.parentElement = this; this.children.push(n); return n; }
+  insertBefore(n) { return this.appendChild(n); }
+  addEventListener(type, fn) { if (!this._handlers) this._handlers = {}; this._handlers[type] = fn; }
+  remove() {
+    if (this.parentElement) {
+      const arr = this.parentElement.children;
+      const i = arr.indexOf(this);
+      if (i >= 0) arr.splice(i, 1);
+      this.parentElement = null;
+    }
+  }
+  getAttribute(k) { return this.attrs[k] != null ? this.attrs[k] : null; }
+  setAttribute(k, v) { this.attrs[k] = v; }
+  getBoundingClientRect() { return { width: 600, height: 120, top: 0, left: 0 }; }
+  _all(out = []) { for (const c of this.children) { out.push(c); c._all(out); } return out; }
+  querySelectorAll(sel) {
+    const sels = String(sel).split(',').map((s) => s.trim()).filter(Boolean);
+    return this._all().filter((n) => sels.some((s) => matchOne(n, s)));
+  }
+  querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+  closest(sel) {
+    let p = this.parentElement;
+    const sels = String(sel).split(',').map((s) => s.trim()).filter(Boolean);
+    while (p) { if (sels.some((s) => matchOne(p, s))) return p; p = p.parentElement; }
+    return null;
+  }
+  contains(n) { return this._all().includes(n); }
+}
+
+function matchOne(n, s) {
+  if (!n || !s) return false;
+  const tagName = String(n.tagName || 'div').toLowerCase();
+  const className = String(n.className || '');
+  const attrs = n.attrs || {};
+  const m = /^([a-zA-Z]*)/.exec(s);
+  const tag = (m && m[1] || '').toLowerCase();
+  const rest = s.slice(tag.length);
+  if (tag && tagName !== tag) return false;
+  const classes = Array.from(rest.matchAll(/\.([A-Za-z0-9_-]+)/g)).map((x) => x[1]);
+  for (const c of classes) {
+    if (!(' ' + className + ' ').includes(' ' + c + ' ')) return false;
+  }
+  const attrPart = rest.replace(/\.[A-Za-z0-9_-]+/g, '');
+  for (const am of attrPart.matchAll(/\[([^\]]+)\]/g)) {
+    const body = am[1];
+    let mm = /^([A-Za-z0-9_-]+)\s*=\s*["']?([^"']*)["']?$/.exec(body);
+    if (mm) { if (String(attrs[mm[1]] != null ? attrs[mm[1]] : '') !== mm[2]) return false; continue; }
+    mm = /^([A-Za-z0-9_-]+)\s*\*=\s*["']?([^"']*)["']?$/.exec(body);
+    if (mm) { if (!String(attrs[mm[1]] != null ? attrs[mm[1]] : '').includes(mm[2])) return false; continue; }
+    mm = /^([A-Za-z0-9_-]+)$/.exec(body);
+    if (mm) { if (attrs[mm[1]] == null) return false; continue; }
+    return false;
+  }
+  return true;
+}
+
+// ---------- 消息总线 ----------
+const contexts = {};
+const listenersOf = (name) => contexts[name].listeners;
+
+let offscreenDocumentExists = false;
+let runtimeSendCount = 0;
+let clipboardBytes = 0;
+let clipboardWrites = [];
+let clipboardTypes = [];
+let clipboardTextPayload = null;
+let downloadedFiles = [];
+let scenario = {};
+
+const serialize = (v) => JSON.parse(JSON.stringify(v));
+
+function makeChrome(name) {
+  return {
+    runtime: {
+      id: 'wbx-fake-extension-id',
+      getManifest: () => ({ version: '0.3.4-test' }),
+      onMessage: { addListener: (fn) => listenersOf(name).push(fn) },
+      onInstalled: { addListener: () => {} },
+      onStartup: { addListener: () => {} },
+      getURL: (p) => 'chrome-extension://fake/' + p,
+      sendMessage: (msg, cb) => runtimeSend(name, msg, cb),
+      lastError: undefined
+    },
+    tabs: { sendMessage: (tabId, msg) => tabsSend(name, tabId, msg) },
+    storage: {
+      sync: {
+        get: (defaults, cb) => cb(Object.assign({}, defaults,
+          scenario.hashMode ? { hashMode: scenario.hashMode } : {},
+          scenario.appendSignature ? { appendSignature: true } : {},
+          scenario.appendSource ? { appendSource: true } : {},
+          scenario.inpaintImages === false ? { inpaintImages: false } : {},
+          scenario.inpaintVideo === false ? { inpaintVideo: false } : {}))
+      },
+      local: { get: (defaults, cb) => cb(Object.assign({}, defaults)) }
+    },
+    downloads: {
+      download: (o) => {
+        if (scenario.downloadsFail) {
+          note('download', 'downloads API REJECTED（模拟 blob URL 无法解析）');
+          return Promise.reject(new Error('blob URL not resolvable'));
+        }
+        note('download', o.filename);
+        downloadedFiles.push(o.filename || '');
+        return Promise.resolve(1);
+      }
+    },
+    declarativeNetRequest: {
+      updateDynamicRules: () => Promise.resolve(),
+      getDynamicRules: () => Promise.resolve([1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009].map((id) => ({ id })))
+    },
+    offscreen: {
+      hasDocument: () => Promise.resolve(offscreenDocumentExists),
+      createDocument: (o) => {
+        note('offscreen', 'createDocument reasons=' + JSON.stringify(o.reasons));
+        // 官方 chrome.offscreen.Reason 枚举（严格按 developer.chrome.com 文档）
+        const VALID = new Set([
+          'TESTING','AUDIO_PLAYBACK','IFRAME_SCRIPTING','DOM_SCRAPING','BLOBS','DOM_PARSER',
+          'USER_MEDIA','DISPLAY_MEDIA','WEB_RTC','CLIPBOARD','LOCAL_STORAGE','WORKERS',
+          'BATTERY_STATUS','MATCH_MEDIA','GEOLOCATION'
+        ]);
+        for (const r of o.reasons) {
+          if (!VALID.has(r)) {
+            note('offscreen', 'INVALID REASON: ' + r);
+            return Promise.reject(new Error("Invalid value '" + r + "' for reasons"));
+          }
+        }
+        offscreenDocumentExists = true;
+        loadOffscreen();
+        return Promise.resolve();
+      },
+      closeDocument: () => { offscreenDocumentExists = false; return Promise.resolve(); }
+    }
+  };
+}
+
+async function runtimeSend(from, msg, cb) {
+  runtimeSendCount++;
+  msg = serialize(msg);
+  note('bus', `${from} --runtime.sendMessage(${msg.type})--> all`);
+  if (msg.type === 'CROSSPOST') {
+    const p = msg.payload || {};
+    note('bus', `  CROSSPOST payload: text="${p.text}" imageUrls=${(p.imageUrls || []).length} videoUrls=${(p.videoUrls || []).length} hasVideo=${p.hasVideo} bid=${p.bid || '-'} inpaint=${p.inpaint && p.inpaint.enabled} inpaintVideo=${p.inpaintVideo}`);
+  }
+  if (msg.type === 'PROCESS_OFFSCREEN' && /statuses\/show|\.mp4/.test(JSON.stringify(msg.payload || {}))) {
+    note('bus', '  PROCESS_OFFSCREEN 含视频信息');
+  }
+  const sender = { id: 'fake-ext', tab: from === 'content' ? { id: 42 } : undefined };
+  const targets = Object.keys(contexts).filter((n) => n !== from);
+  let responded = false;
+  let responseVal;
+  let resolveResponse;
+  const responsePromise = new Promise((r) => { resolveResponse = r; });
+  const sendResponse = (v) => {
+    if (!responded) { responded = true; responseVal = serialize(v); resolveResponse(responseVal); }
+  };
+  const keepAlive = [];
+  for (const name of targets) {
+    for (const fn of listenersOf(name)) {
+      let r;
+      try { r = fn(msg, sender, sendResponse); }
+      catch (e) { note('ERROR', `${name} listener threw on ${msg.type}: ${e && e.message}`); }
+      if (r === true) keepAlive.push(name);
+    }
+  }
+  if (keepAlive.length && !responded) {
+    await Promise.race([responsePromise, new Promise((r) => setTimeout(r, 300))]);
+  }
+  const noResponse = !responded;
+  const errMsg = 'The message port closed before a response was received.';
+  if (cb) {
+    if (noResponse) contexts[from].chrome.runtime.lastError = { message: errMsg };
+    try { cb(responseVal); } catch (e) { note('ERROR', `${from} callback threw: ${e && e.message}`); }
+    delete contexts[from].chrome.runtime.lastError;
+    return undefined;
+  }
+  if (noResponse) return Promise.reject(new Error(errMsg));
+  return Promise.resolve(responseVal);
+}
+
+async function tabsSend(from, tabId, msg) {
+  note('bus', `${from} --tabs.sendMessage(tab=${tabId}, ${msg.type})--> content`);
+  const sender = { id: 'fake-ext' };
+  let responded = false;
+  let responseVal;
+  const sendResponse = (v) => { if (!responded) { responded = true; responseVal = v; } };
+  for (const fn of listenersOf('content')) {
+    try { fn(msg, sender, sendResponse); }
+    catch (e) { note('ERROR', `content listener threw on ${msg.type}: ${e && e.message}`); }
+  }
+  if (!responded) return Promise.reject(new Error('The message port closed before a response was received.'));
+  return Promise.resolve(responseVal);
+}
+
+// ---------- 各上下文 globals ----------
+function baseGlobals(name) {
+  const chrome = makeChrome(name);
+  contexts[name] = { listeners: [], chrome };
+  return {
+    console: {
+      log: (...a) => note(name, a.join(' ')),
+      warn: (...a) => note(name + '/WARN', a.join(' ')),
+      error: (...a) => note(name + '/ERR', a.join(' '))
+    },
+    chrome,
+    Blob: FakeBlob,
+    URL: FakeURL,
+    ClipboardItem,
+    setTimeout,
+    clearTimeout,
+    setInterval: () => 1,
+    clearInterval: () => {},
+    atob: (s) => Buffer.from(s, 'base64').toString('binary'),
+    btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
+    navigator: {
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36',
+      clipboard: {
+        write: (items) => {
+          const fail = scenario.clipboardFail || (name === 'content' && scenario.contentClipboardFail);
+          if (fail) {
+            const err = new Error('Document is not focused / write permission denied');
+            err.name = 'NotAllowedError';
+            note(name + '/clipboard', 'write() REJECTED NotAllowedError');
+            return Promise.reject(err);
+          }
+          const reps = (items[0] && items[0].items) || {};
+          const types = Object.keys(reps);
+          // 真实 Chrome 对 video/mp4 写入常抛 NotAllowedError，用来验证渐进降级
+          if (types.includes('video/mp4')) {
+            note(name + '/clipboard', 'write() REJECTED video/mp4 (unsupported type)');
+            const e = new Error('Type video/mp4 not supported on write');
+            e.name = 'NotAllowedError';
+            return Promise.reject(e);
+          }
+          const pngBlob = reps['image/png'];
+          const textBlob = reps['text/plain'];
+          const part = pngBlob && pngBlob.parts && pngBlob.parts[0];
+          const len = part && part.byteLength != null ? part.byteLength : (part && part.length) || 0;
+          note(name + '/clipboard', `write() types=[${types.join(',')}] pngBytes=${len}`);
+          clipboardBytes = len;
+          clipboardTypes = types;
+          if (textBlob) clipboardTextPayload = String((textBlob.parts && textBlob.parts[0]) || '');
+          clipboardWrites.push(name);
+          return Promise.resolve();
+        },
+        writeText: (t) => {
+          note(name + '/clipboard', 'writeText() len=' + (t || '').length);
+          clipboardTextPayload = String(t || '');
+          clipboardTypes = ['text/plain'];
+          return Promise.resolve();
+        }
+      }
+    },
+    window: {
+      open: (u) => { note('window', 'open() -> ' + String(u)); return {}; },
+      addEventListener: () => {}
+    },
+    MutationObserver: class { observe() {} disconnect() {} },
+    fetch: (url) => {
+      const u = String(url || '');
+      if (/m\.weibo\.cn\/statuses\/show/.test(u)) {
+        note('offscreen', 'fetch 公开接口 statuses/show?bid=' + (u.split('id=')[1] || ''));
+        return Promise.resolve({
+          ok: !scenario.apiFail,
+          status: scenario.apiFail ? 432 : 200,
+          json: () => Promise.resolve({ data: { page_info: { media_info: {
+            stream_url_hd: 'https://f.video.weibocdn.com/o0/from_api.mp4?Expires=1&ssig=abc'
+          } } } }),
+          arrayBuffer: () => Promise.resolve(new ArrayBuffer(0))
+        });
+      }
+      if (/\.mp4/.test(u)) {
+        note('offscreen', 'fetch 视频 ' + u.slice(0, 70));
+        return Promise.resolve({
+          ok: !scenario.videoFetchFail,
+          status: scenario.videoFetchFail ? 403 : 200,
+          blob: () => Promise.resolve(new FakeBlob([new ArrayBuffer(2048)], { type: 'video/mp4' })),
+          arrayBuffer: () => Promise.resolve(new ArrayBuffer(32))
+        });
+      }
+      return Promise.resolve({
+        ok: !scenario.fetchFail,
+        status: scenario.fetchFail ? 403 : 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(32)),
+        blob: () => Promise.resolve(new FakeBlob([new ArrayBuffer(32)])),
+        json: () => Promise.resolve({})
+      });
+    },
+    createImageBitmap: () => Promise.resolve({ width: 100, height: 100, close() {} }),
+    OffscreenCanvas: class {
+      constructor(w, h) {
+        this.width = w; this.height = h;
+        const d = new Uint8ClampedArray(w * h * 4).fill(120);
+        for (let i = 3; i < d.length; i += 4) d[i] = 255;
+        // 模拟底部一条白色文字水印（稀疏笔画，覆盖率落在合理区间）
+        if (scenario.fakeWatermark) {
+          const x0 = Math.floor(w * 0.62), x1 = Math.floor(w * 0.78);
+          const y0 = Math.floor(h * 0.93), y1 = Math.floor(h * 0.97);
+          for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+            if ((x + y) % 3 !== 0) continue;
+            const i = (y * w + x) * 4;
+            d[i] = 250; d[i + 1] = 250; d[i + 2] = 250; d[i + 3] = 255;
+          }
+        }
+        this._d = d;
+      }
+      getContext() {
+        const self = this;
+        return {
+          drawImage() {},
+          getImageData: () => ({ width: self.width, height: self.height, data: self._d }),
+          putImageData() {}
+        };
+      }
+      convertToBlob() { return Promise.resolve(new FakeBlob([new ArrayBuffer(8)], { type: 'image/png' })); }
+    }
+  };
+}
+
+function makeDom() {
+  const nodes = {};
+  const mk = (id, tag) => {
+    const n = new MiniNode(tag || 'div');
+    n.id = id;
+    n.remove = () => {
+      if (n.parentElement) {
+        const arr = n.parentElement.children;
+        const i = arr.indexOf(n);
+        if (i >= 0) arr.splice(i, 1);
+      }
+      Object.keys(nodes).forEach((k) => { if (nodes[k] === n) delete nodes[k]; });
+    };
+    if (String(tag).toLowerCase() === 'canvas') {
+      n.getContext = () => ({ fillStyle: '', fillRect() {}, drawImage() {} });
+      n.toBlob = (cb) => cb(new FakeBlob([new ArrayBuffer(16)], { type: 'image/png' }));
+    }
+    return n;
+  };
+  return {
+    readyState: 'complete',
+    head: { appendChild() {} },
+    body: { appendChild(n) { if (n && n.id) nodes[n.id] = n; } },
+    createElement: (tag) => mk('new-' + tag, tag),
+    getElementById: (id) => nodes[id] || null,
+    querySelectorAll: () => [],
+    addEventListener: () => {},
+    _nodes: nodes
+  };
+}
+
+let contentCtx, bgCtx, offCtx, dom;
+
+function loadContent() {
+  dom = makeDom();
+  const g = Object.assign(baseGlobals('content'), {
+    document: dom, self: undefined,
+    // 站点适配层由域名驱动；测试可注入任意站点域名与路径
+    WBX_TEST_HOST: scenario.hostname || 'weibo.com',
+    WBX_TEST_PATH: scenario.path || '/'
+  });
+  contentCtx = vm.createContext(g);
+  vm.runInContext(read('account.js'), contentCtx, { filename: 'account.js' });
+  vm.runInContext(read('sites.js'), contentCtx, { filename: 'sites.js' });
+  vm.runInContext(read('content.js'), contentCtx, { filename: 'content.js' });
+  const orig = contentCtx.handleResult;
+  contentCtx.handleResult = function (msg) {
+    note('content', `handleResult() 收到: type=${msg.type} results=${(msg.results || []).length} clipOk=${msg.clipboardOk} clipText=${msg.clipboardText} media=${msg.clipboardMedia} video=${msg.video && msg.video.ok} error=${msg.error || '无'}`);
+    return orig(msg);
+  };
+}
+
+function loadBackground() {
+  bgCtx = vm.createContext(baseGlobals('background'));
+  vm.runInContext(read('background.js'), bgCtx, { filename: 'background.js' });
+}
+
+function loadOffscreen() {
+  const g = Object.assign(baseGlobals('offscreen'), {
+    document: {
+      createElement: () => ({
+        href: '', download: '',
+        click() {
+          note('offscreen', '<a download> 触发 -> ' + this.download);
+          downloadedFiles.push(this.download || '');
+        },
+        remove() {}
+      }),
+      body: { appendChild() {} }
+    }
+  });
+  offCtx = vm.createContext(g);
+  vm.runInContext(read('inpaint.js'), offCtx, { filename: 'inpaint.js' });
+  vm.runInContext(read('offscreen.js'), offCtx, { filename: 'offscreen.js' });
+}
+
+// ---------- 多站点夹具 ----------
+/* 每个站用该站真实的类名 + 图床域名构造卡片，验证站点配置层是否真的生效 */
+const SITE_FIXTURES = {
+  zhihu: {
+    hostname: 'www.zhihu.com', cardClass: 'ContentItem', textTag: 'p', textClass: 'RichText',
+    mediaClass: 'RichText', imgAttr: 'data-original',
+    avatar: 'https://pic1.zhimg.com/avatar/u123.jpg',
+    img: (i) => `https://pic${i + 1}.zhimg.com/80/v2-site${i}.jpg?source=test`
+  },
+  wechat: {
+    hostname: 'mp.weixin.qq.com', cardClass: 'rich_media_content', textTag: 'p', textClass: 'rich_media_content',
+    mediaClass: 'rich_media_content', imgAttr: 'data-src',
+    avatar: 'https://mmbiz.qlogo.cn/mmbiz_jpg/aaa/0',
+    img: (i) => `https://mmbiz.qpic.cn/mmbiz_jpg/site${i}/640?wx_fmt=jpeg`
+  },
+  bilibili: {
+    hostname: 't.bilibili.com', cardClass: 'bili-dyn-item', textTag: 'div', textClass: 'bili-dyn-content__orig__desc',
+    mediaClass: 'bili-album', imgAttr: 'src',
+    avatar: 'https://i0.hdslb.com/bfs/face/xyz.jpg',
+    img: (i) => `https://i${i}.hdslb.com/bfs/dyn/site${i}.jpg@320w.webp`
+  },
+  douban: {
+    hostname: 'www.douban.com', cardClass: 'status-item', textTag: 'div', textClass: 'status-saying',
+    mediaClass: 'status-photo', imgAttr: 'src',
+    avatar: 'https://img1.doubanio.com/view/photo/icon_public/u123.jpg',
+    img: (i) => `https://img${i + 1}.doubanio.com/view/photo/l_ratio_poster/public/p${i}.jpg`
+  },
+  xiaohongshu: {
+    hostname: 'www.xiaohongshu.com', cardClass: 'note-item', textTag: 'div', textClass: 'desc',
+    mediaClass: 'swiper-slide', imgAttr: 'src',
+    avatar: 'https://sns-avatar-qc.xhscdn.com/abc.jpg',
+    img: (i) => `https://sns-webpic-qc.xhscdn.com/2026/site${i}.jpg!nd_dft_wlteh_webp_3?sign=abc${i}`
+  },
+  x: {
+    hostname: 'x.com', cardClass: 'tweet', textTag: 'div', textClass: 'tweetText',
+    cardAttrs: { 'data-testid': 'tweet' },
+    textAttrs: { 'data-testid': 'tweetText' },
+    mediaClass: 'tweetPhoto', mediaAttrs: { 'data-testid': 'tweetPhoto' },
+    imgAttr: 'src',
+    // 头像走 profile_images，内容图走 /media/：域名层就能分开
+    avatar: 'https://pbs.twimg.com/profile_images/123/avatar.jpg',
+    img: (i) => `https://pbs.twimg.com/media/Gsite${i}?format=jpg&name=small`
+  }
+};
+
+function makeSiteCard(cfg) {
+  const f = SITE_FIXTURES[cfg.site];
+  const card = new MiniNode('div', { className: f.cardClass, attrs: f.cardAttrs });
+  const reco = new MiniNode('div', { className: 'wbx-empty' });
+  const header = new MiniNode('div', { className: 'wbx-header' });
+  header.appendChild(new MiniNode('img', { attrs: { src: f.avatar } }));
+  card.appendChild(reco);
+  card.appendChild(header);
+  const textNode = new MiniNode(f.textTag, {
+    className: f.textClass, text: cfg.text, attrs: f.textAttrs
+  });
+  card.appendChild(textNode);
+  const media = new MiniNode('div', { className: f.mediaClass, attrs: f.mediaAttrs });
+  for (let i = 0; i < (cfg.imageCount || 0); i++) {
+    const attrs = { src: 'data:image/gif;base64,AAAA' };
+    attrs[f.imgAttr] = f.img(i);
+    media.appendChild(new MiniNode('img', { attrs }));
+  }
+  card.appendChild(media);
+  const tools = new MiniNode('div', { className: 'wbx-tools' });
+  card.appendChild(tools);
+  // X 推文卡片里带时间戳 permalink（/用户/status/ID），用于「附原文链接」
+  if (cfg.sourceLink) {
+    card.appendChild(new MiniNode('a', { attrs: { href: cfg.sourceLink } }));
+  }
+  return { card, textNode, reco, header, media, tools };
+}
+
+async function runSiteScenario(name, cfg) {
+  resetWorld();
+  const f = SITE_FIXTURES[cfg.site];
+  scenario = Object.assign({}, cfg, { hostname: f.hostname });
+  loadBackground();
+  loadContent();
+  note('TEST', `--- 站点场景：${name} ---`);
+  const built = makeSiteCard(cfg);
+  contentCtx.__card = built.card;
+  contentCtx.__btn = { disabled: false, textContent: '', title: '', type: '', className: '', addEventListener() {}, appendChild() {} };
+
+  let post = null;
+  try { post = vm.runInContext('resolvePost(__card)', contentCtx, { timeout: 3000 }); }
+  catch (e) { note('ERROR', 'resolvePost 抛错: ' + (e && e.message)); }
+  if (post) note('parse', `site=${vm.runInContext('SITE && SITE.id', contentCtx)} text="${post.text}" images=${post.imageUrls.length} bid=${post.bid}`);
+
+  try { await vm.runInContext('onRepost(__card, __btn)', contentCtx, { timeout: 5000 }); }
+  catch (e) { note('ERROR', 'onRepost 抛错: ' + (e && e.message)); }
+  await new Promise((r) => setTimeout(r, 400));
+
+  // 多图时 X 由托盘按钮打开（微博之外的站点同样走这条链路）
+  const gallery = dom._nodes['wbx-gallery'];
+  let openByBtn = false;
+  if (gallery) {
+    const btn = gallery._all().find((n) => n.className === 'wbx-g-open');
+    if (btn && btn._handlers && btn._handlers.click) {
+      const before = log.filter((l) => /window.*open\(\) -> https:\/\//.test(l)).length;
+      await btn._handlers.click();
+      openByBtn = log.filter((l) => /window.*open\(\) -> https:\/\//.test(l)).length > before;
+    }
+  }
+
+  const joined = log.join('\n');
+  const payloadText = (/CROSSPOST payload: text="([^"]*)"/.exec(joined) || [])[1] || '__MISSING__';
+  const urlMatch = /\[window\] open\(\) -> (\S+)/.exec(joined);
+  let xText = null;
+  if (urlMatch && urlMatch[1].includes('text=')) {
+    try { xText = decodeURIComponent((urlMatch[1].split('text=')[1] || '').split('&')[0]); } catch (e) {}
+  }
+  const expectedText = cfg.expectText || cfg.text;
+  const checks = {
+    '站点配置命中': vm.runInContext('SITE && SITE.id', contentCtx) === cfg.site,
+    '正文提取': !!post && post.text === cfg.text,
+    '内容图数量': !!post && post.imageUrls.length === (cfg.imageCount || 0),
+    '头像已排除': !!post && !post.imageUrls.some((u) => /avatar|face|qlogo|icon_public/i.test(u)),
+    '不误请求微博接口': !!post && post.bid === null,
+    '签名query保留': !cfg.expectQuery || (!!post && (post.imageUrls[0] || '').includes(cfg.expectQuery)),
+    // X 缩略图 name=small 必须升级成 name=orig，同时保留 format 参数
+    'X原图升级': cfg.site !== 'x' ? null : !!post && post.imageUrls.length > 0 &&
+      post.imageUrls.every((u) => /name=orig/.test(u) && /format=jpg/.test(u)),
+    '转发正文不清洗': payloadText === expectedText,
+    'X预填正文': xText === expectedText,
+    '不跑微博去水印': /CROSSPOST payload:[\s\S]*?inpaint=false/.test(joined),
+    '不跑微博视频HD': /CROSSPOST payload:[\s\S]*?inpaintVideo=false/.test(joined),
+    '完整链路打通': /handleResult\(\) 收到: type=RESULT/.test(joined) &&
+      /window.*open\(\) -> https:\/\//.test(joined),
+    '多图托盘可用': cfg.imageCount > 1
+      ? (!!gallery && gallery.getAttribute('data-wbx-count') === String(cfg.imageCount) && openByBtn)
+      : null,
+    '无致命错误': !/offscreen 未就绪|离屏文档创建失败|INVALID REASON|发送失败|ERROR|WARN|处理失败：/.test(joined)
+  };
+  let ok = true;
+  const parts = [];
+  for (const [k, v] of Object.entries(checks)) {
+    parts.push(`${k}=${v === null ? '— 跳过' : (v ? '✅' : '❌')}`);
+    if (v === false) ok = false;
+  }
+  note('CHECK', parts.join('  '));
+  note('CHECK', ok ? '站点场景 PASS ✅' : '站点场景 FAIL ❌');
+  if (!ok || process.env.WBX_VERBOSE) console.log(log.join('\n') + '\n');
+  return ok;
+}
+
+/* X 专属守卫：发布页不自注入、permalink 解析、name=orig 原图、来源开关 */
+async function runXGuards() {
+  const checks = {};
+  const boot = async (host, path, appendSource) => {
+    resetWorld();
+    scenario = { hostname: host, path: path || '/', appendSource: !!appendSource };
+    loadContent();
+    await vm.runInContext('loadSettings()', contentCtx);
+  };
+
+  await boot('x.com', '/intent/tweet');
+  checks['X发推页不注入'] = vm.runInContext('isXIntentPage()', contentCtx) === true;
+  await boot('x.com', '/i/flow/login');
+  checks['X登录流程页不注入'] = vm.runInContext('isXIntentPage()', contentCtx) === true;
+  await boot('weibo.com', '/intent/tweet');
+  checks['非X站守卫不误伤'] = vm.runInContext('isXIntentPage()', contentCtx) === false;
+
+  await boot('x.com', '/home');
+  checks['X时间线正常扫描'] = vm.runInContext('isXIntentPage()', contentCtx) === false;
+
+  // 引用推文比主推文长：按 DOM 顺序必须取第一个 tweetText
+  const quoteCard = new MiniNode('article', { attrs: { 'data-testid': 'tweet' } });
+  quoteCard.appendChild(new MiniNode('div', {
+    attrs: { 'data-testid': 'tweetText' }, text: '主推文正文，这才是本条要转发的内容。'
+  }));
+  quoteCard.appendChild(new MiniNode('div', {
+    attrs: { 'data-testid': 'tweetText' },
+    text: '被引用推文的正文故意写得非常长非常长非常长非常长非常长非常长非常长。'
+  }));
+  contentCtx.__quoteCard = quoteCard;
+  checks['引用推文不抢正文'] = vm.runInContext(
+    'findTextNode(__quoteCard) === __quoteCard.children[0]', contentCtx) === true;
+
+  const relCard = makeSiteCard({
+    site: 'x', text: '正文', imageCount: 1, sourceLink: '/someuser/status/1234567890'
+  }).card;
+  const absCard = makeSiteCard({
+    site: 'x', text: '正文', imageCount: 0,
+    sourceLink: 'https://twitter.com/user2/status/9876543210'
+  }).card;
+  contentCtx.__relCard = relCard;
+  contentCtx.__absCard = absCard;
+  checks['相对permalink'] = vm.runInContext('extractPermalink(__relCard)', contentCtx) ===
+    'https://x.com/someuser/status/1234567890';
+  checks['绝对permalink'] = vm.runInContext('extractPermalink(__absCard)', contentCtx) ===
+    'https://x.com/user2/status/9876543210';
+  checks['开关关闭不附来源'] = vm.runInContext('withSource("正文", __relCard)', contentCtx) === '正文';
+  checks['name=small升级为orig'] = vm.runInContext(
+    'upgradeImageUrl("https://pbs.twimg.com/media/Gabc?format=jpg&name=small")', contentCtx) ===
+    'https://pbs.twimg.com/media/Gabc?format=jpg&name=orig';
+  checks['无query时补格式参数'] = /format=jpg&name=orig/.test(vm.runInContext(
+    'upgradeImageUrl("https://pbs.twimg.com/media/Gabc.jpg")', contentCtx));
+
+  await boot('x.com', '/home', true);
+  contentCtx.__relCard = relCard;
+  checks['开关打开附原推链接'] = vm.runInContext('withSource("正文", __relCard)', contentCtx) ===
+    '正文\n\n原文：https://x.com/someuser/status/1234567890';
+
+  await boot('weibo.com', '/', true);
+  contentCtx.__relCard = relCard;
+  checks['非X站不附来源'] = vm.runInContext('withSource("正文", __relCard)', contentCtx) === '正文';
+
+  const ok = Object.values(checks).every(Boolean);
+  console.log('[CHECK] X 专属守卫：' + (ok ? 'PASS ✅' : 'FAIL ❌'));
+  console.log('  ' + Object.entries(checks).map(([k, v]) => `${k}=${v ? '✅' : '❌'}`).join('  '));
+  if (!ok || process.env.WBX_VERBOSE) console.log(log.join('\n') + '\n');
+  return ok;
+}
+
+// ---------- 真实结构卡片 ----------
+function makeRealCard(cfg) {
+  const uid = cfg.uid || '6305330504';
+  const card = new MiniNode('article', { className: 'woo-card-main' });
+
+  const reco = new MiniNode('div', { className: 'woo-box-flex', text: '限宅 关注了 的人也关注' });
+  reco.appendChild(new MiniNode('img', { attrs: { src: 'https://tvax1.sinaimg.cn/crop.0.0.512.512.50/aaa.jpg' } }));
+  reco.appendChild(new MiniNode('a', { attrs: { href: 'https://weibo.com/u/7421535374' }, text: '限宅' }));
+  card.appendChild(reco);
+
+  // 真实 DOM 里 header.innerText 会聚合出整条作者信息（昵称/时间/认证标签），
+  // 中文节点之间甚至直接粘连、没有空格。夹具手动赋值以复现这种行为。
+  const HEADER_TEXT = '珑美恩雅 昨天 10:32 音乐博主 超话创作官（OaAngel超话） 微博原创视频博主';
+  const header = new MiniNode('div', { className: 'woo-box-flex header', text: HEADER_TEXT });
+  header.appendChild(new MiniNode('img', { attrs: { src: 'https://tva2.sinaimg.cn/crop.0.0.180.180.180/bbb.jpg' } }));
+  header.appendChild(new MiniNode('a', { attrs: { href: 'https://weibo.com/u/' + uid }, text: '珑美恩雅' }));
+  header.appendChild(new MiniNode('a', {
+    attrs: { href: 'https://weibo.com/' + uid + '/Rqf5wrPOA', title: '2026-11-06 10:32' }, text: '昨天 10:32'
+  }));
+  header.appendChild(new MiniNode('span', { text: '音乐博主 超话创作官（OaAngel超话） 微博原创视频博主' }));
+  card.appendChild(header);
+
+  // metaHead：模拟启发式选中了「作者行 + 正文」粘连的大容器
+  const bodyRaw = cfg.metaHead === 'merged'
+    ? '限宅 关注了 ' + HEADER_TEXT + ' ' + cfg.text + ' 转发 98'
+    : cfg.metaHead === 'sticky'
+      ? '限宅 关注了珑美恩雅昨天 10:32音乐博主 超话创作官（OaAngel超话） 微博原创视频博主' + cfg.text + ' 转发 98'
+      : cfg.text;
+  const textNode = new MiniNode('div', {
+    className: (cfg.noTextClass || cfg.metaHead) ? 'plain-body' : 'woo-text',
+    text: bodyRaw,
+    attrs: (cfg.noTextClass || cfg.metaHead) ? {} : { 'data-text': '' }
+  });
+  textNode.appendChild(new MiniNode('a', { attrs: { href: '/n/美团闪购' }, text: '@美团闪购' }));
+  textNode.appendChild(new MiniNode('a', { attrs: { href: 'https://weibo.com/u/1234567890' }, text: '@某人' }));
+  card.appendChild(textNode);
+
+  const media = new MiniNode('div', { className: 'woo-picture-main', attrs: { 'node-type': 'feed_list_media' } });
+  if (cfg.splitMedia) {
+    // 真实微博会把九宫格拆到多个媒体容器，部分格子还用 CSS 背景图而不是 <img>。
+    // 旧代码只取「第一个」容器 → 3 张只剩 1 张 → 托盘根本不弹。
+    media.appendChild(new MiniNode('img', { attrs: { src: 'https://wx1.sinaimg.cn/large/splitA.jpg' } }));
+    const second = new MiniNode('div', { className: 'woo-picture-main' });
+    second.appendChild(new MiniNode('img', { attrs: { src: 'https://wx2.sinaimg.cn/large/splitB.jpg' } }));
+    card.appendChild(second);
+    card.appendChild(new MiniNode('div', {
+      className: 'woo-picture-item',
+      attrs: { style: "background-image:url('https://wx3.sinaimg.cn/large/splitC.jpg')" }
+    }));
+  } else {
+    for (let i = 0; i < (cfg.imageCount || 0); i++) {
+      // lazyImages：注入按钮那一刻只有占位图，真实地址要等滚动/懒加载后才填 data-original
+      const attrs = cfg.lazyImages
+        ? { src: 'data:image/gif;base64,AAAA', class: 'lazy-placeholder' }
+        : { src: `https://wx${i + 1}.sinaimg.cn/large/008wBFsfgy1ibox${i}.jpg` };
+      media.appendChild(new MiniNode('img', { attrs }));
+    }
+  }
+  card.appendChild(media);
+
+  if (cfg.video) {
+    const vwrap = new MiniNode('div', { className: 'woo-video-main' });
+    const src = cfg.videoInDom === false
+      ? 'blob:https://weibo.com/mse-xyz'
+      : 'https://f.video.weibocdn.com/o0/clip.mp4?Expires=1&ssig=xyz';
+    vwrap.appendChild(new MiniNode('video', { attrs: { src, poster: 'https://wx1.sinaimg.cn/orj360/poster.jpg' } }));
+    card.appendChild(vwrap);
+  }
+  if (cfg.htmlVideoUrl) {
+    card.innerHTML = '{"stream_url_hd":"' + cfg.htmlVideoUrl + '"}';
+  }
+  if (cfg.embeddedImages) {
+    // 页面只渲染首图，其余地址藏在卡片内联 JSON（React props / pic_infos）
+    card.innerHTML = '{"pic_infos":[' +
+      '"https://wx1.sinaimg.cn/large/008wBFsfgy1ibox0.jpg",' +
+      '"https://wx2.sinaimg.cn/large/embB.jpg",' +
+      '"https://wx3.sinaimg.cn/large/embC.jpg"]}';
+  }
+
+  const tools = new MiniNode('div', { className: 'card-act' });
+  tools.appendChild(new MiniNode('button', { text: '转发 34' }));
+  card.appendChild(tools);
+
+  return { card, textNode, reco, header, media, tools };
+}
+
+function resetWorld() {
+  log.length = 0;
+  clipboardBytes = 0;
+  clipboardWrites = [];
+  clipboardTypes = [];
+  clipboardTextPayload = null;
+  downloadedFiles = [];
+  runtimeSendCount = 0;
+  offscreenDocumentExists = false;
+}
+
+async function runScenario(name, cfg, expect) {
+  resetWorld();
+  scenario = cfg;
+  loadBackground();
+  loadContent();
+  note('TEST', `--- 场景：${name} ---`);
+
+  const built = makeRealCard(cfg);
+  contentCtx.__card = built.card;
+  contentCtx.__btn = { disabled: false, textContent: '', title: '', type: '', className: '', addEventListener() {}, appendChild() {} };
+
+  let post = null;
+  try { post = vm.runInContext('resolvePost(__card)', contentCtx, { timeout: 3000 }); }
+  catch (e) { note('ERROR', 'resolvePost 抛错: ' + (e && e.message)); }
+  const textOk = !!post && post.text === cfg.text;
+  // 懒加载场景：注入时本来就没有真实图地址，改在 payload 里断言最终取到的张数
+  const expectedImages = cfg.expectImages != null ? cfg.expectImages : (cfg.imageCount || 0);
+  const imgsOk = cfg.lazyImages ? null
+    : (!!post && post.imageUrls.length === expectedImages &&
+       !post.imageUrls.some((u) => /tvax|tva\d|crop\./i.test(u)));
+  const uidOk = cfg.uid == null || (!!post && post.uid === cfg.uid);
+  const videoUrlsOk = cfg.videoInDom === false
+    ? (!!post && post.videoUrls.length === 0 && post.hasVideo === true)
+    : true;
+  if (post) note('parse', `text="${post.text}" images=${post.imageUrls.length} videos=${post.videoUrls.length} hasVideo=${post.hasVideo} uid=${post.uid}`);
+
+  try { vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 }); }
+  catch (e) { note('ERROR', 'injectIntoCard 抛错: ' + (e && e.message)); }
+  const expectedHost = cfg.textEmpty ? built.media : built.textNode;
+  const inContent = expectedHost.children.some((n) => n.className === 'wbx-repost-btn');
+  const inNoise = built.reco.children.concat(built.header.children)
+    .some((n) => n.className === 'wbx-repost-btn');
+  const anchorOk = inContent && !inNoise;
+  note('anchor', `内容容器(${cfg.textEmpty ? '图片墙' : '正文'})有按钮=${inContent} 作者区有按钮=${inNoise}`);
+
+  // ---- 按钮稳定性：内容不变时连续扫描不得重建按钮 ----
+  // 曾经校验用 quickFingerprint、保存用 postFingerprint，两者口径不同 →
+  // 每轮扫描都删按钮重建 → MutationObserver 自触发死循环 → 用户点击丢失。
+  const stableBtn = built.card._all().find((n) => n.className === 'wbx-repost-btn');
+  let rebuildOk = !!stableBtn;
+  for (let i = 0; i < 3 && rebuildOk; i++) {
+    try { vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 }); }
+    catch (e) { rebuildOk = false; note('ERROR', '稳定性扫描抛错: ' + (e && e.message)); }
+    const now = built.card._all().find((n) => n.className === 'wbx-repost-btn');
+    if (now !== stableBtn) rebuildOk = false;
+  }
+  note('stable', `内容不变连续扫描 3 次，按钮节点未被重建=${rebuildOk}`);
+
+  // ---- 模拟「往下拉后微博复用同一个 article」/「图片懒加载后才有真实地址」----
+  let btnCountAfterReuse = null;
+  if (cfg.reuseCard || cfg.lazyImages) {
+    if (cfg.reuseText) {
+      built.textNode.innerText = cfg.reuseText;
+      built.textNode.textContent = cfg.reuseText;
+    }
+    if (cfg.lazyFill) {
+      built.media.children.forEach((im, i) => {
+        im.setAttribute('data-original', `https://wx${i + 1}.sinaimg.cn/large/lazy${i}.jpg`);
+      });
+    }
+    if (cfg.dropButton) {
+      const oldBtn = built.card._all().find((n) => n.className === 'wbx-repost-btn');
+      if (oldBtn) oldBtn.remove(); // 微博重渲染把按钮节点整个删掉
+    }
+    // 滚动触发的 scanAndInject：指纹变化应重建按钮，而不是留着旧缓存
+    try { vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 }); }
+    catch (e) { note('ERROR', '二次 injectIntoCard 抛错: ' + (e && e.message)); }
+    btnCountAfterReuse = built.card._all().filter((n) => n.className === 'wbx-repost-btn').length;
+    note('reuse', `内容变更后按钮数=${btnCountAfterReuse}（应为 1，不能重复或残留旧按钮）`);
+  }
+
+  try {
+    if (cfg.clickButton) {
+      // 真正点注入的按钮：会走「btn.closest 找当前卡片」这条路径
+      const realBtn = built.card._all().find((n) => n.className === 'wbx-repost-btn');
+      if (realBtn && realBtn._handlers && realBtn._handlers.click) {
+        note('click', '模拟真实点击注入按钮（closest 定位 + 实时解析）');
+        await realBtn._handlers.click({ preventDefault() {}, stopPropagation() {} });
+      } else {
+        note('ERROR', '找不到可点击的注入按钮');
+      }
+    } else {
+      // 故意不传缓存 post：验证「点击瞬间实时解析」
+      await vm.runInContext('onRepost(__card, __btn)', contentCtx, { timeout: 5000 });
+    }
+  } catch (e) {
+    note('ERROR', 'onRepost 抛错: ' + (e && e.message));
+  }
+  await new Promise((r) => setTimeout(r, 400));
+
+  // ---- 多图托盘交互：真实点击手势逐张复制 / 拼成长图 / 打开 X ----
+  // 多图时不能自动 window.open，否则 X 抢走焦点、托盘挂在微博页用户根本看不到
+  const gallery = dom._nodes['wbx-gallery'];
+  const autoOpenedBefore = /window.*open\(\) -> https:\/\//.test(log.join('\n'));
+  let galleryItems = 0, copy2Ok = false, collageOk = false, openXByButton = false;
+  if (gallery) {
+    const openBtn = gallery._all().find((n) => n.className === 'wbx-g-open');
+    if (openBtn && openBtn._handlers && openBtn._handlers.click) {
+      const before = log.filter((l) => /window.*open\(\) -> https:\/\//.test(l)).length;
+      await openBtn._handlers.click();
+      openXByButton = log.filter((l) => /window.*open\(\) -> https:\/\//.test(l)).length > before;
+      note('gallery', `点托盘「打开 X 发推」→ 开窗=${openXByButton}`);
+    }
+    const list = gallery._all().find((n) => n.className === 'wbx-g-list');
+    const items = list ? list.children.filter((n) => n.className === 'wbx-g-item') : [];
+    galleryItems = items.length;
+    const b2 = items[1] && items[1]._all().find((n) => n.tagName === 'BUTTON');
+    if (b2 && b2._handlers && b2._handlers.click) {
+      const before = clipboardWrites.length;
+      await b2._handlers.click();
+      await new Promise((r) => setTimeout(r, 60));
+      copy2Ok = clipboardWrites.length > before && clipboardBytes > 0;
+      note('gallery', `点「复制第 2 张」→ clipboardWrites ${before}→${clipboardWrites.length}, bytes=${clipboardBytes}`);
+    }
+    const acts = gallery._all().find((n) => n.className === 'wbx-g-actions');
+    const collageBtn = acts && acts.children.find((n) => n.tagName === 'BUTTON');
+    if (collageBtn && collageBtn._handlers && collageBtn._handlers.click) {
+      const before = clipboardWrites.length;
+      await collageBtn._handlers.click();
+      await new Promise((r) => setTimeout(r, 80));
+      collageOk = clipboardWrites.length > before;
+      note('gallery', `点「拼成长图」→ clipboardWrites ${before}→${clipboardWrites.length}`);
+    }
+  }
+
+  const joined = log.join('\n');
+  const expectedClean = cfg.expectedPayload != null ? cfg.expectedPayload
+    : (cfg.cleanText != null ? cfg.cleanText : cfg.text);
+
+  const gotResult = /handleResult\(\) 收到: type=RESULT/.test(joined);
+  const openedX = /window.*open\(\) -> https:\/\//.test(joined);
+  const clipboard = /clipboard.*write\(\) types=/.test(joined);
+  const validBytes = clipboardBytes > 0;
+  const downloaded = downloadedFiles.some((f) => /\.png$/.test(f));
+  const mp4Downloaded = downloadedFiles.some((f) => /\.mp4$/.test(f));
+  const fatal = /offscreen 未就绪|离屏文档创建失败|INVALID REASON|发送失败|ERROR|WARN|处理失败：/.test(joined);
+  const inpaintOk = !cfg.uid || cfg.uid !== '7810882899' || !/Inpaint is not defined|inpaintCorner is not/.test(joined);
+  const offscreenWrote = clipboardWrites.includes('offscreen');
+  const fallbackBtn = !!dom._nodes['wbx-copybtn'];
+  const toastText = (dom._nodes['wbx-toast'] && dom._nodes['wbx-toast'].textContent) || '';
+  const copyFailTip = toastText.includes('自动复制失败');
+  const videoTip = toastText.includes('视频已下载');
+  const videoFailTip = toastText.includes('视频处理失败');
+
+  // CROSSPOST payload 里的 text = 真正被转发走的文字（已清洗）
+  const payloadMatch = /CROSSPOST payload: text="([^"]*)"/.exec(joined);
+  const payloadText = payloadMatch ? payloadMatch[1] : '__MISSING__';
+  const payloadTextOk = payloadText === expectedClean;
+  if (!payloadTextOk) note('CHECK', `清洗后文字不符: 期望="${expectedClean}" 实际="${payloadText}"`);
+
+  const urlMatch = /\[window\] open\(\) -> (\S+)/.exec(joined);
+  const xUrlStr = urlMatch ? urlMatch[1] : '';
+  let xText = null;
+  if (xUrlStr.includes('text=')) {
+    try { xText = decodeURIComponent((xUrlStr.split('text=')[1] || '').split('&')[0]); } catch (e) {}
+  }
+  // 文字始终预填进 X；剪贴板只放媒体，避免重复或丢字
+  const xTextOk = xText === expectedClean;
+  if (!xTextOk) note('CHECK', `X 预填文字不符: 期望="${expectedClean}" 实际=${xText === null ? '(无 text 参数)' : '"' + xText + '"'}`);
+
+  // yes = 媒体写不进去/无媒体时文字进了剪贴板；no = 图片成功写入，不应混进文字
+  const clipboardTextOk = expect.clipboardText === 'yes'
+    ? clipboardTextPayload === expectedClean
+    : expect.clipboardText === 'no'
+      ? clipboardTextPayload === null
+      : null;
+  if (clipboardTextOk === false) {
+    note('CHECK', `剪贴板文字策略不符: 期望=${expect.clipboardText} 实际="${clipboardTextPayload}"`);
+  }
+
+  const checks = {
+    '结果回传': gotResult,
+    'X 打开': openedX,
+    '正文提取正确': textOk,
+    '清洗后文字正确': payloadTextOk,
+    'X 预填清洗文字': xTextOk,
+    '内容图(非头像)': imgsOk,
+    '视频识别': videoUrlsOk,
+    'UID 属本条': uidOk,
+    '按钮挂正文区': anchorOk,
+    '按钮不反复重建': rebuildOk,
+    '首图剪贴板': expect.clipboard ? clipboard && validBytes : null,
+    '图片字节完整': expect.clipboard ? validBytes : null,
+    '剪贴板文字策略': clipboardTextOk,
+    '其余图下载': expect.download ? downloaded : null,
+    '视频下载mp4': expect.videoDownloaded ? mp4Downloaded : null,
+    '视频提示可见': expect.videoTip ? videoTip : null,
+    '接口兜底': expect.videoApiFallback ? /fetch 公开接口 statuses\/show/.test(joined) : null,
+    '无致命错误': !fatal,
+    '去水印可用': inpaintOk
+  };
+  if (expect.offscreenWrote) checks['offscreen写剪贴板'] = offscreenWrote;
+  if (expect.fallbackButton) checks['保底复制按钮'] = fallbackBtn;
+  if (expect.copyFailTip) checks['失败原因可见'] = copyFailTip;
+  if (expect.anchorFallback) checks['下载接口失败降级'] = /<a download> 触发/.test(joined);
+  if (expect.videoFailTip) checks['视频失败可见'] = videoFailTip;
+  if (expect.imageInpaint !== undefined) {
+    const m = /CROSSPOST payload:[\s\S]*? inpaint=(\w+) inpaintVideo=/.exec(joined);
+    checks['图片全局去水印'] = !!m && m[1] === String(expect.imageInpaint);
+  }
+  if (expect.hdPreferred) {
+    checks['优先HD原片'] = /fetch 公开接口 statuses\/show/.test(joined) && /HD 原片/.test(toastText);
+  }
+  if (expect.hdFallback) {
+    checks['HD失败回退直链'] = mp4Downloaded && /页面直链/.test(toastText);
+  }
+  if (expect.signature) {
+    checks['署名含昆哥'] = /昆哥/.test(payloadText) && /昆哥/.test(xText || '');
+    checks['署名含X主页'] = /x\.com\/YikunChen1983/.test(payloadText) && /YikunChen1983/.test(xText || '');
+  }
+  if (expect.wmDone) checks['检测到并去水印'] = /去水印：[1-9]\d* 张已处理/.test(toastText);
+  if (expect.wmSkip) checks['无水印原图保留'] = /未检测到水印（原图保留）/.test(toastText);
+  if (cfg.reuseCard || cfg.lazyImages) checks['滚动后按钮不重复'] = btnCountAfterReuse === 1;
+  if (cfg.lazyImages) checks['懒加载图点击时取到'] = /CROSSPOST payload:.*imageUrls=2/.test(joined);
+  if (cfg.reuseCard) checks['转发的是滚动后的新内容'] = payloadTextOk && xTextOk;
+  if (cfg.clickButton) checks['真实点击按钮走closest'] = payloadTextOk && xTextOk && gotResult;
+  if (cfg.metaHead) {
+    checks['作者信息头已剥离'] = !!post &&
+      !/(?:珑美恩雅|昨天|10:32|音乐博主|超话创作官|微博原创视频博主|限宅|关注了|一键转发|转发 98)/.test(post.text);
+  }
+  if (expect.gallery) {
+    checks['多图托盘列出全部图'] = galleryItems === expectedImages;
+    checks['逐张复制写入剪贴板'] = copy2Ok;
+    checks['拼成长图可复制'] = collageOk;
+    checks['多图不自动抢焦点'] = !autoOpenedBefore;
+    checks['托盘按钮打开X'] = openXByButton;
+    checks['托盘数量标记'] = !!gallery && gallery.getAttribute('data-wbx-count') === String(expectedImages);
+  }
+  let ok = true;
+  const parts = [];
+  for (const [k, v] of Object.entries(checks)) {
+    parts.push(`${k}=${v === null ? '— 跳过' : (v ? '✅' : '❌')}`);
+    if (v === false) ok = false;
+  }
+  note('CHECK', `pngBytes=${clipboardBytes} files=[${downloadedFiles.join(',')}] | ` + parts.join('  '));
+  note('CHECK', ok ? `场景 PASS ✅` : `场景 FAIL ❌`);
+  if (!ok || process.env.WBX_VERBOSE) console.log(log.join('\n') + '\n');
+  return ok;
+}
+
+(async () => {
+  console.log('=== 微博一键转发插件 · 端到端回归测试 ===\n');
+  const cases = [];
+  // 模拟运行时是全局共享的（消息总线/clipboard/日志），场景必须串行跑
+  const R = (name, cfg, expect) => cases.push({ name, cfg, expect });
+
+  // ---- 原有 8 个场景（适配清洗文字 + 剪贴板只放媒体）----
+  R('带水印账号 + 单图（触发去水印）',
+    { uid: '7810882899', imageCount: 1, text: '测试微博正文 # tag', cleanText: '测试微博正文', fetchFail: false },
+    { clipboard: true, clipboardText: 'no', download: false });
+  R('普通账号 + 多图（首图复制、托盘逐张复制/拼图、其余下载）',
+    { uid: '5903810533', imageCount: 3, text: '多图微博正文', fetchFail: false },
+    { clipboard: true, clipboardText: 'no', download: true, gallery: true });
+  R('纯文字无图（仅预填 X）',
+    { uid: null, imageCount: 0, text: '纯文字微博', fetchFail: false },
+    { clipboard: false, clipboardText: 'yes', download: false });
+  R('图床 403（应优雅降级、不崩溃）',
+    { uid: '7810882899', imageCount: 1, text: '403 测试', fetchFail: true },
+    { clipboard: false, clipboardText: 'yes', download: false });
+  R('页面剪贴板被拒（offscreen 主路径仍成功）',
+    { uid: null, imageCount: 1, text: '手势过期测试', fetchFail: false, contentClipboardFail: true },
+    { clipboard: true, clipboardText: 'no', download: false, offscreenWrote: true });
+  R('剪贴板完全被拒（降级：提示+下载+保底按钮）',
+    { uid: null, imageCount: 1, text: '剪贴板被拒', fetchFail: false, clipboardFail: true },
+    { clipboard: false, download: true, fallbackButton: true, copyFailTip: true });
+  R('无 class 正文（启发式兜底 + 正文含用户链接）',
+    { uid: null, imageCount: 1, text: '之前双十一囤货要等一周，这次不到半小时全送到，直接搞定。',
+      fetchFail: false, noTextClass: true },
+    { clipboard: true, clipboardText: 'no', download: false });
+  R('纯图无正文（按钮挂图片墙）',
+    { uid: null, imageCount: 2, text: '', fetchFail: false, textEmpty: true },
+    { clipboard: true, clipboardText: 'no', download: true });
+
+  // ---- 新增：# 话题清洗 ----
+  R('文末话题（删掉 # 及其后推广文案）',
+    { uid: null, imageCount: 1, fetchFail: false,
+      text: '之前双十一囤货要等一周，这次不到半小时全送到，直接搞定。#美团闪购双11# 上美团闪购搜「闪购神券」',
+      cleanText: '之前双十一囤货要等一周，这次不到半小时全送到，直接搞定。' },
+    { clipboard: true, clipboardText: 'no', download: false });
+  R('话题在开头（保护：不把正文删空）',
+    { uid: null, imageCount: 1, fetchFail: false,
+      text: '#美团闪购双11# 之前囤货要等一周，这次不到半小时送到。',
+      cleanText: '之前囤货要等一周，这次不到半小时送到。' },
+    { clipboard: true, clipboardText: 'no', download: false });
+  R('stripTopics 模式（只删标签块，保留 # 后正文）',
+    { uid: null, imageCount: 1, fetchFail: false, hashMode: 'stripTopics',
+      text: '正文第一段 #话题# 正文第二段', cleanText: '正文第一段 正文第二段' },
+    { clipboard: true, clipboardText: 'no', download: false });
+  R('keep 模式（原文不清洗）',
+    { uid: null, imageCount: 0, fetchFail: false, hashMode: 'keep',
+      text: '原文带 #话题# 保持不动', cleanText: '原文带 #话题# 保持不动' },
+    { clipboard: false, clipboardText: 'yes', download: false });
+
+  // ---- 新增：视频 ----
+  R('视频微博（页面直出 mp4 → 下载 + 文字兜底）',
+    { uid: null, imageCount: 0, text: '视频微博正文', fetchFail: false, video: true,
+      videoInDom: true, inpaintVideo: false },
+    { clipboard: false, clipboardText: 'yes', videoDownloaded: true, videoTip: true, download: false });
+  R('视频 blob MSE（公开接口兜底取原片）',
+    { uid: null, imageCount: 0, text: 'MSE 视频正文', fetchFail: false, video: true,
+      videoInDom: false, inpaintVideo: false },
+    { clipboard: false, clipboardText: 'yes', videoDownloaded: true, videoTip: true,
+      videoApiFallback: true, download: false });
+  R('视频下载接口失败（退回 <a download>）',
+    { uid: null, imageCount: 0, text: '下载降级测试', fetchFail: false, video: true,
+      videoInDom: true, inpaintVideo: false, downloadsFail: true },
+    { clipboard: false, clipboardText: 'yes', videoDownloaded: true, videoTip: true,
+      anchorFallback: true, download: false });
+  R('视频接口 432 限流（优雅失败、不崩溃）',
+    { uid: null, imageCount: 0, text: '接口限流测试', fetchFail: false, video: true,
+      videoInDom: false, inpaintVideo: false, apiFail: true },
+    { clipboard: false, clipboardText: 'yes', download: false, videoFailTip: true });
+
+  // ---- 新增：全局去水印开关（取消 UID 列表后） ----
+  R('普通账号也去水印（全局图片开关默认开启，不再看 UID）',
+    { uid: '5903810533', imageCount: 1, text: '全局图片去水印测试', fetchFail: false },
+    { clipboard: true, clipboardText: 'no', download: false, imageInpaint: true });
+  R('图片去水印关闭（payload 明确 false）',
+    { uid: null, imageCount: 1, text: '关闭图片去水印', fetchFail: false, inpaintImages: false },
+    { clipboard: true, clipboardText: 'no', download: false, imageInpaint: false });
+  R('视频去水印开启（优先取 HD 原片）',
+    { uid: null, imageCount: 0, text: '视频去水印测试', fetchFail: false, video: true, videoInDom: true },
+    { clipboard: false, clipboardText: 'yes', videoDownloaded: true, videoTip: true,
+      download: false, hdPreferred: true });
+  R('HD 接口被限流（自动回退页面直链，不影响下载）',
+    { uid: null, imageCount: 0, text: 'HD 回退测试', fetchFail: false, video: true,
+      videoInDom: true, apiFail: true },
+    { clipboard: false, clipboardText: 'yes', videoDownloaded: true, videoTip: true,
+      download: false, hdFallback: true });
+
+  // ---- 新增：自动检测式去水印（不再无条件抹右下角矩形） ----
+  R('检测到水印（自动包围盒重建）',
+    { uid: null, imageCount: 1, text: '去水印检测测试', fetchFail: false, fakeWatermark: true },
+    { clipboard: true, clipboardText: 'no', download: false, wmDone: true });
+  R('无水印图（原图完全保留，不再抹右下角）',
+    { uid: null, imageCount: 1, text: '无水印测试', fetchFail: false },
+    { clipboard: true, clipboardText: 'no', download: false, wmSkip: true });
+
+  // ---- 新增：滚动后 DOM 复用 / 懒加载 / 多图托盘 ----
+  R('往下拉后微博复用 article（点第 N 条转第 N 条，不再是旧缓存）',
+    { uid: null, imageCount: 1, text: '旧的第一条正文内容', fetchFail: false,
+      reuseCard: true, reuseText: '滚动后这一条才是真正要转发的正文内容',
+      expectedPayload: '滚动后这一条才是真正要转发的正文内容' },
+    { clipboard: true, clipboardText: 'no', download: false });
+  R('滚动后按钮被框架删掉（自动重新注入，不残留也不丢失）',
+    { uid: null, imageCount: 1, text: '按钮丢失测试', fetchFail: false,
+      reuseCard: true, dropButton: true },
+    { clipboard: true, clipboardText: 'no', download: false });
+  R('图片懒加载（注入时占位图，点击瞬间才取到真实原图）',
+    { uid: null, imageCount: 2, text: '懒加载图片正文', fetchFail: false,
+      lazyImages: true, lazyFill: true },
+    { clipboard: true, clipboardText: 'no', download: true, gallery: true });
+  R('真实点击按钮（closest 定位当前卡片 + 实时解析新内容）',
+    { uid: null, imageCount: 2, text: '旧内容不该被转发', fetchFail: false,
+      reuseCard: true, reuseText: '点击按钮时这一条才是真实内容', clickButton: true,
+      expectedPayload: '点击按钮时这一条才是真实内容' },
+    { clipboard: true, clipboardText: 'no', download: true, gallery: true });
+  // 用户实测「多图片的复制没看见有体现」：九宫格被拆到多个容器 + CSS 背景图，
+  // 旧版只采到首图 → 托盘不弹；X 又抢走焦点 → 托盘即使弹了也看不见。
+  R('九宫格拆分多容器 + CSS 背景图（3 张全采到，托盘弹出且不抢焦点）',
+    { uid: null, imageCount: 3, text: '九宫格拆分容器正文', fetchFail: false, splitMedia: true },
+    { clipboard: true, clipboardText: 'no', download: true, gallery: true });
+  R('页面只渲染首图，其余地址藏在内联 JSON（仍能凑齐 3 张并弹托盘）',
+    { uid: null, imageCount: 1, expectImages: 3, text: '内联图片数据正文', fetchFail: false,
+      embeddedImages: true },
+    { clipboard: true, clipboardText: 'no', download: true, gallery: true });
+
+  // ---- 新增：内置账号「昆哥」署名 ----
+  R('署名开启（昆哥 + X 主页链接写进转发文字）',
+    { uid: null, imageCount: 1, fetchFail: false, appendSignature: true,
+      text: '之前双十一囤货要等一周，这次不到半小时全送到，直接搞定。#美团闪购双11# 上美团闪购搜神券',
+      expectedPayload: '之前双十一囤货要等一周，这次不到半小时全送到，直接搞定。\n\n— 昆哥 (@YikunChen1983)\nhttps://x.com/YikunChen1983' },
+    { clipboard: true, clipboardText: 'no', download: false, signature: true });
+
+  // ---- 新增：作者信息头误入正文（用户实测「珑美恩雅 昨天 10:32 音乐博主…」）----
+  const REAL_BODY = '说实话 如果我是汪峰 哪怕心底现在真的很幸福 我不会发文、也不会晒和四个孩子的合照';
+  R('作者行/认证标签混入正文（整块剥离，只留正文）',
+    { uid: null, imageCount: 0, text: REAL_BODY, fetchFail: false, metaHead: 'merged' },
+    { clipboard: false, clipboardText: 'yes', download: false });
+  R('中文节点粘连无空格（DOM 片段仍能剥离作者信息）',
+    { uid: null, imageCount: 0, text: REAL_BODY, fetchFail: false, metaHead: 'sticky' },
+    { clipboard: false, clipboardText: 'yes', download: false });
+  R('正文恰好以作者昵称开头（不得误删正文）',
+    { uid: null, imageCount: 0, text: '珑美恩雅说得很对，汪峰这次确实低调。', fetchFail: false },
+    { clipboard: false, clipboardText: 'yes', download: false });
+
+  const results = [];
+  for (const c of cases) results.push(await runScenario(c.name, c.cfg, c.expect));
+
+  // ---- 多站点：微博之外的 6 个站各自跑完整链路 ----
+  const siteCases = [
+    ['知乎回答（data-original 原图 + query 保留）',
+      { site: 'zhihu', text: '这是一条知乎回答正文，讲讲多站点适配。', imageCount: 1, expectQuery: 'source=test' }],
+    ['微信公众号（data-src 真实地址 + 防盗链 query）',
+      { site: 'wechat', text: '公众号文章正文，图片藏在 data-src。', imageCount: 1, expectQuery: 'wx_fmt=jpeg' }],
+    ['B站动态（hdslb 图床 + 头像排除）',
+      { site: 'bilibili', text: 'B站动态正文，配了一张图。', imageCount: 1 }],
+    ['豆瓣广播（doubanio 图床 + 头像排除）',
+      { site: 'douban', text: '豆瓣广播正文。', imageCount: 1 }],
+    ['小红书（签名 URL 保留 + 不自动去水印）',
+      { site: 'xiaohongshu', text: '小红书笔记正文。', imageCount: 1, expectQuery: 'sign=abc0' }],
+    ['知乎多图（通用托盘在新站点同样可用）',
+      { site: 'zhihu', text: '知乎多图回答正文。', imageCount: 3, expectQuery: 'source=test' }],
+    ['X 推文（name=orig 原图升级 + 头像排除 + #话题保留）',
+      { site: 'x', text: '这是一条 X 推文正文，带 #话题 也要原样保留。',
+        imageCount: 1, expectQuery: 'name=orig', sourceLink: '/someuser/status/1234567890' }],
+    ['X 多图（4 张原图进托盘，不抢焦点）',
+      { site: 'x', text: 'X 上一条多图推文。', imageCount: 4, expectQuery: 'name=orig' }],
+    ['X 附原文链接（开关打开时正文末尾带来源）',
+      { site: 'x', text: '转发别人推文时标注来源。', imageCount: 1,
+        expectQuery: 'name=orig', appendSource: true,
+        sourceLink: '/someuser/status/1234567890',
+        expectText: '转发别人推文时标注来源。\n\n原文：https://x.com/someuser/status/1234567890' }]
+  ];
+  for (const [n, c] of siteCases) results.push(await runSiteScenario(n, c));
+
+  // ---- X 专属守卫（发布页 / permalink / 原图 / 来源开关）----
+  results.push(await runXGuards());
+
+  // ---- 新增：重新加载后弹窗「运行环境自检」的消息链路 ----
+  let diagOk = false;
+  try {
+    const diag = await runtimeSend('popup', { type: 'DIAG' });
+    diagOk = !!diag && diag.version === '0.3.4-test' && diag.dnrApi === true &&
+      diag.offscreenApi === true && diag.reinstalled === true &&
+      Array.isArray(diag.dnrRules) && diag.dnrRules.length === 9 &&
+      diag.dnrRules.includes(1001) && diag.dnrRules.includes(1009) && !diag.lastError;
+    note('diag', 'DIAG 返回: ' + JSON.stringify(diag));
+  } catch (e) { note('ERROR', 'DIAG 失败: ' + (e && e.message)); }
+  console.log(diagOk ? '[CHECK] 运行环境自检 DIAG：PASS ✅' : '[CHECK] 运行环境自检 DIAG：FAIL ❌');
+  results.push(diagOk);
+
+  const pass = results.every(Boolean);
+  console.log(`\n=== 总计 ${results.length} 个场景，通过 ${results.filter(Boolean).length} 个：` +
+    (pass ? 'ALL PASS ✅' : 'FAIL ❌（失败场景日志见上）') + ' ===');
+  console.log('（如需查看全部消息流水，用 WBX_VERBOSE=1 node test-harness.js）');
+  process.exit(pass ? 0 : 1);
+})().catch((e) => { console.error('harness 自身异常:', e); process.exit(2); });

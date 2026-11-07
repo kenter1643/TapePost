@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; width: 320px; padding: 14px 16px; color: #222; }
+    h1 { font-size: 15px; margin: 0 0 4px; }
+    .sub { font-size: 12px; color: #888; margin: 0 0 12px; line-height: 1.5; }
+
+    .me { display: flex; align-items: center; gap: 10px; padding: 10px; margin: 0 0 12px;
+          border: 1px solid #ffd9b3; border-radius: 10px; background: #fff8f1; }
+    .avatar { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 50%; background: #ff7800;
+              color: #fff; font-size: 18px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .me-info { min-width: 0; flex: 1; }
+    .me-name { font-size: 14px; font-weight: 700; line-height: 1.3; }
+    .me-name span { font-size: 12px; font-weight: 400; color: #888; }
+    .me-link { font-size: 12px; color: #1a7fd4; text-decoration: none; display: block; margin-top: 2px; }
+    .me-link:hover { text-decoration: underline; }
+    .mini { width: auto; margin: 6px 0 0; padding: 3px 8px; font-size: 11px; font-weight: 500;
+            border: 1px solid #ffd0a6; border-radius: 6px; background: #fff; color: #d96300; cursor: pointer; }
+    .mini:hover { background: #fff1e4; }
+    .me-badge { display: inline-block; margin: 8px 0 0; padding: 4px 9px; border-radius: 6px;
+                background: linear-gradient(90deg, #ff7800, #ff9d3d); color: #fff;
+                font-size: 11px; font-weight: 700; letter-spacing: .3px; line-height: 1.4;
+                box-shadow: 0 2px 6px rgba(255,120,0,.25); }
+    .me-badge[hidden] { display: none; }
+
+    label { display: block; font-size: 13px; margin: 10px 0 4px; font-weight: 600; }
+    .sites { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 6px 0 2px; }
+    .site { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; font-weight: 400; }
+    .site input { margin: 0; }
+    textarea, select { width: 100%; box-sizing: border-box; font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 6px; }
+    textarea { height: 64px; resize: vertical; }
+    .row { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; font-size: 13px; }
+    .row input { margin-top: 2px; flex: 0 0 auto; }
+    #save { margin-top: 12px; width: 100%; padding: 8px; border: none; border-radius: 8px; background: #ff7800; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+    #save:hover { background: #ff8c1a; }
+    .note { font-size: 11px; color: #999; margin-top: 12px; line-height: 1.5; border-top: 1px solid #eee; padding-top: 8px; }
+    .ok { color: #1a9e3e; font-size: 12px; margin-top: 8px; display: none; }
+    #check { margin-top: 8px; width: 100%; padding: 7px; border: 1px solid #ddd; border-radius: 8px; background: #fafafa; color: #555; font-size: 12px; cursor: pointer; }
+    #check:hover { background: #f0f0f0; }
+    #diag { display: none; margin: 8px 0 0; padding: 8px; background: #f7f7f7; border: 1px solid #eee; border-radius: 6px;
+            font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: #333; }
+  </style>
+</head>
+<body>
+  <h1>TapePost · 一键转发到 X</h1>
+  <p class="sub">在微博、知乎、微信公众号、B站动态、豆瓣、小红书、X 推文上打开内容页，正文右上角会出现橙色「一键转发」。点击后：提取正文并预填到 X → 图片进剪贴板 / 视频下载 → 你在 X 里 Ctrl+V 贴图、手动发送。</p>
+
+  <div class="me">
+    <div class="avatar" id="meAvatar">昆</div>
+    <div class="me-info">
+      <div class="me-name"><strong id="meName">昆哥</strong> <span id="meHandle">@YikunChen1983</span></div>
+      <a class="me-link" id="meLink" href="https://x.com/YikunChen1983" target="_blank">x.com/YikunChen1983 ↗</a>
+      <button class="mini" id="copyLink" type="button">复制主页链接</button>
+      <div class="me-badge" id="meBadge">TapeOut社区成员：昆哥</div>
+    </div>
+  </div>
+
+  <label>已启用站点（关掉后该站不再出现「一键转发」）</label>
+  <div class="sites" id="sites">
+    <label class="site"><input type="checkbox" id="site_weibo" /> 微博</label>
+    <label class="site"><input type="checkbox" id="site_zhihu" /> 知乎</label>
+    <label class="site"><input type="checkbox" id="site_wechat" /> 微信公众号</label>
+    <label class="site"><input type="checkbox" id="site_bilibili" /> B站动态</label>
+    <label class="site"><input type="checkbox" id="site_douban" /> 豆瓣广播</label>
+    <label class="site"><input type="checkbox" id="site_xiaohongshu" /> 小红书</label>
+    <label class="site"><input type="checkbox" id="site_x" /> X（推文）</label>
+  </div>
+
+  <label for="hash">正文里 # 话题的处理方式（仅微博）</label>
+  <select id="hash">
+    <option value="truncate">删除第一个 # 及其后所有内容（默认）</option>
+    <option value="stripTopics">只删除 #话题# 标签块，保留其余正文</option>
+    <option value="keep">不处理，原样转发</option>
+  </select>
+
+  <div class="row">
+    <input type="checkbox" id="imgWm" />
+    <label for="imgWm" style="margin:0;font-weight:400">对所有图片去水印（微博自动检测；其他站水印位置不固定，一律原图保留）</label>
+  </div>
+
+  <div class="row">
+    <input type="checkbox" id="videoWm" />
+    <label for="videoWm" style="margin:0;font-weight:400">对所有视频去水印（微博优先取 HD 原片；其他站直接取页面直链）</label>
+  </div>
+
+  <div class="row">
+    <input type="checkbox" id="sig" />
+    <label for="sig" style="margin:0;font-weight:400">转发文字末尾附上我的署名与 X 主页链接（默认关闭）</label>
+  </div>
+
+  <div class="row">
+    <input type="checkbox" id="source" />
+    <label for="source" style="margin:0;font-weight:400">转发 X 上的推文时附上原推链接（默认关闭，用于标注来源）</label>
+  </div>
+
+  <label for="domain">打开的 X 域名</label>
+  <select id="domain">
+    <option value="x.com">x.com（推荐）</option>
+    <option value="twitter.com">twitter.com</option>
+  </select>
+
+  <button id="save" type="button">保存设置</button>
+  <div class="ok" id="ok">已保存 ✓</div>
+  <button id="check" type="button">🔍 运行环境自检（重新加载后点这里）</button>
+  <pre id="diag"></pre>
+
+  <div class="note">
+    说明：<br>
+    · 身份卡片上的「TapeOut社区成员：昆哥」为内置社区标注，仅显示在设置面板，不会写进转发正文；需要改称呼只改内置账号配置即可。<br>
+    · 多站点：每个站点的选择器、图床域名、Referer、文字清洗与水印策略都在内置站点配置里。「删 # 后内容」只对微博生效，其他站保留原文；图片自动去水印也只对微博启用（其他站水印压在图上，强行处理会毁图，因此原图保留）。<br>
+    · X 上也能一键转发：在 x.com / twitter.com 的推文上点「一键转发」，会把该条正文与配图带出，预填进<b>新的发推框</b>由你手动发送；这不是原生「转推」，也不会自动发布。X 缩略图会自动换成 name=orig 原图；插件自己打开的 /intent/tweet 发推页不会再出现按钮。转他人内容建议开启上方「附原推链接」标注来源。<br>
+    · 微博之外的站点只能取页面里的图片/视频直链，没有平台 HD 接口；X 视频多为 HLS 流，通常拿不到干净 mp4；小红书图片地址带时效签名，若下载失败请刷新页面后重试。<br>
+    · 署名默认关闭，保证「删掉 # 后内容」的正文保持干净；开启后自动追加「昆哥 + 主页链接」并做长度保护。<br>
+    · 「# 在开头」时截断会把正文删光，插件会自动改为只删话题块，避免空转发。<br>
+    · 文字始终预填进 X（不会丢）；剪贴板只放干净图片，Ctrl+V 贴图不会带出重复文字。<br>
+    · 多图会弹出「图片托盘」：每张都有「复制第 N 张」按钮（逐张切到 X 粘贴，最多 4 张），也能「拼成长图」一次贴完，或「全部下载」。按钮在滚动后会自动校验内容指纹，避免 DOM 复用导致转错条。<br>
+    · 图片去水印改为「先检测再处理」：只在底部条带找白色水印文字，定位到包围盒后用上下方背景插值重建；<b>检测不到水印的图片原样保留</b>，复杂纹理会自动跳过，不会再抹掉右下角一大块画面。已取消按作者 UID 判断，改由上方全局开关控制。<br>
+    · 视频去水印＝跳过页面里的低清/带水印流，优先取公开接口的 HD 原片（平台水印多为播放器叠加，原片通常干净）；接口失败会自动回退页面直链，不影响下载。视频文件请从下载目录拖入 X。<br>
+    · 图床/视频 CDN 强制 Referer，插件已自动注入，无需登录微博。<br>
+    · X(Twitter) 在中国大陆需自备 VPN 才能打开与发送。
+  </div>
+
+  <script src="account.js"></script>
+  <script src="sites.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TapePost · 一键转发到 X</title>
+<meta name="description" content="TapePost 是一个纯本地的 Chrome 扩展：在微博、知乎、公众号、B站动态、豆瓣、小红书、X 一键提取正文与全部配图，清洗文字、去水印，预填到 X 由你手动发送。无服务器、无遥测。">
+<meta property="og:title" content="TapePost · 一键转发到 X">
+<meta property="og:description" content="7 个平台的内容，整理成一条 X 草稿素材。发送始终由你手动完成。">
+<meta property="og:image" content="assets/screenshots/01_overview_1280x800.png">
+<link rel="icon" href="assets/icon256.png">
+<style>
+  :root{
+    --orange:#ff7a14; --orange-deep:#ee4c00; --orange-soft:#fff3e8;
+    --ink:#1c2028; --body:#3b424e; --muted:#767e8c; --line:#e6e9ef;
+    --bg:#f7f9fc; --card:#ffffff; --blue:#1d9bf0;
+    --shadow:0 12px 36px rgba(28,32,40,.08);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--body);
+       font:16px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+  a{color:var(--orange-deep);text-decoration:none}
+  a:hover{text-decoration:underline}
+  img{max-width:100%;display:block}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  .top{border-top:4px solid var(--orange)}
+
+  header{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);
+         backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
+  .nav{display:flex;align-items:center;gap:28px;height:64px}
+  .brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:800;color:var(--ink);letter-spacing:.2px}
+  .brand:hover{text-decoration:none}
+  .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(160deg,#ff9a2e,var(--orange-deep));
+        color:#fff;display:grid;place-items:center;font-size:21px;font-weight:800;
+        box-shadow:0 4px 12px rgba(238,76,0,.28)}
+  .nav-links{display:flex;gap:22px;margin-left:auto;align-items:center;font-size:14px}
+  .nav-links a{color:var(--body)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+       padding:11px 20px;border-radius:10px;font-size:15px;font-weight:600;
+       border:1px solid transparent;transition:transform .15s ease,box-shadow .15s ease}
+  .btn:hover{text-decoration:none;transform:translateY(-1px)}
+  .btn-primary{background:linear-gradient(160deg,#ff8c1c,var(--orange-deep));color:#fff;
+               box-shadow:0 8px 22px rgba(238,76,0,.24)}
+  .btn-ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+  .btn-sm{padding:8px 14px;font-size:14px}
+  .btn-blue{background:var(--blue);color:#fff}
+
+  .hero{padding:76px 0 46px;text-align:center}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;background:var(--orange-soft);
+           border:1px solid #ffd8b3;color:#b64a00;border-radius:999px;
+           padding:7px 16px;font-size:14px;font-weight:600}
+  h1{font-size:clamp(34px,5.2vw,56px);line-height:1.25;color:var(--ink);
+     margin:26px 0 16px;letter-spacing:-.5px;font-weight:800}
+  h1 .accent{background:linear-gradient(120deg,#ff8c1c,#ee4c00);-webkit-background-clip:text;
+             background-clip:text;color:transparent}
+  .lead{font-size:19px;max-width:720px;margin:0 auto;color:var(--body)}
+  .hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:30px 0 18px}
+  .micro{font-size:14px;color:var(--muted)}
+  .hero-shot{margin:44px auto 0;max-width:1000px;border-radius:18px;overflow:hidden;
+             border:1px solid var(--line);box-shadow:var(--shadow);background:#fff}
+  .hero-shot figcaption{font-size:13px;color:var(--muted);padding:10px 16px;
+                        border-top:1px solid var(--line);text-align:left}
+
+  section{padding:66px 0}
+  section.alt{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .sec-head{max-width:720px;margin:0 auto 42px;text-align:center}
+  .kicker{font-size:13px;font-weight:700;letter-spacing:2px;color:var(--orange-deep);text-transform:uppercase}
+  h2{font-size:clamp(26px,3.4vw,36px);color:var(--ink);margin:10px 0 12px;line-height:1.3}
+  .sec-head p{color:var(--muted);margin:0}
+
+  .grid{display:grid;gap:18px}
+  .grid-3{grid-template-columns:repeat(3,1fr)}
+  .grid-2{grid-template-columns:repeat(2,1fr)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+        padding:26px;box-shadow:0 4px 16px rgba(28,32,40,.04)}
+  .card h3{margin:0 0 10px;font-size:18px;color:var(--ink)}
+  .card p{margin:0;font-size:15px;color:var(--body)}
+  .num{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:10px;
+       background:var(--orange-soft);color:var(--orange-deep);font-weight:800;font-size:15px;margin-bottom:14px}
+
+  .sites{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
+  .chip{background:#fff;border:1px solid var(--line);border-radius:999px;
+        padding:10px 20px;font-size:15px;font-weight:600;color:var(--ink);
+        box-shadow:0 3px 10px rgba(28,32,40,.04)}
+  .chip span{color:var(--muted);font-weight:400;font-size:13px;margin-left:6px}
+
+  .steps{counter-reset:s;display:grid;gap:14px;max-width:820px;margin:0 auto}
+  .step{display:flex;gap:16px;align-items:flex-start;background:#fff;
+        border:1px solid var(--line);border-radius:14px;padding:18px 22px}
+  .step .n{flex:0 0 32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;
+           display:grid;place-items:center;font-weight:700;font-size:14px}
+  .step strong{color:var(--ink)}
+  .step p{margin:2px 0 0;font-size:15px}
+
+  .shots{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .shot-card{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+             box-shadow:var(--shadow)}
+  .shot-card img{width:100%;height:auto}
+  .shot-card .cap{padding:14px 20px;font-size:15px;color:var(--body);border-top:1px solid var(--line)}
+  .shot-card .cap strong{color:var(--ink)}
+
+  .privacy-box{display:grid;grid-template-columns:1.2fr 1fr;gap:32px;align-items:center;
+               background:linear-gradient(135deg,#fff7f0,#fff);border:1px solid #ffdcb8;
+               border-radius:20px;padding:36px}
+  .privacy-box h2{margin:0 0 12px}
+  .privacy-box ul{margin:0;padding-left:20px}
+  .privacy-box li{margin:6px 0}
+  .privacy-actions{display:flex;flex-direction:column;gap:10px}
+
+  .install{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start}
+  .install ol{padding-left:22px;margin:0}
+  .install li{margin:10px 0}
+  code{background:#eef1f6;padding:2px 6px;border-radius:5px;font-size:14px;color:#26303c}
+  pre{background:#1e2430;color:#e8edf5;border-radius:12px;padding:18px;overflow:auto;font-size:13px;line-height:1.6}
+  pre code{background:none;color:inherit;padding:0}
+
+  details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin-bottom:12px}
+  summary{cursor:pointer;font-weight:600;color:var(--ink)}
+  details p{margin:12px 0 0;font-size:15px}
+
+  footer{background:#171c26;color:#aeb6c4;padding:44px 0 32px;font-size:14px}
+  .foot{display:flex;flex-wrap:wrap;gap:24px;justify-content:space-between;align-items:flex-start}
+  .foot .brand{color:#fff}
+  .foot a{color:#d8dee8}
+  .foot-links{display:flex;gap:20px;flex-wrap:wrap}
+  .fine{max-width:1120px;margin:28px auto 0;padding:18px 24px 0;border-top:1px solid #2c3340;color:#828b9b;font-size:13px}
+
+  @media (max-width:860px){
+    .grid-3,.grid-2,.shots,.privacy-box,.install{grid-template-columns:1fr}
+    .nav-links a:not(.btn){display:none}
+    .hero{padding:52px 0 30px}
+    section{padding:48px 0}
+    .privacy-box{padding:26px}
+  }
+</style>
+</head>
+<body>
+<div class="top"></div>
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top"><span class="mark">T</span> TapePost</a>
+    <nav class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#sites">支持站点</a>
+      <a href="#flow">工作流程</a>
+      <a href="#install">安装</a>
+      <a href="privacy.html">隐私政策</a>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/kenter1643/TapePost">GitHub 源码</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div class="eyebrow">TapeOut 社区出品 · 开源 · MIT 许可</div>
+      <h1>一键提取正文与配图<br><span class="accent">转发到 X</span></h1>
+      <p class="lead">7 个平台的内容，清洗文字、去掉水印、整理成一条 X 草稿素材。<br>最后一步始终由你手动完成 —— 扩展不会替你发布任何内容。</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/kenter1643/TapePost">获取源码 / 本地安装</a>
+        <a class="btn btn-ghost" href="#flow">看看它怎么工作</a>
+      </div>
+      <p class="micro">Chrome 116+ · Manifest V3 · 无账号 · 无服务器 · 无遥测</p>
+      <figure class="hero-shot">
+        <img src="assets/screenshots/01_overview_1280x800.png" alt="TapePost 工作流程示意：左侧微博内容右上角的一键转发按钮，右侧 X 发推框已预填正文">
+        <figcaption>功能示意图：从内容页的一键转发，到 X 发推框的预填草稿。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="features" class="alt">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">Why TapePost</div>
+        <h2>搬运内容最麻烦的几步，一次做完</h2>
+        <p>不接管账号、不自动发文，只把你本来要手动复制粘贴的那几步压缩成一次点击。</p>
+      </div>
+      <div class="grid grid-3">
+        <div class="card"><div class="num">01</div><h3>只认这一条</h3><p>按正文锚点定位卡片，剥掉昵称、时间、认证标签和话题尾巴；点击时实时重新解析，滚动后 DOM 复用也不会抓错内容。</p></div>
+        <div class="card"><div class="num">02</div><h3>配图一张不落</h3><p>九宫格、多个媒体容器、懒加载属性、CSS 背景图、内联图片数据、X 原图参数，最多 9 张，自动排除头像等干扰图。</p></div>
+        <div class="card"><div class="num">03</div><h3>本地去水印</h3><p>Canvas 先真实检测底部白色水印，命中才用包围盒插值与区域重建；没检测到水印的原图保持不动，不会强行抹图。</p></div>
+        <div class="card"><div class="num">04</div><h3>多图托盘</h3><p>右下角弹出「干净图 N 张」：逐张复制、拼成一张长图、全部下载。托盘就绪后再打开 X，避免新标签页抢焦点。</p></div>
+        <div class="card"><div class="num">05</div><h3>文字自动预填</h3><p>清洗后的正文通过发推意图链接预填到 X；可按需附上原推链接与个人署名，话题尾巴按你的设置处理。</p></div>
+        <div class="card"><div class="num">06</div><h3>发送由你决定</h3><p>扩展只写入剪贴板与预填文字，不调用任何发布接口。检查内容、粘贴图片、手动点发送，主动权一直在你手里。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="sites">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">7 platforms</div>
+        <h2>一个按钮，覆盖常看的内容站</h2>
+        <p>每个站点都有独立的选择器、图床域名、防盗链 Referer 与水印策略，可在设置里逐个开关；未知网站不注入任何界面。</p>
+      </div>
+      <div class="sites">
+        <div class="chip">微博 <span>九宫格 · 去水印</span></div>
+        <div class="chip">知乎 <span>正文与配图</span></div>
+        <div class="chip">微信公众号 <span>正文与配图</span></div>
+        <div class="chip">B 站动态 <span>正文与配图</span></div>
+        <div class="chip">豆瓣广播 <span>正文与配图</span></div>
+        <div class="chip">小红书 <span>正文与配图</span></div>
+        <div class="chip">X / Twitter <span>推文原图</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="flow" class="alt">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">How it works</div>
+        <h2>五步，从看到发</h2>
+        <p>整个过程都在你的浏览器和本机完成。</p>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><div><strong>打开任一支持的站点</strong><p>内容右上角出现一枚橙色「一键转发」。</p></div></div>
+        <div class="step"><div class="n">2</div><div><strong>点击按钮</strong><p>识别这一条的正文，剥离元信息；同时采集全部内容配图。</p></div></div>
+        <div class="step"><div class="n">3</div><div><strong>本地处理图片</strong><p>检测并去除底部白色水印，未命中水印的图原样保留。</p></div></div>
+        <div class="step"><div class="n">4</div><div><strong>挑图</strong><p>多图时右下角弹出托盘：逐张复制、拼长图或全部下载；单图/纯文字会直接打开 X。</p></div></div>
+        <div class="step"><div class="n">5</div><div><strong>在 X 里手动发送</strong><p>正文已预填，粘贴图片并确认后，由你点击发送。</p></div></div>
+      </div>
+      <div class="shots" style="margin-top:38px">
+        <figure class="shot-card">
+          <img src="assets/screenshots/02_sites_1280x800.png" alt="站点设置面板示意图：7 个站点开关与去水印选项" loading="lazy">
+          <div class="cap"><strong>站点开关</strong>：按需启用，关闭后该站点不会再注入界面。</div>
+        </figure>
+        <figure class="shot-card">
+          <img src="assets/screenshots/03_gallery_1280x800.png" alt="多图托盘示意图：干净图列表与复制、拼图、下载操作" loading="lazy">
+          <div class="cap"><strong>多图托盘</strong>：逐张复制、拼长图、全部下载，一次处理完。</div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="privacy">
+    <div class="wrap">
+      <div class="privacy-box">
+        <div>
+          <div class="kicker">Privacy first</div>
+          <h2>你的内容，不离开这台电脑</h2>
+          <ul>
+            <li>没有服务器、没有账号体系、没有统计与遥测</li>
+            <li>所有文字提取、去水印、剪贴板写入都在本机完成</li>
+            <li>仅向图片 CDN 请求当前这条内容的媒体，不读取历史记录与其它标签页</li>
+            <li>设置只存在 <code>chrome.storage.local</code>，无远程代码</li>
+          </ul>
+        </div>
+        <div class="privacy-actions">
+          <a class="btn btn-primary" href="privacy.html">阅读完整隐私政策</a>
+          <a class="btn btn-ghost" href="https://github.com/kenter1643/TapePost/blob/main/README.md">查看源码与权限说明</a>
+          <p class="micro" style="margin:6px 0 0">开源可审计：Manifest V3，权限逐项说明理由。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install" class="alt">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">Get started</div>
+        <h2>本地安装（开发者模式）</h2>
+        <p>商店版正在上架流程中；在此之前可以直接从源码加载。</p>
+      </div>
+      <div class="install">
+        <div class="card">
+          <h3>四步开始使用</h3>
+          <ol>
+            <li>克隆仓库：<code>git clone https://github.com/kenter1643/TapePost.git</code></li>
+            <li>打开 <code>chrome://extensions</code>，开启右上角「开发者模式」</li>
+            <li>点「加载已解压的扩展程序」，选择仓库根目录</li>
+            <li>打开任一支持的站点，看到橙色「一键转发」即可</li>
+          </ol>
+          <p style="margin-top:16px">改过代码后在扩展页点刷新，并刷新来源站页面。设置面板里有「运行环境自检」可排查 Service Worker、DNR 规则与离屏文档状态。</p>
+        </div>
+        <div>
+          <div class="card">
+            <h3>回归测试</h3>
+            <p>仓库自带 Node 端到端测试，模拟 MV3 消息链路跑完一次转发，共 43 个场景，无需浏览器。</p>
+            <pre><code>node test-harness.js
+WBX_VERBOSE=1 node test-harness.js</code></pre>
+            <p style="margin-top:14px"><a href="https://github.com/kenter1643/TapePost/blob/main/README.md">完整文档与目录说明 →</a></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap" style="max-width:860px">
+      <div class="sec-head">
+        <div class="kicker">FAQ</div>
+        <h2>几个常见疑问</h2>
+      </div>
+      <details open><summary>它会自动替我发推吗？</summary><p>不会。扩展只预填文字、把干净图片写入剪贴板或下载到本机，不调用任何发布接口，最后一步必须你在 X 里手动点发送。</p></details>
+      <details><summary>视频能去水印吗？</summary><p>微博视频会尝试通过公开接口取高清地址；X 视频通常是 HLS / blob 流，暂不能导出干净 mp4。其余站点只能取页面中出现的直链。</p></details>
+      <details><summary>为什么有些图片没有变化？</summary><p>去水印是「先检测、后重建」：只有检测到底部白色水印才处理，检测不到时原图保留，避免把正常图片抹坏。各站水印样式不同，效果会有差异。</p></details>
+      <details><summary>小红书图片偶尔下载失败？</summary><p>它的图片地址带时效签名，过期后刷新来源页面再点一次即可。其它图床的防盗链由扩展自动注入对应 Referer 处理。</p></details>
+      <details><summary>转载别人的内容需要注意什么？</summary><p>内容权利属于原作者，转载或二创前请自行确认授权，建议开启设置里的「附原推链接」标注来源。TapePost 与 X 及上述任何站点均无官方关联。</p></details>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <a class="brand" href="#top"><span class="mark">T</span> TapePost</a>
+      <p style="margin:12px 0 0;max-width:420px">一键提取正文与配图，转发到 X。本地处理，零数据外传。</p>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/kenter1643/TapePost">GitHub 源码</a>
+      <a href="https://github.com/kenter1643/TapePost/releases">下载商店包</a>
+      <a href="privacy.html">隐私政策</a>
+      <a href="https://github.com/kenter1643/TapePost/blob/main/LICENSE">MIT 许可</a>
+      <a href="https://github.com/kenter1643/TapePost/issues">反馈问题</a>
+    </div>
+  </div>
+  <div class="fine">TapeOut 社区 · 昆哥　｜　版本 1.0.0　｜　本页面为功能示意，截图仅作说明之用。TapePost 与 X、微博及上述任何站点均无官方关联。</div>
+</footer>
+</body>
+</html>
