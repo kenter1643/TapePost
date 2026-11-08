@@ -1547,6 +1547,59 @@ async function runReplyComposerChecks() {
     vm.runInContext('injectIntoReplyComposers()', contentCtx, { timeout: 3000 });
     A('重新开启后按钮恢复', replyBtns().length === 1);
 
+    /* ---- 1.3.4 真机事故回放 ----
+     * 真机 DOM 里回复框区域堆了 33 个「AI 评论」按钮：host.children 是
+     * HTMLCollection（没有 .filter），旧代码的早退判断永远为 false，
+     * 每轮 MutationObserver 都再注入一个。按钮文字被当成推文正文发给 Grok，
+     * 模型只回了 🤖，页面报「没读到 Grok 的回答块」。 */
+    const makeHtmlCollectionLike = (arr) => {
+      const c = {
+        length: arr.length,
+        item(i) { return arr[i] || null; },
+        namedItem() { return null; },
+        push(n) { arr.push(n); c[c.length++] = n; return c.length; },
+        indexOf(x) { return arr.indexOf(x); },
+        splice(i, n) {
+          const removed = arr.splice(i, n);
+          for (let k = 0; k < 256; k++) delete c[k];
+          arr.forEach((x, k) => { c[k] = x; });
+          c.length = arr.length;
+          return removed;
+        },
+        [Symbol.iterator]: function* () { for (const x of arr) yield x; }
+      };
+      arr.forEach((x, k) => { c[k] = x; });
+      return c; // 故意不提供 .filter
+    };
+    const realChildren = rd.editor.children;
+    rd.editor.children = makeHtmlCollectionLike(realChildren);
+    for (let i = 0; i < 8; i++) vm.runInContext('scanAndInject()', contentCtx, { timeout: 3000 });
+    const injectedCount = vm.runInContext('document.querySelectorAll(".wbx-reply-btn").length', contentCtx);
+    A('1.3.4 children 为 HTMLCollection（无 filter）时仍只留 1 个 AI 评论按钮',
+      injectedCount === 1);
+    A('1.3.4 不再累积几十个重复按钮', injectedCount < 3);
+    rd.editor.children = realChildren;
+
+    A('1.3.4 插件按钮文字被清洗干净，不会当成推文正文',
+      vm.runInContext('sanitizePostText("AI 评论 AI 评论 ⏳ 生成中 一键转发")', contentCtx) === '');
+    A('1.3.4 真实推文正文不受清洗影响',
+      String(vm.runInContext('sanitizePostText("给自己放了一个小假 东京之旅结束✨")', contentCtx))
+        .includes('东京之旅结束'));
+    const noisyScope = new MiniNode('div');
+    noisyScope.innerText = noisyScope.textContent = 'AI 评论 AI 评论 AI 评论 TapeOut 日报';
+    contentCtx.__noisyScope = noisyScope;
+    A('1.3.4 contextTextFromScope 剥掉插件 UI 文字只留正文',
+      vm.runInContext('contextTextFromScope(__noisyScope)', contentCtx) === 'TapeOut 日报');
+    const goodCard = new MiniNode('article', { attrs: { 'data-testid': 'tweet' } });
+    goodCard.appendChild(new MiniNode('div', {
+      attrs: { 'data-testid': 'tweetText' },
+      text: '今天东京之旅结束，祈祷事业顺顺顺'
+    }));
+    contentCtx.__goodCard = goodCard;
+    A('1.3.4 正文优先取 X 官方 [data-testid="tweetText"]',
+      String(vm.runInContext('replyTweetText(__replyDlg, __goodCard)', contentCtx))
+        .includes('祈祷事业顺顺顺'));
+
     rd.input.remove();
     A('找不到回复框时回写返回 false（交给 intent 兜底）',
       vm.runInContext('applyCommentToReply("兜底候选", __replyBtn)', contentCtx) === false);

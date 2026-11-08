@@ -301,6 +301,31 @@ function cleanText(s) {
  * 按钮被 append 到正文节点内部，innerText 会把「一键转发 / ⏳ 处理中…」算进正文，
  * 既污染转发到 X 的文字，也会让指纹随按钮状态变化而抖动。
  */
+/* 1.3.4 真机事故防护：插件自己注入的 UI 文字。
+ * 上一版回复框被重复注入 33 个「AI 评论」按钮，这些文字被当成推文正文
+ * 发给 Grok（提示词里是几十个「AI 评论」），模型只回了一个 🤖，
+ * 于是页面报「没读到 Grok 的回答块」。所有取正文的路径都必须先过这一层。 */
+const WBX_UI_WORDS = [
+  '⏳ 生成中', '⏳ 处理中', '处理中…', 'AI 评论', '一键转发',
+  '再来 3 条', '复制提示词', '读取 Grok 回答', '请生成英文回复', '✦AI 生成'
+];
+function stripInjectedUi(raw) {
+  let s = String(raw || '');
+  for (const w of WBX_UI_WORDS) {
+    const esc = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    s = s.replace(new RegExp(esc, 'g'), ' ');
+  }
+  return s;
+}
+
+/* 最终发给 Grok / 用于转发前的统一清洗：去插件 UI、去 X 自身界面词、压空白、限长 */
+function sanitizePostText(t) {
+  let s = stripInjectedUi(String(t || ''));
+  s = s.replace(/Drafts|Replying to\s*@?\S+|Post your reply|Add photos or video|Add a GIF|Generate image|Add poll|Add emoji|Schedule post|Content disclosure|Show translation|Show more/gi, ' ');
+  s = cleanText(s.replace(/\s+/g, ' ')).trim();
+  return s.slice(0, 1200);
+}
+
 function textOfNode(el) {
   if (!el) return '';
   let raw = el.innerText || el.textContent || '';
@@ -313,7 +338,9 @@ function textOfNode(el) {
       if (t) raw = raw.split(t).join('');
     }
   } catch (e) {}
-  return cleanText(raw);
+  // 按钮被禁用时文字会变成「⏳ 生成中」，上面的 split 就删不掉残留的「AI 评论」；
+  // 再用固定词表全局清一遍，连续注入几十个按钮也能清干净。
+  return cleanText(stripInjectedUi(raw));
 }
 
 /*
@@ -898,7 +925,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.3.3';
+  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.3.4';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1008,24 +1035,43 @@ function findReplyComposers() {
   return out;
 }
 
+function injectedReplyButtons() {
+  try { return Array.from(document.querySelectorAll('.wbx-reply-btn')); }
+  catch (e) { return []; }
+}
+
 function injectIntoReplyComposers() {
   if (!SITE || SITE.id !== 'x') return;
   const enabled = settings.enableAiComment !== false;
   // 关掉开关时把已注入的按钮清掉（只清自己的，不动页面上其它插件的按钮）
   if (!enabled) {
-    try {
-      document.querySelectorAll('.wbx-reply-btn').forEach((n) => { if (n.remove) n.remove(); });
-    } catch (e) {}
+    injectedReplyButtons().forEach((n) => { if (n.remove) n.remove(); });
     return;
   }
-  findReplyComposers().forEach((c) => {
+  const composers = findReplyComposers();
+  const hosts = composers.map((c) => c.host).filter(Boolean);
+  /* 1.3.4 关键修复：host.children 是 HTMLCollection，没有 .filter！
+   * 上一版写成 `(host.children || []).filter ? ... : null`，判断永远为 false，
+   * 于是每轮 MutationObserver 扫描都往回复框里再塞一个「AI 评论」，
+   * 真机上累积到 33 个，按钮文字被当成推文正文发给 Grok。 */
+  // 1) 清掉父节点已被 X 重渲染换掉的孤儿按钮
+  injectedReplyButtons().forEach((n) => {
+    if (hosts.indexOf(n.parentElement) === -1 && n.remove) n.remove();
+  });
+  // 2) 同一个 host 只保留一个，多余的清掉
+  hosts.forEach((host) => {
+    const mine = Array.prototype.filter.call(host.children || [],
+      (c) => String(c.className || '').indexOf('wbx-reply-btn') !== -1);
+    for (let i = 1; i < mine.length; i++) { if (mine[i].remove) mine[i].remove(); }
+  });
+
+  composers.forEach((c) => {
     const host = c.host;
     if (!host || !host.appendChild) return;
     // 内容不变时一律早退：注入按钮本身会触发 MutationObserver，删了重建会自触发死循环
-    const old = (host.children || []).filter
-      ? (host.children || []).filter((n) => String(n.className || '').indexOf('wbx-reply-btn') !== -1)[0]
-      : null;
-    if (old) return;
+    const exists = Array.prototype.some.call(host.children || [],
+      (n) => String(n.className || '').indexOf('wbx-reply-btn') !== -1);
+    if (exists) return;
     ensureRelative(host);
     const btn = document.createElement('button');
     btn.className = 'wbx-comment-btn wbx-reply-btn';
@@ -1228,10 +1274,41 @@ function extractXStatusIdFromScope(scope) {
 /* 弹窗里拿不到规整的 article 时，用「Replying to」上方的原推文本做上下文，
  * 去掉 X 自己的 UI 文案，避免把占位符当推文正文发给 Grok。 */
 function contextTextFromScope(scope) {
-  let t = nodeText(scope).replace(/\s+/g, ' ').trim();
-  t = t.replace(/Drafts|Replying to\s*@?\S+|Post your reply|Add photos or video|Add a GIF|Generate image|Add poll|Add emoji|Schedule post|Content disclosure|Reply/gi, ' ');
-  t = t.replace(/\s+/g, ' ').trim();
-  return t.slice(0, 600);
+  // 1.3.4：scope 里可能混着几十个插件按钮，必须先剥掉插件 UI 文字再谈上下文
+  return sanitizePostText(nodeText(scope)).slice(0, 600);
+}
+
+/* 1.3.4：回复弹窗里最可靠的正文来源是 X 官方的 [data-testid="tweetText"]。
+ * 上一版靠启发式 findTextNode 扫整个 scope，把回复框工具栏和插件按钮
+ * 都算进「推文正文」。这里优先取被回复推文的官方正文节点。 */
+function replyTweetText(scope, card) {
+  const sels = [
+    '[data-testid="tweetDetail"] [data-testid="tweetText"]',
+    'article[data-testid="tweet"] [data-testid="tweetText"]',
+    '[data-testid="tweetText"]'
+  ];
+  const roots = [];
+  if (scope && scope.querySelector) roots.push(scope);
+  if (card && card.querySelector && roots.indexOf(card) === -1) roots.push(card);
+  for (const root of roots) {
+    for (const sel of sels) {
+      let nodes = [];
+      try { nodes = Array.from(root.querySelectorAll(sel)); } catch (e) { nodes = []; }
+      for (const n of nodes) {
+        const t = sanitizePostText(textOfNode(n));
+        if (t.length >= 4) return t;
+      }
+    }
+  }
+  // 详情页的 scope 可能只包住回复框，被回复推文在 scope 外面
+  try {
+    const n = document.querySelector(sels.join(','));
+    if (n) {
+      const t = sanitizePostText(textOfNode(n));
+      if (t.length >= 4) return t;
+    }
+  } catch (e) {}
+  return '';
 }
 
 async function copyTextFallback(text) {
@@ -1317,12 +1394,15 @@ async function onAiComment(card, btn) {
     showToast('插件刚重新加载过，旧按钮已失效：请刷新 X 页面（Cmd+R）后再点「AI 评论」。', 9000);
     return;
   }
-  let text = '';
-  try { if (card) text = resolvePost(card).text || ''; } catch (e) {}
   const scope = (btn && btn.__wbxScope) || null;
+  let text = '';
+  // 1.3.4：优先用 X 官方 tweetText 节点，避开回复框工具栏与插件按钮
+  try { text = replyTweetText(scope, card); } catch (e) {}
+  if (!text) { try { if (card) text = resolvePost(card).text || ''; } catch (e) {} }
   if (!text && scope) text = contextTextFromScope(scope);
+  text = sanitizePostText(text);
   if (!text) {
-    showToast('没有读到被回复推文的正文（可能是纯图推文或 X 结构改版），已取消生成评论。可刷新页面，或在设置里填「回复框选择器」。', 8000);
+    showToast('没有读到被回复推文的正文（可能只剩插件按钮文字/纯图推文，或 X 结构改版），已取消生成评论，避免把界面文字发给 Grok。请刷新 X 页面后重试。', 9000);
     return;
   }
   const statusId = extractXStatusId(card) || extractXStatusIdFromScope(scope);

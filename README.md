@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.3.3　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.3.4　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -18,6 +18,22 @@
 3. **本地去水印**：Canvas 先检测底部白色水印，只在命中时用包围盒插值 / BFS 重建；没检测到的图原样保留，不会强行抹图。
 4. **多图托盘**：右下角弹出「干净图 N 张」，可逐张复制、拼长图、全部下载；托盘就绪后再点按钮打开 X，避免 X 抢焦点。
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
+
+### 1.3.4 修复：AI 评论把「AI 评论」当成推文正文发给 Grok
+
+真机排查（浏览器 MCP 实拍）：用户点「AI 评论」后报「X 站内 Grok 没返回可用结果：没读到 Grok 的回答块」。Grok 页面截图显示提示词里的 `推文正文` 是**几十个「AI 评论」重复**，模型只回了一个 🤖，自然读不到回答块。X 标签 DOM 里回复填写区实际堆了 **33 个「AI 评论」按钮**。
+
+根因：`injectIntoReplyComposers()` 用 `(host.children || []).filter(...)` 判断按钮是否已存在，但真实 DOM 的 `host.children` 是 **HTMLCollection，没有 `.filter`**，判断永远为 `false` → 每轮 MutationObserver 扫描都再注入一个。测试夹具把 `children` 做成数组，所以 1.3.1～1.3.3 的回归一直没抓到。
+
+修复：
+
+- `Array.prototype.filter/some.call(host.children, ...)` 正确判定；扫描时先清掉父节点已被 React 换掉的孤儿按钮，每个回复区只保留 1 个。
+- 新增 `stripInjectedUi()` / `sanitizePostText()`：所有取正文路径（`textOfNode` / `contextTextFromScope` / 最终 `text`）都剥掉插件按钮文字与 X 界面文案。
+- 新增 `replyTweetText(scope, card)`：评论正文**优先取 X 官方 `[data-testid="tweetText"]`**，避开回复框工具栏；启发式只作兜底。
+- 清洗后正文为空时**直接取消并提示**，不再把界面文字发给 Grok、不再报误导性的「没读到回答块」。
+- 回归测试扩到 **169 个场景**，含 HTMLCollection 事故回放、按钮收敛、正文清洗、`tweetText` 优先。
+
+> 升级后请在 `chrome://extensions` 点 TapePost「重新加载」，再刷新 X 页面；旧标签里的 33 个按钮会被新脚本自动收敛成 1 个。
 
 ### 1.3.3 修复：扩展重载后 X 标签连接失败（Receiving end does not exist）
 
@@ -49,7 +65,7 @@
 - 自动发送后校验 `promptSent / hasAnswer / changed`，任一不满足就带诊断信息报错；候选面板顶部显示「✅ 已确认读到 Grok 回答」。
 - **点击即弹出等待浮层**：spinner、随耗时推进的阶段文案、「关闭等待提示」按钮；结果回来或报错才自动关闭。手动「复制提示词 / 读取 Grok 回答」同样有等待反馈。
 
-该版本回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM（1.3.3 再扩到 163 个）。
+该版本回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM（1.3.3 扩到 163 个，1.3.4 扩到 169 个）。
 
 ### 1.3.1 新增：AI 评论按钮移到 X 回复填写区右侧
 
@@ -126,7 +142,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 
 ## 安装
 
-**Chrome 网上应用店**：1.3.3 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
+**Chrome 网上应用店**：1.3.4 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
 
 **本地加载（开发者模式）**
 
@@ -136,11 +152,11 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 4. 打开任一支持的站点，内容右上角出现「一键转发」即可使用
 5. 要用 AI 评论 / 链接核验：默认「自动」模式，没填 API Key 就用已登录的 X 站内 Grok（免费）；想走官方 API 才在「Grok 设置 → API 模式专属设置」填 Key 并点「测试当前模式」
 
-商店提交包 `store/TapePost_1.3.3_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.3.3_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
+商店提交包 `store/TapePost_1.3.4_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.3.4_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
 
 ```bash
-zip -q store/TapePost_1.3.3_store.zip \
-  manifest.json account.js sites.js grok.js background.js content.js inpaint.js \
+zip -q store/TapePost_1.3.4_store.zip \
+  manifest.json account.js sites.js grok.js grok-page.js background.js content.js inpaint.js \
   offscreen.html offscreen.js popup.html popup.js panel.html panel.js \
   icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png
 ```
