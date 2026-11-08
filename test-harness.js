@@ -665,6 +665,141 @@ async function runXGuards() {
   return ok;
 }
 
+/* ---------- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ---------- */
+function runTapeAIChecks() {
+  const T = require('./grok.js');
+  const checks = [];
+  const A = (name, fn) => {
+    let ok = false;
+    try { ok = !!fn(); } catch (e) { note('ERROR', 'TapeAI ' + name + ': ' + (e && e.message)); }
+    checks.push({ name, ok });
+  };
+
+  A('官方清单 5 条，含来源与核验日期', () =>
+    T.OFFICIAL_SITES.length === 5 && !!T.SOURCE.url && /^\d{4}-\d{2}-\d{2}$/.test(T.SOURCE.checkedAt));
+  A('5 条官方 URL 全部命中绿标', () =>
+    T.OFFICIAL_SITES.every((s) => T.matchOfficial(s.url).status === 'official'));
+  A('等价写法仍命中（www / 大小写 / query / 省略协议 / 末尾斜杠）', () => [
+    'https://www.tapeout.net/#/', 'TAPEOUT.NET', 'https://tapehub.ai/?ref=x',
+    'tapekit.org', 'https://x.com/Blonskr/'
+  ].every((u) => T.matchOfficial(u).status === 'official'));
+  A('官网子页面与官方子域仍算官方', () =>
+    T.matchOfficial('https://tapeout.net/market').status === 'official' &&
+    T.matchOfficial('https://app.tapehub.ai/').status === 'official');
+  A('x.com/blonskr 命中，其它 x.com 路径不给绿标', () =>
+    T.matchOfficial('https://x.com/blonskr').status === 'official' &&
+    T.matchOfficial('https://x.com/someuser/status/123').status === 'unknown' &&
+    T.matchOfficial('https://x.com/blonskr2').status === 'unknown');
+  A('形近域名 tapeout-net.com 不命中且报仿冒风险', () => {
+    const r = T.matchOfficial('https://tapeout-net.com/');
+    return r.status === 'unknown' && r.risks.some((x) => /疑似仿冒|品牌词|仿冒站/.test(x));
+  });
+  A('tapeout.net.evil.com 不命中且报仿冒风险', () => {
+    const r = T.matchOfficial('https://tapeout.net.evil.com/');
+    return r.status === 'unknown' && r.risks.some((x) => /疑似仿冒|品牌词|仿冒站/.test(x));
+  });
+  A('短链 / Punycode / 非 HTTPS 会标风险', () =>
+    T.matchOfficial('https://t.cn/abc').risks.some((x) => /短链/.test(x)) &&
+    T.matchOfficial('https://xn--tapeut-n2a.com/').risks.some((x) => /Punycode/.test(x)) &&
+    T.matchOfficial('http://tapeout.net/').risks.some((x) => /HTTPS/.test(x)));
+  A('javascript: 伪协议直接拦截', () => {
+    const r = T.matchOfficial('javascript:alert(1)');
+    return r.status === 'invalid' && /协议/.test(r.error || '');
+  });
+  A('参考清单命中 community，不给绿标', () =>
+    T.REFERENCE_SITES.every((s) => T.matchOfficial(s.url).status === 'community'));
+
+  A('评论解析：JSON 数组', () => {
+    const c = T.parseThreeComments('["第一条","第二条","第三条"]');
+    return c.length === 3 && c[0] === '第一条';
+  });
+  A('评论解析：Markdown 代码块 + 对象字段', () =>
+    T.parseThreeComments('```json\n{"comments":["甲","乙","丙"]}\n```').length === 3);
+  A('评论解析：编号列表兜底', () =>
+    T.parseThreeComments('1. 第一条\n2. 第二条\n3) 第三条').length === 3);
+  A('评论解析：去重并最多 3 条', () => {
+    const c = T.parseThreeComments('["同","同","乙","丙","丁"]');
+    return c.length === 3 && c[0] === '同' && c[1] === '乙';
+  });
+  A('核验解析：合法 JSON 与非法 JSON 兜底', () => {
+    const good = T.parseVerdict('{"verdict":"fake","reason":"域名相似","risk":"别连钱包"}');
+    const bad = T.parseVerdict('模型瞎说了一通');
+    return good.verdict === 'fake' && good.parsed === true && bad.verdict === 'unknown' && bad.parsed === false;
+  });
+  A('评论提示词替换 {POST} 并带 system 约束', () => {
+    const m = T.buildCommentMessages('这条推文很棒', null);
+    return m.length === 2 && m[0].role === 'system' && m[1].content.includes('这条推文很棒') &&
+      m[1].content.indexOf('{POST}') === -1;
+  });
+  A('自定义提示词删掉占位符时自动补正文', () =>
+    T.buildCommentMessages('自定义正文', '只写三条短评')[1].content.includes('自定义正文'));
+  A('核验提示词注入全部官方 URL 与待核验链接', () => {
+    const m = T.buildVerifyMessages('https://tapeout-net.com/', null);
+    const body = m[1].content;
+    return T.OFFICIAL_SITES.every((s) => body.includes(s.url)) &&
+      body.includes('tapeout-net.com') && body.includes('不要凭记忆补充');
+  });
+  A('模型判 official 也不能改变本地未命中的结论', () => {
+    const local = T.matchOfficial('https://tapeout-net.com/');
+    const grok = T.parseVerdict('{"verdict":"official","reason":"我觉得是"}');
+    return local.status !== 'official' && grok.verdict === 'official';
+  });
+  return checks;
+}
+
+async function runCommentButtonChecks() {
+  const checks = [];
+  const A = (name, v) => checks.push({ name, ok: !!v });
+  try {
+    resetWorld();
+    scenario = { hostname: 'x.com', path: '/home' };
+    loadContent();
+    await vm.runInContext('loadSettings()', contentCtx);
+    const built = makeSiteCard({
+      site: 'x', text: '这是一条用于测试 AI 评论按钮的推文正文。',
+      imageCount: 1, sourceLink: '/someuser/status/1234567890'
+    });
+    contentCtx.__card = built.card;
+    vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 });
+    const all = built.card._all();
+    const group = all.find((n) => n.className === 'wbx-btn-group');
+    A('X 推文注入紫色 AI 评论按钮', all.some((n) => n.className === 'wbx-comment-btn'));
+    A('一键转发与 AI 评论并排在同一 group', !!group &&
+      group.children.some((c) => c.className === 'wbx-repost-btn') &&
+      group.children.some((c) => c.className === 'wbx-comment-btn'));
+
+    // 真实浏览器里 innerText 会聚合子按钮文字；MiniNode 不会，这里手动模拟
+    built.textNode.innerText = '这是一条用于测试 AI 评论按钮的推文正文。 一键转发 AI 评论';
+    built.textNode.textContent = built.textNode.innerText;
+    const post = vm.runInContext('resolvePost(__card)', contentCtx);
+    A('按钮文字不污染转发正文', !!post && !/一键转发|AI 评论/.test(post.text) && post.text.includes('推文正文'));
+    A('回复目标 status id 可解析',
+      vm.runInContext('extractXStatusId(__card)', contentCtx) === '1234567890');
+
+    vm.runInContext('settings.enableAiComment = false', contentCtx);
+    vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 });
+    A('关闭开关后不再注入评论按钮、转发按钮仍在',
+      !built.card._all().some((n) => n.className === 'wbx-comment-btn') &&
+      built.card._all().some((n) => n.className === 'wbx-repost-btn'));
+
+    // 非 X 站点不应出现 AI 评论按钮
+    resetWorld();
+    scenario = { hostname: 'weibo.com', path: '/' };
+    loadContent();
+    await vm.runInContext('loadSettings()', contentCtx);
+    const wb = makeRealCard({ text: '微博正文测试内容', imageCount: 1, uid: null });
+    contentCtx.__wbCard = wb.card;
+    vm.runInContext('injectIntoCard(__wbCard)', contentCtx, { timeout: 3000 });
+    A('非 X 站点不注入 AI 评论按钮',
+      wb.card._all().some((n) => n.className === 'wbx-repost-btn') &&
+      !wb.card._all().some((n) => n.className === 'wbx-comment-btn'));
+  } catch (e) {
+    A('X 评论按钮检查无异常', false);
+    note('ERROR', '评论按钮检查抛错: ' + (e && e.message));
+  }
+  return checks;
+}
+
 // ---------- 真实结构卡片 ----------
 function makeRealCard(cfg) {
   const uid = cfg.uid || '6305330504';
@@ -791,9 +926,11 @@ async function runScenario(name, cfg, expect) {
   try { vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 }); }
   catch (e) { note('ERROR', 'injectIntoCard 抛错: ' + (e && e.message)); }
   const expectedHost = cfg.textEmpty ? built.media : built.textNode;
-  const inContent = expectedHost.children.some((n) => n.className === 'wbx-repost-btn');
-  const inNoise = built.reco.children.concat(built.header.children)
-    .some((n) => n.className === 'wbx-repost-btn');
+  // v1.1.0 起按钮包在 .wbx-btn-group 里（X 站点还要并排第二个「AI 评论」），
+  // 断言改成「按钮在正文容器的子树里、不在作者区」，语义不变但不再要求它是直接子元素。
+  const hasRepostBtn = (node) => !!(node && node._all && node._all().some((n) => n.className === 'wbx-repost-btn'));
+  const inContent = hasRepostBtn(expectedHost);
+  const inNoise = hasRepostBtn(built.reco) || hasRepostBtn(built.header);
   const anchorOk = inContent && !inNoise;
   note('anchor', `内容容器(${cfg.textEmpty ? '图片墙' : '正文'})有按钮=${inContent} 作者区有按钮=${inNoise}`);
 
@@ -1193,6 +1330,13 @@ async function runScenario(name, cfg, expect) {
   } catch (e) { note('ERROR', 'DIAG 失败: ' + (e && e.message)); }
   console.log(diagOk ? '[CHECK] 运行环境自检 DIAG：PASS ✅' : '[CHECK] 运行环境自检 DIAG：FAIL ❌');
   results.push(diagOk);
+
+  // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
+  const aiChecks = runTapeAIChecks().concat(await runCommentButtonChecks());
+  aiChecks.forEach((c) => {
+    console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
+    results.push(c.ok);
+  });
 
   const pass = results.every(Boolean);
   console.log(`\n=== 总计 ${results.length} 个场景，通过 ${results.filter(Boolean).length} 个：` +

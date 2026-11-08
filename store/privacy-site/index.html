@@ -28,57 +28,76 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　适用版本：1.0.0 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　适用版本：1.1.0 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
-    <strong>一句话总结：</strong> TapePost 是一个纯本地的浏览器扩展。它<strong>没有服务器、没有账号体系、没有统计或遥测</strong>，不会把你看到的网页内容、图片、文字或任何个人数据上传到开发者或第三方服务器。所有提取、去水印、剪贴板写入和文件下载都发生在你的浏览器和本机。
+    <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>只有当你主动使用 AI 功能</strong>（X 上的「AI 评论」或生态面板的「链接真伪查询」）时，扩展才会把你点选的那段文字或那条链接，连同你设定的提示词，用你自己的 API Key 发送给 xAI 的 Grok 接口；不使用时不会发出这类请求。
   </div>
 
   <h2>1. 我们会处理哪些数据</h2>
-  <p>仅在你主动点击页面上的「一键转发」按钮时，扩展才会在当前标签页读取下列内容，并且只在本机处理：</p>
+  <p>仅在你主动点击页面上的「一键转发」「AI 评论」或生态面板的「核验链接」时，扩展才读取下列内容：</p>
   <ul>
-    <li>当前这条内容的正文文字（用于清洗后预填到 X 发推框）；</li>
-    <li>这条内容的配图与视频直链地址（用于下载到本地、写入剪贴板或在本地做去水印）；</li>
-    <li>这条内容的固定链接与标识（用于可选的原推链接标注、文件命名）；</li>
-    <li>页面 DOM 结构（用于定位正文、内容图与插入转发按钮）。</li>
+    <li>当前这条内容的正文文字（转发时用于清洗后预填到 X 发推框；AI 评论时用于生成回复候选，截断至最多 1200 字符）；</li>
+    <li>这条内容的配图与视频直链地址（仅用于下载到本地、写入剪贴板或在本地做去水印）；</li>
+    <li>这条内容的固定链接与公开标识（用于可选的原推链接标注、回复目标定位、文件命名）；</li>
+    <li>你在生态面板输入框里粘贴的待核验链接；</li>
+    <li>页面 DOM 结构（用于定位正文、内容图与插入按钮）。</li>
   </ul>
-  <p>扩展不会读取与你正在转发的内容无关的标签页，不会读取密码、Cookie、表单输入或浏览历史。</p>
+  <p>扩展不会读取与你正在操作的内容无关的标签页，不会读取密码、Cookie、表单输入或浏览历史，也不会上传图片或视频文件。</p>
 
   <h2>2. 数据存到哪里</h2>
   <ul>
-    <li><strong>设置项</strong>（去水印开关、站点开关、署名开关等）保存在浏览器的 <code>chrome.storage.local</code>，仅存于本机；若你开启了 Chrome 同步，浏览器可能按你自己的 Chrome 设置同步这部分偏好。</li>
+    <li><strong>偏好设置</strong>（去水印开关、站点开关、署名开关、提示词等）保存在 <code>chrome.storage.sync</code>；若你开启了 Chrome 同步，浏览器会按你自己的同步设置同步这部分偏好。</li>
+    <li><strong>xAI API Key 与接口配置</strong>（模型、协议、网关地址）保存在 <code>chrome.storage.local</code>，<strong>仅存本机、不同步、不随扩展分发</strong>，只用于向你指定的接口发起带 <code>Authorization</code> 头的请求。开发者无法读取它。</li>
     <li><strong>处理后的图片</strong>写入系统剪贴板，或按你的操作下载到本机下载目录；文件名前缀为 <code>xpost_</code>。</li>
-    <li><strong>文字</strong>只通过 URL 参数预填到 <code>x.com/intent/tweet</code> 或 <code>twitter.com/intent/tweet</code> 的新标签页，由你手动点击发送。扩展不调用任何发布接口，也不会替你发帖。</li>
+    <li><strong>文字</strong>只通过 URL 参数预填到 <code>x.com/intent/tweet</code> 或 <code>twitter.com/intent/tweet</code> 的新标签页，由你手动点击发送。扩展不调用任何发布接口，也不会替你发帖或回复。</li>
+    <li><strong>官方平台清单</strong>是内置在扩展代码里的静态数据（来源 <a href="https://tapeout.link/">TapeOut.link</a> 的 OFFICIAL 标记，核验日期 2026-11-08），不会联网拉取，也不包含你的任何信息。</li>
   </ul>
   <p>我们（开发者）不运营任何后端服务，因此无法访问、收集、存储或分析上述数据。</p>
 
   <h2>3. 网络请求</h2>
-  <p>扩展会向内容所在的图片/视频 CDN 发起请求以下载媒体（例如 sinaimg.cn、zhimg.com、qpic.cn、hdslb.com、doubanio.com、xhscdn.com、twimg.com）。为通过图床防盗链校验，扩展会用 <code>declarativeNetRequest</code> 为这些请求设置对应站点的 <code>Referer</code> 请求头。微博视频会优先查询公开的 <code>m.weibo.cn/statuses/show</code> 接口获取高清地址（请求中仅包含该条内容的公开 ID）。除此之外没有其它外发请求，没有分析、广告或跟踪代码，也没有远程加载的脚本。</p>
+  <p><strong>转发链路：</strong>扩展会向内容所在的图片/视频 CDN 发起请求以下载媒体（例如 sinaimg.cn、zhimg.com、qpic.cn、hdslb.com、doubanio.com、xhscdn.com、twimg.com）。为通过图床防盗链校验，扩展会用 <code>declarativeNetRequest</code> 为这些请求设置对应站点的 <code>Referer</code> 请求头。微博视频会优先查询公开的 <code>m.weibo.cn/statuses/show</code> 接口获取高清地址（请求中仅包含该条内容的公开 ID）。</p>
+  <p><strong>AI 链路（仅主动使用时）：</strong>见下节。</p>
+  <p>扩展没有分析、广告或跟踪代码，没有远程加载的脚本，也不连接开发者自建的服务器。</p>
 
-  <h2>4. 权限说明</h2>
+  <h2>4. AI 功能与第三方服务（xAI Grok）</h2>
+  <div class="box">
+    <p style="margin-top:0">1.1.0 起新增两个由你手动触发的 AI 功能。它们共用同一个后台请求通道，<strong>不填 API Key 就不会发出任何 AI 请求</strong>：</p>
+    <ul>
+      <li><strong>X 一键评论</strong>：点击后把该条推文的正文 + 你设定的评论提示词发送给 <code>https://api.x.ai/v1</code>（或你在设置里填写的兼容网关），由 Grok 生成 3 条回复候选。候选只显示在本机浮层里；选中后才预填到 X 回复框，发送由你手动完成。</li>
+      <li><strong>链接真伪查询</strong>：点击核验后把待核验链接 + 内置官方清单 + 你设定的核验提示词发送给同一接口，由 Grok 生成解释与仿冒风险判断。最终是否给「官方绿标」由本地白名单决定，不采信模型结论。</li>
+    </ul>
+    <p><strong>不会发送：</strong>浏览历史、Cookie、X 登录态、其它标签页内容、图片/视频文件、你的账号密码，以及除 API Key 之外的任何凭据。</p>
+    <p><strong>第三方责任：</strong>发送给 xAI 的内容受 <a href="https://x.ai/legal/privacy-policy">xAI 的隐私政策</a>与其服务条款约束，xAI 可能会按其政策临时处理请求内容；调用额度与费用由你自行承担。如果你填写的是第三方兼容网关，该网关的运营方同样会收到上述内容，请先确认你信任它。扩展开发者不接收、不留存这些内容。</p>
+  </div>
+  <p>你可以在设置面板里删除 API Key 或关闭「AI 评论」按钮；删除后 AI 功能立即停用，转发功能仍然完全离线可用。</p>
+
+  <h2>5. 权限说明</h2>
   <div class="box">
   <table>
     <tr><th>权限</th><th>用途</th></tr>
-    <tr><td>storage</td><td>在本机保存你的设置偏好</td></tr>
-    <tr><td>clipboardWrite</td><td>把你点选的干净图片写入系统剪贴板，便于在 X 里粘贴</td></tr>
+    <tr><td>storage</td><td>在本机保存设置偏好与你的 API Key</td></tr>
+    <tr><td>clipboardWrite</td><td>把你点选的干净图片或评论文字写入系统剪贴板，便于在 X 里粘贴</td></tr>
     <tr><td>downloads</td><td>把处理后的图片/视频保存到本机下载目录</td></tr>
     <tr><td>offscreen</td><td>创建离屏文档，在后台用 Canvas 处理图片并写入剪贴板</td></tr>
-    <tr><td>declarativeNetRequest</td><td>为图片 CDN 请求设置 Referer，避免防盗链导致下载失败</td></tr>
+    <tr><td>declarativeNetRequest</td><td>为图片 CDN 请求设置 Referer，避免防盗链导致下载失败；固定 9 条规则，不拦截其它流量</td></tr>
     <tr><td>站点主机权限</td><td>仅在你打开的 7 个已启用站点页面上识别内容、注入按钮并读取配图</td></tr>
+    <tr><td><code>api.x.ai</code> 主机权限</td><td>仅在你主动使用 AI 功能时，向 xAI 官方接口发送生成请求</td></tr>
+    <tr><td>可选主机权限（默认未授予）</td><td>仅当你在设置里填写自定义网关并主动点「允许网关域名」时，才申请该域名的访问权</td></tr>
   </table>
   </div>
   <p>你可以在扩展设置面板里逐个关闭站点；关闭某个站点后，扩展不会在该站点注入任何界面。</p>
 
-  <h2>5. 第三方内容与你的责任</h2>
-  <p>扩展帮助你搬运公开页面的文字与图片。这些内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。X（x.com / twitter.com）的服务与可达性由 X 自行负责，本扩展与其无关联，也不代表其官方。</p>
+  <h2>6. 第三方内容与你的责任</h2>
+  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）与 xAI 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。</p>
 
-  <h2>6. 儿童隐私</h2>
+  <h2>7. 儿童隐私</h2>
   <p>本扩展不面向 13 岁以下儿童，也不会有意收集任何年龄信息。</p>
 
-  <h2>7. 变更与联系</h2>
-  <p>如政策有实质变更，我们会更新本页并同步提升扩展版本号。如需咨询或反馈，请通过 Chrome 网上应用店该扩展页面的「支持 / 开发者联系方式」渠道联系开发者。</p>
+  <h2>8. 变更与联系</h2>
+  <p>如政策有实质变更，我们会更新本页并同步提升扩展版本号。本项目源码公开，可自行审计数据处理逻辑：<a href="https://github.com/kenter1643/TapePost">github.com/kenter1643/TapePost</a>。如需咨询或反馈，请在 <a href="https://github.com/kenter1643/TapePost/issues">GitHub Issues</a> 提交，或通过 Chrome 网上应用店该扩展页面的「支持 / 开发者联系方式」渠道联系开发者。</p>
 
-  <footer>TapePost · 一键转发到 X　｜　本地处理，零数据外传　｜　Last updated: 2026-11-08</footer>
+  <footer><a href="https://kenter1643.github.io/TapePost/">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · AI 功能按需调用 xAI　｜　Last updated: 2026-11-08</footer>
 </div>
 </body>
 </html>

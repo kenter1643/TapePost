@@ -41,11 +41,32 @@
     #check:hover { background: #f0f0f0; }
     #diag { display: none; margin: 8px 0 0; padding: 8px; background: #f7f7f7; border: 1px solid #eee; border-radius: 6px;
             font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: #333; }
+
+    #openPanel { width: 100%; margin: 0 0 12px; padding: 9px; border: none; border-radius: 9px;
+                 background: #16a34a; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
+    #openPanel:hover { background: #15803d; }
+    details.grok { margin: 12px 0; border: 1px solid #ddd; border-radius: 9px; padding: 8px 10px; background: #fafafa; }
+    details.grok > summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #5b21b6; }
+    details.grok label { font-size: 12px; margin: 9px 0 3px; }
+    .grok input[type=text], .grok input[type=password], .grok select { width: 100%; box-sizing: border-box; font-size: 12px;
+      padding: 6px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
+    .grok textarea { height: 92px; font-size: 11px; line-height: 1.5; font-family: ui-monospace, Menlo, monospace; }
+    .grok .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grok .btnrow { display: flex; gap: 6px; margin-top: 9px; }
+    .grok .btnrow button { flex: 1; padding: 7px 4px; font-size: 11px; border: 1px solid #ddd; border-radius: 7px;
+      background: #fff; color: #444; cursor: pointer; font-weight: 600; }
+    .grok .btnrow button:hover { background: #f0eefe; border-color: #c4b5fd; }
+    .grok .tiny { font-size: 10px; color: #999; line-height: 1.5; margin: 6px 0 0; }
+    #grokStatus { display: none; margin-top: 8px; padding: 7px; border-radius: 6px; font-size: 11px; line-height: 1.5;
+      word-break: break-all; background: #f1f5f9; color: #334155; }
+    details.prompts { margin-top: 10px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+    details.prompts > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #555; }
+    .resetbtn { border: none; background: none; color: #1a7fd4; font-size: 11px; cursor: pointer; padding: 2px 0; }
   </style>
 </head>
 <body>
   <h1>TapePost · 一键转发到 X</h1>
-  <p class="sub">在微博、知乎、微信公众号、B站动态、豆瓣、小红书、X 推文上打开内容页，正文右上角会出现橙色「一键转发」。点击后：提取正文并预填到 X → 图片进剪贴板 / 视频下载 → 你在 X 里 Ctrl+V 贴图、手动发送。</p>
+  <p class="sub">7 站点一键转发到 X；X 推文上另有紫色「AI 评论」用 Grok 生成 3 条候选；生态面板用官方白名单核验链接真伪。所有发送都由你手动完成。</p>
 
   <div class="me">
     <div class="avatar" id="meAvatar">昆</div>
@@ -56,6 +77,8 @@
       <div class="me-badge" id="meBadge">TapeOut社区成员：昆哥</div>
     </div>
   </div>
+
+  <button id="openPanel" type="button">🛡 打开 TapeOut 生态面板（官方绿标 + 链接核验）</button>
 
   <label>已启用站点（关掉后该站不再出现「一键转发」）</label>
   <div class="sites" id="sites">
@@ -101,6 +124,59 @@
     <option value="twitter.com">twitter.com</option>
   </select>
 
+  <details class="grok" open>
+    <summary>🤖 Grok 设置（AI 评论 / 链接核验）</summary>
+
+    <div class="row" style="margin:9px 0">
+      <input type="checkbox" id="aiComment" />
+      <label for="aiComment" style="margin:0;font-weight:400">X 推文上显示紫色「AI 评论」按钮（默认开启，改完要刷新 X 页面）</label>
+    </div>
+
+    <label for="grokKey">xAI API Key</label>
+    <input type="password" id="grokKey" placeholder="xai-…" autocomplete="off" spellcheck="false" />
+
+    <div class="g2">
+      <div>
+        <label for="grokProtocol">接口协议</label>
+        <select id="grokProtocol">
+          <option value="chat">Chat Completions（推荐）</option>
+          <option value="responses">Responses API</option>
+        </select>
+      </div>
+      <div>
+        <label for="grokModel">模型 ID</label>
+        <input type="text" id="grokModel" placeholder="grok-4.3" spellcheck="false" />
+      </div>
+    </div>
+
+    <label for="grokBaseUrl">接口地址（默认官方；也可填兼容网关）</label>
+    <input type="text" id="grokBaseUrl" placeholder="https://api.x.ai/v1" spellcheck="false" />
+
+    <div class="btnrow">
+      <button type="button" id="testGrok">🔌 测试连接</button>
+      <button type="button" id="showKey">👁 显示 Key</button>
+      <button type="button" id="grantOrigin">允许网关域名</button>
+    </div>
+    <div id="grokStatus"></div>
+
+    <details class="prompts">
+      <summary>✏️ 编辑提示词（可自定义，占位符别删）</summary>
+      <label for="commentPrompt">X 一键评论：生成 3 条候选，保留 {POST}</label>
+      <textarea id="commentPrompt" spellcheck="false"></textarea>
+      <button class="resetbtn" type="button" id="resetComment">恢复默认评论提示词</button>
+      <label for="verifyPrompt">链接真伪查询：保留 {OFFICIAL_LIST} 与 {URL}</label>
+      <textarea id="verifyPrompt" spellcheck="false"></textarea>
+      <button class="resetbtn" type="button" id="resetVerify">恢复默认核验提示词</button>
+    </details>
+
+    <p class="tiny">
+      Key 只保存在本机 chrome.storage.local，不同步、不入库、不随扩展分发；调用时由后台直连 xAI。
+      默认模型 grok-4.3（grok-3 / grok-4-fast-* 已于 2026-05-15 退役）。
+      国内网络连不上 api.x.ai 时可换兼容网关，并点「允许网关域名」授予该域名访问权限。
+      提示词留空＝用内置默认；删掉占位符时插件会自动把内容补到末尾。
+    </p>
+  </details>
+
   <button id="save" type="button">保存设置</button>
   <div class="ok" id="ok">已保存 ✓</div>
   <button id="check" type="button">🔍 运行环境自检（重新加载后点这里）</button>
@@ -108,6 +184,9 @@
 
   <div class="note">
     说明：<br>
+    · <b>AI 评论</b>：在 X 推文上点紫色「AI 评论」，Grok 按上面设定的提示词生成 3 条候选，选一条后会打开 X 回复框并预填文字，最后一步「发送」仍由你手动点；插件不会自动发布。没有填 xAI API Key 时按钮会明确报错。<br>
+    · <b>生态面板</b>：绿标只给 tapeout.link 上带 OFFICIAL 标记的 5 个地址，由本地白名单精确比对得出；Grok 只补充理由与仿冒风险，<b>不能</b>把白名单外的链接判成官方。链接真伪查询即使 Grok 不可用，本地结论依然有效。<br>
+    · API Key 只存本机、不同步、不入库；调用时后台直连 xAI，页面脚本拿不到密钥。请自行确认 xAI 的调用额度与费用。<br>
     · 身份卡片上的「TapeOut社区成员：昆哥」为内置社区标注，仅显示在设置面板，不会写进转发正文；需要改称呼只改内置账号配置即可。<br>
     · 多站点：每个站点的选择器、图床域名、Referer、文字清洗与水印策略都在内置站点配置里。「删 # 后内容」只对微博生效，其他站保留原文；图片自动去水印也只对微博启用（其他站水印压在图上，强行处理会毁图，因此原图保留）。<br>
     · X 上也能一键转发：在 x.com / twitter.com 的推文上点「一键转发」，会把该条正文与配图带出，预填进<b>新的发推框</b>由你手动发送；这不是原生「转推」，也不会自动发布。X 缩略图会自动换成 name=orig 原图；插件自己打开的 /intent/tweet 发推页不会再出现按钮。转他人内容建议开启上方「附原推链接」标注来源。<br>
@@ -124,6 +203,7 @@
 
   <script src="account.js"></script>
   <script src="sites.js"></script>
+  <script src="grok.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

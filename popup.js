@@ -14,7 +14,19 @@ const DEFAULTS = {
   hashMode: 'truncate',
   appendSignature: false,
   appendSource: false,
+  enableAiComment: true,
+  commentPrompt: '',       // 空 = 用 grok.js 内置默认提示词
+  verifyPrompt: '',
   enabledSites: {}
+};
+
+// 密钥 / 接口配置只放 storage.local：不同步到其它设备，也不随源码分发
+const GROK_SECRET_DEFAULTS = {
+  grokApiKey: '',
+  grokProtocol: 'chat',
+  grokBaseUrl: 'https://api.x.ai/v1',
+  grokModel: 'grok-4.3',
+  grokTemperature: 0.7
 };
 
 // 站点列表与 sites.js 共用同一份配置，避免两处维护
@@ -59,6 +71,52 @@ function renderAccount() {
   }
 }
 
+// ---------- Grok 设置 ----------
+const DEFAULT_PROMPTS = (typeof TapeAI !== 'undefined')
+  ? { commentPrompt: TapeAI.DEFAULT_COMMENT_PROMPT, verifyPrompt: TapeAI.DEFAULT_VERIFY_PROMPT }
+  : { commentPrompt: '', verifyPrompt: '' };
+
+/* 提示词显示默认值，但「没改过」时存空串 —— 以后升级内置提示词能自动生效 */
+function renderPrompt(id, stored) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.dataset.wbxDefault = DEFAULT_PROMPTS[id] || '';
+  el.value = stored || el.dataset.wbxDefault;
+}
+
+function promptToStore(id) {
+  const el = document.getElementById(id);
+  if (!el) return '';
+  return (el.value === (el.dataset.wbxDefault || '')) ? '' : el.value;
+}
+
+function readGrokSecrets() {
+  return {
+    grokApiKey: (document.getElementById('grokKey') || {}).value || '',
+    grokProtocol: (document.getElementById('grokProtocol') || {}).value || 'chat',
+    grokBaseUrl: (document.getElementById('grokBaseUrl') || {}).value || GROK_SECRET_DEFAULTS.grokBaseUrl,
+    grokModel: (document.getElementById('grokModel') || {}).value || GROK_SECRET_DEFAULTS.grokModel,
+    grokTemperature: 0.7
+  };
+}
+
+function saveGrokSecrets() {
+  return new Promise((resolve) => {
+    const secrets = readGrokSecrets();
+    try { chrome.storage.local.set(secrets, () => resolve(secrets)); }
+    catch (e) { resolve(secrets); }
+  });
+}
+
+function grokStatus(text, good) {
+  const box = document.getElementById('grokStatus');
+  if (!box) return;
+  box.style.display = 'block';
+  box.textContent = text;
+  box.style.background = good ? '#f0fdf4' : '#fef2f2';
+  box.style.color = good ? '#14532d' : '#7f1d1d';
+}
+
 function load() {
   chrome.storage.sync.get(DEFAULTS, (s) => {
     document.getElementById('hash').value = s.hashMode || 'truncate';
@@ -68,11 +126,22 @@ function load() {
     const source = document.getElementById('source');
     if (source) source.checked = !!s.appendSource;
     document.getElementById('domain').value = s.xDomain || 'x.com';
+    const ai = document.getElementById('aiComment');
+    if (ai) ai.checked = s.enableAiComment !== false;
+    renderPrompt('commentPrompt', s.commentPrompt);
+    renderPrompt('verifyPrompt', s.verifyPrompt);
     const enabled = s.enabledSites || {};
     SITE_LIST.forEach((x) => {
       const el = document.getElementById('site_' + x.id);
       if (el) el.checked = enabled[x.id] !== false; // 默认全开
     });
+  });
+  chrome.storage.local.get(GROK_SECRET_DEFAULTS, (g) => {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('grokKey', g.grokApiKey || '');
+    set('grokProtocol', g.grokProtocol || 'chat');
+    set('grokBaseUrl', g.grokBaseUrl || GROK_SECRET_DEFAULTS.grokBaseUrl);
+    set('grokModel', g.grokModel || GROK_SECRET_DEFAULTS.grokModel);
   });
 }
 
@@ -83,6 +152,9 @@ function save() {
     inpaintVideo: document.getElementById('videoWm').checked,
     appendSignature: document.getElementById('sig').checked,
     appendSource: !!(document.getElementById('source') || {}).checked,
+    enableAiComment: !!(document.getElementById('aiComment') || {}).checked,
+    commentPrompt: promptToStore('commentPrompt'),
+    verifyPrompt: promptToStore('verifyPrompt'),
     xDomain: document.getElementById('domain').value,
     enabledSites: (() => {
       const out = {};
@@ -97,6 +169,40 @@ function save() {
     const ok = document.getElementById('ok');
     ok.style.display = 'block';
     setTimeout(() => { ok.style.display = 'none'; }, 1500);
+  });
+  saveGrokSecrets();
+}
+
+function testGrok() {
+  grokStatus('正在连接 Grok…', true);
+  saveGrokSecrets().then(() => {
+    try {
+      chrome.runtime.sendMessage({ type: 'GROK_TEST' }, (r) => {
+        const err = chrome.runtime && chrome.runtime.lastError;
+        if (err) return grokStatus('连不上后台：' + err.message + '（请到 chrome://extensions 重新加载扩展）', false);
+        if (!r || !r.ok) return grokStatus('连接失败：' + ((r && r.error) || '后台没有返回结果'), false);
+        grokStatus('✅ 连接成功｜模型 ' + r.model + '｜协议 ' + r.protocol +
+          '｜耗时 ' + r.latencyMs + 'ms｜返回示例：' + (r.sample || '').replace(/\s+/g, ' '), true);
+      });
+    } catch (e) {
+      grokStatus('测试调用失败：' + String(e && e.message || e), false);
+    }
+  });
+}
+
+/* 自定义网关不是默认 host_permissions，用户主动点一下才申请该域名访问权 */
+function grantOrigin() {
+  const base = (document.getElementById('grokBaseUrl') || {}).value || GROK_SECRET_DEFAULTS.grokBaseUrl;
+  let origin;
+  try { origin = new URL(String(base).trim()).origin; }
+  catch (e) { grokStatus('接口地址不是合法 URL，请检查后再点。', false); return; }
+  if (!chrome.permissions || !chrome.permissions.request) {
+    grokStatus('当前 Chrome 不支持动态权限申请；请用默认 api.x.ai，或让网关允许跨域。', false);
+    return;
+  }
+  chrome.permissions.request({ origins: [origin + '/*'] }, (granted) => {
+    grokStatus(granted ? '✅ 已允许访问 ' + origin + '，可以点「测试连接」了。'
+      : '没有授予 ' + origin + ' 的访问权限；可继续用默认 api.x.ai。', !!granted);
   });
 }
 
@@ -160,6 +266,23 @@ function runDiagnostics() {
 }
 
 renderAccount();
-document.getElementById('save').addEventListener('click', save);
-document.getElementById('check').addEventListener('click', runDiagnostics);
+const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+bind('save', save);
+bind('check', runDiagnostics);
+bind('openPanel', () => {
+  try { chrome.tabs.create({ url: chrome.runtime.getURL('panel.html') }); }
+  catch (e) { grokStatus('打开生态面板失败：' + String(e && e.message || e), false); }
+});
+bind('testGrok', testGrok);
+bind('grantOrigin', grantOrigin);
+bind('showKey', () => {
+  const k = document.getElementById('grokKey');
+  const b = document.getElementById('showKey');
+  if (!k || !b) return;
+  const show = k.type === 'password';
+  k.type = show ? 'text' : 'password';
+  b.textContent = show ? '🙈 隐藏 Key' : '👁 显示 Key';
+});
+bind('resetComment', () => renderPrompt('commentPrompt', ''));
+bind('resetVerify', () => renderPrompt('verifyPrompt', ''));
 load();

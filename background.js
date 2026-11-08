@@ -117,6 +117,186 @@ async function ensureOffscreen() {
   return offscreenCreating;
 }
 
+// ---- 3. Grok 客户端 ----
+/*
+ * 两个 AI 功能共用这一段：
+ *   GROK_COMMENTS — X 一键评论，按设定提示词生成 3 条回复候选
+ *   GROK_VERIFY   — TapeOut 生态面板的链接真伪查询
+ *   GROK_TEST     — 设置面板「测试连接」
+ *
+ * API Key 只存在 chrome.storage.local（本机、不同步、不入库、不上报），
+ * 由 Service Worker 直接请求 api.x.ai；页面 content script 不接触密钥。
+ * 错误写进独立的 lastGrokError，绝不污染 DIAG 用的 lastError（自检回归依赖它为空）。
+ */
+try {
+  if (typeof TapeAI === 'undefined' && typeof importScripts === 'function') importScripts('grok.js');
+} catch (e) { /* 独立测试环境无 importScripts，Grok 分支会给出明确提示 */ }
+
+const GROK_DEFAULTS = {
+  grokProtocol: 'chat',              // chat = /chat/completions（OpenAI 兼容）；responses = /responses
+  grokBaseUrl: 'https://api.x.ai/v1',
+  grokModel: 'grok-4.3',             // 2026-11 官方在售；grok-3 / grok-4-fast-* 已于 2026-05-15 退役
+  grokTemperature: 0.7
+};
+let lastGrokError = null;
+
+function storageGet(area, keys) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v || {}); } };
+    try {
+      const r = chrome.storage[area].get(keys, done);
+      // Chrome 95+ 同时支持 Promise 形式；两种环境都兼容
+      if (r && typeof r.then === 'function') r.then(done).catch(() => done({}));
+    } catch (e) { done({}); }
+    setTimeout(() => done({}), 3000);
+  });
+}
+
+async function getGrokConfig() {
+  const [secret, pref] = await Promise.all([
+    storageGet('local', ['grokApiKey', 'grokBaseUrl', 'grokModel', 'grokProtocol', 'grokTemperature']),
+    storageGet('sync', ['commentPrompt', 'verifyPrompt'])
+  ]);
+  return Object.assign({}, GROK_DEFAULTS, secret, {
+    commentPrompt: pref.commentPrompt || '',
+    verifyPrompt: pref.verifyPrompt || ''
+  });
+}
+
+function grokEndpoint(cfg) {
+  const base = String(cfg.grokBaseUrl || GROK_DEFAULTS.grokBaseUrl).replace(/\/+$/, '');
+  return base + (cfg.grokProtocol === 'responses' ? '/responses' : '/chat/completions');
+}
+
+function grokBody(cfg, messages, maxTokens) {
+  const model = cfg.grokModel || GROK_DEFAULTS.grokModel;
+  const temperature = Number(cfg.grokTemperature);
+  const temp = isFinite(temperature) ? Math.min(1, Math.max(0, temperature)) : 0.7;
+  if (cfg.grokProtocol === 'responses') {
+    const instructions = messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
+    const input = messages.filter(m => m.role !== 'system').map(m => m.content).join('\n\n');
+    return {
+      model, input, instructions, temperature: temp,
+      max_output_tokens: maxTokens || 700, stream: false, store: false
+    };
+  }
+  return { model, messages, temperature: temp, max_tokens: maxTokens || 700, stream: false };
+}
+
+function grokText(data, protocol) {
+  if (!data) return '';
+  if (protocol === 'responses') {
+    if (typeof data.output_text === 'string' && data.output_text) return data.output_text;
+    const out = data.output || [];
+    const chunks = [];
+    out.forEach((o) => (o && o.content || []).forEach((c) => {
+      if (c && (c.type === 'output_text' || c.type === 'text') && c.text) chunks.push(c.text);
+    }));
+    return chunks.join('\n');
+  }
+  try { return data.choices[0].message.content || ''; } catch (e) { return ''; }
+}
+
+function grokFriendlyError(status, bodyText) {
+  let detail = '';
+  try {
+    const j = JSON.parse(bodyText);
+    detail = (j && (j.error && (j.error.message || j.error) || j.message)) || '';
+  } catch (e) { detail = String(bodyText || '').slice(0, 160); }
+  detail = String(detail).slice(0, 220);
+  if (status === 401 || status === 403) return 'API Key 无效或没有权限（HTTP ' + status + '）。请到设置里重新填写 xAI Key。' + (detail ? ' ' + detail : '');
+  if (status === 404) return '接口或模型不存在（HTTP 404）。请检查「接口地址 / 协议 / 模型 ID」，当前默认模型是 grok-4.3。';
+  if (status === 429) return '调用太频繁或额度不足（HTTP 429）。稍等片刻再试，或到 console.x.ai 查看额度。';
+  if (status >= 500) return 'xAI 服务端暂时不可用（HTTP ' + status + '），请稍后重试。';
+  return '请求失败（HTTP ' + status + '）' + (detail ? '：' + detail : '');
+}
+
+async function callGrok(messages, maxTokens) {
+  const cfg = await getGrokConfig();
+  const key = String(cfg.grokApiKey || '').trim();
+  if (!key) throw new Error('还没有填 xAI API Key。请点插件图标 →「Grok 设置」填入 Key（只存在本机，不会上传）。');
+  if (typeof TapeAI === 'undefined') throw new Error('共享逻辑未加载，请在 chrome://extensions 重新加载扩展。');
+
+  const endpoint = grokEndpoint(cfg);
+  let resp;
+  try {
+    resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + key
+      },
+      body: JSON.stringify(grokBody(cfg, messages, maxTokens))
+    });
+  } catch (e) {
+    throw new Error('无法连接 ' + endpoint + '（' + String(e && e.message || e) + '）。国内网络通常需要代理；也可以在设置里换用兼容网关地址。');
+  }
+  const raw = await resp.text();
+  if (!resp.ok) throw new Error(grokFriendlyError(resp.status, raw));
+  let data;
+  try { data = JSON.parse(raw); } catch (e) { throw new Error('接口返回的不是 JSON：' + raw.slice(0, 120)); }
+  const text = grokText(data, cfg.grokProtocol);
+  if (!text) throw new Error('接口返回了空内容，请把「接口协议」切换成另一项后重试。');
+  return { text, model: cfg.grokModel, protocol: cfg.grokProtocol, endpoint };
+}
+
+async function handleGrokMessage(msg) {
+  const payload = msg.payload || {};
+  if (typeof TapeAI === 'undefined') throw new Error('grok.js 未加载，请重新加载扩展。');
+
+  if (msg.type === 'GROK_TEST') {
+    const started = Date.now();
+    const r = await callGrok([
+      { role: 'system', content: 'You are a test endpoint. Reply with exactly OK.' },
+      { role: 'user', content: 'Reply with exactly: OK' }
+    ], 16);
+    return { ok: true, model: r.model, protocol: r.protocol, latencyMs: Date.now() - started, sample: r.text.slice(0, 60) };
+  }
+
+  if (msg.type === 'GROK_COMMENTS') {
+    const cfg = await getGrokConfig();
+    const messages = TapeAI.buildCommentMessages(payload.text || '', cfg.commentPrompt);
+    const r = await callGrok(messages, 700);
+    const comments = TapeAI.parseThreeComments(r.text);
+    if (!comments.length) {
+      throw new Error('Grok 返回的内容解析不出评论文本，可点「重新生成」，或在设置里把提示词改得更明确。原文：' + r.text.slice(0, 160));
+    }
+    return { ok: true, comments, model: r.model, raw: r.text.slice(0, 1200) };
+  }
+
+  if (msg.type === 'GROK_VERIFY') {
+    // 本地白名单结论永远先算出来；即使 Grok 不可用，面板也能给出可靠判定
+    const local = TapeAI.matchOfficial(payload.url || '');
+    const cfg = await getGrokConfig();
+    let grok = null;
+    let aiError = null;
+    try {
+      const messages = TapeAI.buildVerifyMessages(payload.url || '', cfg.verifyPrompt);
+      const r = await callGrok(messages, 600);
+      grok = TapeAI.parseVerdict(r.text);
+      grok.model = r.model;
+    } catch (e) {
+      aiError = String(e && e.message || e);
+    }
+    return {
+      ok: local.status !== 'invalid',
+      local: {
+        status: local.status,
+        normalized: local.normalized || null,
+        site: local.site || null,
+        risks: local.risks || [],
+        error: local.error || null
+      },
+      grok,
+      aiError,
+      source: TapeAI.SOURCE
+    };
+  }
+
+  throw new Error('未知的 Grok 消息类型：' + msg.type);
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
 
@@ -219,6 +399,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } catch (e) { /* ignore */ }
     });
     try { sendResponse({ ok: true }); } catch (e) {}
+    return true;
+  }
+
+  // Grok：AI 评论候选 / 链接真伪查询 / 连接测试。
+  // 单次 await + sendResponse，与其它消息一样保持通道打开；失败也一定回包，
+  // 避免 content script / 面板那边一直转圈等不到结果。
+  if (msg.type === 'GROK_COMMENTS' || msg.type === 'GROK_VERIFY' || msg.type === 'GROK_TEST') {
+    handleGrokMessage(msg).then((out) => {
+      lastGrokError = null;
+      try { sendResponse(Object.assign({ type: 'GROK_RESULT' }, out)); } catch (e) {}
+    }).catch((e) => {
+      lastGrokError = String(e && e.message || e);
+      console.warn('[bg][grok] ' + lastGrokError);
+      try { sendResponse({ type: 'GROK_RESULT', ok: false, error: lastGrokError }); } catch (e2) {}
+    });
     return true;
   }
 

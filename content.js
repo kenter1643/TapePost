@@ -32,6 +32,7 @@ const SETTINGS_DEFAULT = {
   hashMode: 'truncate',          // truncate(删 # 及后) | stripTopics(只删话题块) | keep(不动)
   appendSignature: false,        // 是否在清洗后的正文末尾附上「昆哥 + 主页链接」
   appendSource: false,           // X 来源时是否在正文末尾附上原推文链接（默认关闭）
+  enableAiComment: true,         // X 推文上是否显示「AI 评论」按钮
   enabledSites: {}               // 各站点开关；默认全部启用（值为 false 才关闭）
 };
 let settings = Object.assign({}, SETTINGS_DEFAULT);
@@ -60,6 +61,56 @@ function injectStyle() {
   }
   .wbx-repost-btn:hover{background:#ff8c1a;}
   .wbx-repost-btn:disabled{opacity:.6;cursor:default;}
+  /* 两个按钮并排：由 group 负责绝对定位，组内按钮回到文档流，避免叠在一起 */
+  .wbx-btn-group{
+    position:absolute;top:2px;right:2px;z-index:20;
+    display:inline-flex;align-items:center;gap:4px;
+  }
+  .wbx-btn-group .wbx-repost-btn,.wbx-btn-group .wbx-comment-btn{position:static;}
+  .wbx-comment-btn{
+    display:inline-flex;align-items:center;gap:2px;
+    padding:0 6px;height:18px;border:none;border-radius:8px;cursor:pointer;
+    background:#6b46c1;color:#fff;font-size:11px;line-height:18px;font-weight:600;
+    box-shadow:0 1px 2px rgba(107,70,193,.4);white-space:nowrap;
+  }
+  .wbx-comment-btn:hover{background:#7c56d6;}
+  .wbx-comment-btn:disabled{opacity:.6;cursor:default;}
+  /* AI 评论候选卡片：与图片托盘同级的强可见浮层，不抢 X 的焦点 */
+  #wbx-comments{
+    position:fixed !important;right:20px !important;bottom:20px !important;
+    z-index:2147483647 !important;width:380px !important;max-height:80vh !important;
+    overflow:auto !important;display:block !important;
+    background:#fff !important;color:#222 !important;border:2px solid #6b46c1 !important;
+    border-radius:14px !important;box-shadow:0 8px 32px rgba(0,0,0,.35) !important;
+    font-size:13px !important;line-height:1.5 !important;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif !important;
+    animation:wbx-g-in .22s ease-out;
+  }
+  .wbx-c-head{
+    display:flex !important;align-items:center;justify-content:space-between;
+    padding:10px 12px;background:#6b46c1 !important;color:#fff !important;font-weight:700;border-radius:12px 12px 0 0;
+  }
+  .wbx-c-close{background:none;border:none;color:#fff;font-size:16px;cursor:pointer;line-height:1;}
+  .wbx-c-tip{padding:8px 12px;color:#666;font-size:12px;border-bottom:1px solid #eee;}
+  .wbx-c-item{padding:12px;border-bottom:1px solid #eee;}
+  .wbx-c-label{font-size:11px;color:#6b46c1;font-weight:700;margin-bottom:6px;}
+  .wbx-c-text{white-space:pre-wrap;word-break:break-word;color:#222;font-size:13px;line-height:1.6;}
+  .wbx-c-actions{display:flex;gap:8px;margin-top:9px;}
+  .wbx-c-use{
+    flex:1;border:none;border-radius:8px;background:#6b46c1;color:#fff;
+    font-size:12px;font-weight:700;padding:7px 6px;cursor:pointer;
+  }
+  .wbx-c-use:hover{background:#7c56d6;}
+  .wbx-c-copy{
+    border:1px solid #d9cff2;background:#f7f3ff;color:#6b46c1;border-radius:8px;
+    font-size:12px;padding:7px 10px;cursor:pointer;
+  }
+  .wbx-c-foot{display:flex;gap:8px;padding:10px 12px;}
+  .wbx-c-foot button{
+    flex:1;border:1px solid #d9cff2;background:#fff;color:#6b46c1;border-radius:8px;
+    font-size:12px;padding:8px;cursor:pointer;font-weight:600;
+  }
+  .wbx-c-foot button:hover{background:#f7f3ff;}
   .wbx-repost-mark{position:relative;}
   .wbx-repost-mark::after{
     content:"一键转发↪X";position:absolute;top:-16px;left:50%;transform:translateX(-50%);
@@ -217,7 +268,9 @@ function textOfNode(el) {
   if (!el) return '';
   let raw = el.innerText || el.textContent || '';
   try {
-    const btns = el.querySelectorAll ? el.querySelectorAll('.wbx-repost-btn') : [];
+    // 「一键转发」和 X 上的「AI 评论」都挂在正文节点里，两个都要剔除，
+    // 否则按钮文字会被当成正文转发，内容指纹也会随按钮状态抖动。
+    const btns = el.querySelectorAll ? el.querySelectorAll('.wbx-repost-btn, .wbx-comment-btn') : [];
     for (const b of btns) {
       const t = String((b.innerText || b.textContent || '')).trim();
       if (t) raw = raw.split(t).join('');
@@ -446,7 +499,8 @@ function findTextNode(card) {
       // 排除嵌套卡片/原生按钮，但忽略插件自己注入的「一键转发」按钮
       if (el.querySelector) {
         const blockers = Array.from(el.querySelectorAll('article, button'));
-        if (blockers.some((n) => n.className !== 'wbx-repost-btn')) return;
+        const isOurs = (n) => /\bwbx-(?:repost|comment)-btn\b/.test(String((n && n.className) || ''));
+        if (blockers.some((n) => !isOurs(n))) return;
       }
       const raw = textOfNode(el);
       const t = bodyText(card, el);
@@ -768,14 +822,22 @@ function injectIntoCard(card) {
    * 现在校验和保存统一用同一个 qfp，内容不变时一律早退、不再碰 DOM。
    */
   const qfp = quickFingerprint(card);
-  const existing = card.querySelector('.wbx-repost-btn');
-  if (existing && card.contains(existing) && card.dataset.wbxFp === qfp) return;
+  // X 站点额外挂一个「AI 评论」；开关变化也要能触发重建，所以纳入指纹校验
+  const wantComment = !!(SITE && SITE.id === 'x') && settings.enableAiComment !== false;
+  const commentFlag = wantComment ? '1' : '0';
+  const existing = card.querySelector('.wbx-btn-group') || card.querySelector('.wbx-repost-btn');
+  const groupIntact = existing && (String(existing.className || '').indexOf('wbx-btn-group') === -1 ||
+    (existing.querySelector && existing.querySelector('.wbx-repost-btn')));
+  if (existing && groupIntact && card.contains(existing) &&
+      card.dataset.wbxFp === qfp && card.dataset.wbxCommentMode === commentFlag) return;
 
   const post = resolvePost(card);
   if (!post.text && !post.imageUrls.length && !post.hasVideo) return;
 
   // 内容变了 / 按钮被框架删掉 → 移除旧按钮重建
   if (existing) { try { existing.remove(); } catch (e) {} }
+  // 老版本残留的独立评论按钮（没包在 group 里）也一并清掉
+  try { card.querySelectorAll('.wbx-comment-btn').forEach((n) => n.remove()); } catch (e) {}
   delete card.dataset.wbxInjected;
 
   // 纯图/纯视频微博可能没有正文节点：退化到媒体墙，它同样位于内容区而非作者行
@@ -798,7 +860,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.0.0';
+  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.1.0';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -807,8 +869,29 @@ function injectIntoCard(card) {
     // 不缓存 post：点击瞬间重新解析，才能拿到滚动/懒加载后的真实正文和图片
     return onRepost(liveCard, btn);
   });
-  host.appendChild(btn);
+
+  const group = document.createElement('div');
+  group.className = 'wbx-btn-group';
+  group.appendChild(btn);
+
+  if (wantComment) {
+    const cbtn = document.createElement('button');
+    cbtn.className = 'wbx-comment-btn';
+    cbtn.type = 'button';
+    cbtn.textContent = 'AI 评论';
+    cbtn.title = 'TapePost · 用 Grok 按设定提示词生成 3 条回复候选，选一条后预填到 X 回复框（由你手动发送）';
+    cbtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const liveCard = (cbtn.closest && cbtn.closest(CARD_SELECTORS.join(','))) || card;
+      return onAiComment(liveCard, cbtn);
+    });
+    group.appendChild(cbtn);
+  }
+
+  host.appendChild(group);
   card.dataset.wbxFp = qfp;   // 与早退判断同口径，切勿改成 postFingerprint(post)
+  card.dataset.wbxCommentMode = commentFlag;
   card.dataset.wbxInjected = '1';
 }
 
@@ -893,6 +976,161 @@ async function onRepost(card, btn) {
     }
     if (btn) { btn.disabled = false; btn.textContent = '一键转发'; }
   }
+}
+
+// ---------- X 一键评论：Grok 生成 3 条候选，选一条后由用户手动回复 ----------
+/*
+ * 与「一键转发」保持同一套原则：插件只生成 / 预填，绝不自动发布。
+ * 回复目标用 X Web Intent 的 in_reply_to 参数（官方预填渠道），比往 X 的
+ * React 受控输入框里塞 textContent 可靠得多；文字同时进剪贴板做兜底。
+ */
+function extractXStatusId(card) {
+  try {
+    const m = /\/status\/(\d+)/.exec(extractPermalink(card));
+    if (m) return m[1];
+  } catch (e) {}
+  try {
+    const m = /\/status\/(\d+)/.exec(String(PAGE_PATH || ''));
+    if (m) return m[1];
+  } catch (e) {}
+  return '';
+}
+
+async function copyTextFallback(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* X 的 CSP / 焦点策略常挡住 clipboard.writeText，走下面兜底 */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = !!(document.execCommand && document.execCommand('copy'));
+    if (ta.remove) ta.remove();
+    return ok;
+  } catch (e) { return false; }
+}
+
+async function onAiComment(card, btn) {
+  if (!SITE || SITE.id !== 'x') return;
+  if (isStaleContext()) {
+    showToast('插件刚重新加载过，旧按钮已失效：请刷新 X 页面（Cmd+R）后再点「AI 评论」。', 9000);
+    return;
+  }
+  const post = resolvePost(card);
+  const text = post.text || '';
+  if (!text) {
+    showToast('没有读到这条推文的正文（可能是纯图/纯视频推文），已取消生成评论。', 7000);
+    return;
+  }
+  const statusId = extractXStatusId(card);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中'; }
+  showToast('Grok 正在按设定提示词生成 3 条回复候选…（只生成候选，不会自动发布）', 6000);
+  try {
+    const resp = await chrome.runtime.sendMessage({
+      type: 'GROK_COMMENTS',
+      payload: { text, statusId, url: extractPermalink(card) }
+    });
+    if (btn) { btn.disabled = false; btn.textContent = 'AI 评论'; }
+    if (!resp || !resp.ok) {
+      showToast('Grok 生成失败：' + String((resp && resp.error) || '后台没有响应') +
+        '\n请点插件图标，在「Grok 设置」里检查 API Key / 模型 / 网络。', 11000);
+      return;
+    }
+    showCommentPicker(resp.comments || [], statusId, card, btn);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'AI 评论'; }
+    showToast('AI 评论调用失败：' + String(e && e.message || e), 9000);
+  }
+}
+
+function makeCommentEl(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function showCommentPicker(comments, statusId, card, btn) {
+  const old = document.getElementById('wbx-comments');
+  if (old && old.remove) old.remove();
+  const panel = document.createElement('div');
+  panel.id = 'wbx-comments';
+
+  const head = makeCommentEl('div', 'wbx-c-head');
+  head.appendChild(makeCommentEl('span', '', `Grok 生成的 ${comments.length} 条回复候选`));
+  const close = makeCommentEl('button', 'wbx-c-close', '×');
+  close.type = 'button';
+  close.title = '关闭';
+  close.addEventListener('click', () => { if (panel.remove) panel.remove(); });
+  head.appendChild(close);
+  panel.appendChild(head);
+  panel.appendChild(makeCommentEl('div', 'wbx-c-tip',
+    '选一条 → 打开 X 回复框并预填文字，最后一步「发送」始终由你手动点；文字也已复制，可随时粘贴。'));
+
+  comments.forEach((c, i) => {
+    const item = makeCommentEl('div', 'wbx-c-item');
+    item.appendChild(makeCommentEl('div', 'wbx-c-label', '候选 ' + (i + 1)));
+    item.appendChild(makeCommentEl('div', 'wbx-c-text', c));
+    const actions = makeCommentEl('div', 'wbx-c-actions');
+
+    const use = makeCommentEl('button', 'wbx-c-use', '用它回复 ↗');
+    use.type = 'button';
+    use.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const domain = settings.xDomain === 'twitter.com' ? 'twitter.com' : 'x.com';
+      const params = new URLSearchParams();
+      params.set('text', c);
+      if (statusId) params.set('in_reply_to', statusId);
+      const url = 'https://' + domain + '/intent/tweet?' + params.toString();
+      // window.open 必须放在任何 await 之前：否则用户手势丢失，弹窗会被 Chrome 拦掉
+      const win = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        showToast('X 发布页弹窗被拦截了：请允许本站弹出窗口后重试；评论文字已生成在下方卡片里，可手动复制。', 9000);
+      }
+      copyTextFallback(c).then((ok) => {
+        showToast(statusId
+          ? (ok ? '已打开 X 回复框并预填，文字也已复制；确认无误后手动点「回复」。'
+                : '已打开 X 回复框并预填；剪贴板复制被浏览器拒绝，文字已在候选卡片里可手动复制。')
+          : (ok ? '没取到本条推文的 ID：已打开新发推框并预填，文字也已复制；如需回复请粘到该推文的回复框。'
+                : '没取到本条推文的 ID：已打开新发推框并预填，请手动复制文字。'), 9000);
+      });
+    });
+    actions.appendChild(use);
+
+    const copy = makeCommentEl('button', 'wbx-c-copy', '复制');
+    copy.type = 'button';
+    copy.addEventListener('click', async () => {
+      const ok = await copyTextFallback(c);
+      copy.textContent = ok ? '已复制 ✓' : '复制失败';
+      setTimeout(() => { copy.textContent = '复制'; }, 1500);
+    });
+    actions.appendChild(copy);
+    item.appendChild(actions);
+    panel.appendChild(item);
+  });
+
+  const foot = makeCommentEl('div', 'wbx-c-foot');
+  const again = makeCommentEl('button', '', '🔄 重新生成');
+  again.type = 'button';
+  again.addEventListener('click', () => {
+    if (panel.remove) panel.remove();
+    const liveCard = (btn && btn.closest && btn.closest(CARD_SELECTORS.join(','))) || card;
+    return onAiComment(liveCard, btn);
+  });
+  const dismiss = makeCommentEl('button', '', '关闭');
+  dismiss.type = 'button';
+  dismiss.addEventListener('click', () => { if (panel.remove) panel.remove(); });
+  foot.appendChild(again);
+  foot.appendChild(dismiss);
+  panel.appendChild(foot);
+  document.body.appendChild(panel);
 }
 
 // ---------- 结果处理 ----------
