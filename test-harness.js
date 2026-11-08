@@ -779,7 +779,44 @@ function runPageModeChecks() {
   });
   A('页面模式附加要求可自定义并拼到末尾', () => {
     const p = T.buildPagePrompt(T.buildCommentMessages('正文', null), '请全程用中文');
-    return p.trim().endsWith('请全程用中文');
+    return p.includes('请全程用中文') && p.indexOf('请全程用中文') > p.indexOf(T.PROMPT_TAG) &&
+      p.trim().endsWith(T.PROMPT_END);
+  });
+  A('1.3.2 页面提示词带唯一任务标记与结束标记', () => {
+    const p = T.buildPagePrompt(T.buildCommentMessages('正文', null), '');
+    return p.startsWith(T.PROMPT_TAG) && p.trim().endsWith(T.PROMPT_END) &&
+      p.indexOf(T.PROMPT_TAG) === p.lastIndexOf(T.PROMPT_TAG);
+  });
+  A('1.3.2 cleanPageAnswer 切掉提示词区块', () => {
+    const p = T.buildPagePrompt(T.buildCommentMessages('原文推文', null), '');
+    const cleaned = T.cleanPageAnswer(p + '\n["真候选一","真候选二","真候选三"]');
+    return !cleaned.includes('必须遵守的指令') && !cleaned.includes('原文推文') &&
+      cleaned.includes('真候选一');
+  });
+  A('1.3.2 X 侧栏词被识别为 UI 噪声', () =>
+    T.isPageNoiseLine('History') && T.isPageNoiseLine('Usage') &&
+    T.isPageNoiseLine('Share') && T.isPageNoiseLine('Thought for 7s') &&
+    !T.isPageNoiseLine('这条推文的观点确实值得商榷'));
+  A('1.3.2 页面噪声不再被解析成 3 条评论（1.3.1 事故回归）', () => {
+    const noise = 'History\nUsage\nShare\nNew chat\n' +
+      T.buildPagePrompt(T.buildCommentMessages('推文', null), '') + '\nThought for 7s';
+    return T.parsePageAnswer(noise, 'comments').length === 0;
+  });
+  A('1.3.2 Grok 只回一句自然语言时不伪造候选', () =>
+    T.parsePageAnswer('"确实看到越来越多AI生成的评论，信息密度低还容易同质化。"', 'comments').length === 0);
+  A('1.3.2 网页 Grok 输出裸引号列表（无方括号）时仍取出 3 条', () => {
+    const raw = 'Thought for 7s\n"确实看到越来越多AI生成的评论，信息密度低还容易同质化，真人讨论反而显得珍贵。", ' +
+      '"有没有比较靠谱的办法能快速判断一条评论是不是AI写的？", ' +
+      '"评论区堆满AI回复后，反而更想念以前那种吵吵闹闹的真实讨论。"';
+    const out = T.parsePageAnswer(raw, 'comments');
+    return out.length === 3 && /真人讨论/.test(out[0]) && /真实讨论/.test(out[2]);
+  });
+  A('1.3.2 网页 Grok 用编号列表输出时仍能取出 3 条', () => {
+    const out = T.parsePageAnswer(
+      '1. 这个观点很新颖，想请教数据来源和统计口径是什么？\n' +
+      '2. 从链上索引的角度看，确实还有不少可优化空间。\n' +
+      '3. 同意楼主判断，但落地节奏可能比想象中更慢。', 'comments');
+    return out.length === 3 && /数据来源/.test(out[0]);
   });
   A('自定义提示词在页面模式下依然生效', () => {
     const p = T.buildPagePrompt(T.buildCommentMessages('正文XYZ', '写三条短评：{POST}'), '');
@@ -888,6 +925,80 @@ function runPageBridgeDomChecks() {
   return checks;
 }
 
+/* ---------- 1.3.2：提示词写入不得污染 Grok 输入框 ---------- */
+function runPromptWriteChecks() {
+  const checks = [];
+  const A = (name, fn) => {
+    let ok = false;
+    try { ok = !!fn(); } catch (e) { note('ERROR', name + ': ' + (e && e.message)); }
+    checks.push({ name, ok });
+  };
+  const bridge = require('./grok-page.js');
+  const T = require('./grok.js');
+  const tag = T.PROMPT_TAG;
+  const prompt = tag + '\n【必须遵守的指令】\n写三条回复\n' + T.PROMPT_END;
+  const calls = [];
+  const box = {
+    tagName: 'DIV', isContentEditable: true, innerText: '', textContent: '',
+    getAttribute: () => 'textbox', focus() { calls.push('focus'); },
+    appendChild() {}, dispatchEvent() {}
+  };
+  const prevDoc = global.document, prevWin = global.window, prevIE = global.InputEvent;
+  global.InputEvent = class { constructor(t, o) { this.type = t; Object.assign(this, o || {}); } };
+  global.window = {
+    getSelection: () => ({
+      removeAllRanges() {},
+      addRange(r) { calls.push('addRange:' + (r && r._box === box)); }
+    })
+  };
+  global.document = {
+    createRange: () => ({ _box: null, selectNodeContents(el) { this._box = el; calls.push('selectNodeContents'); } }),
+    execCommand: (cmd, ui, text) => {
+      calls.push(cmd);
+      if (cmd === 'delete') { box.innerText = ''; box.textContent = ''; return true; }
+      if (cmd === 'insertText') { box.innerText = text; box.textContent = text; return true; }
+      return false;
+    },
+    body: { innerText: '' }
+  };
+  try {
+    const cfg = bridge.cfgOf({});
+    A('setPrompt 写入后输入框内容与提示词完全一致', () => {
+      bridge.setPrompt(box, prompt, cfg, tag);
+      return box.innerText === prompt;
+    });
+    A('1.3.2 绝不再调用 execCommand selectAll（污染根源）', () => !calls.includes('selectAll'));
+    A('1.3.2 选区只覆盖 Grok 输入框内部', () =>
+      calls.includes('selectNodeContents') && calls.includes('addRange:true'));
+    A('verifyPrompt 接受干净提示词', () => bridge.verifyPrompt(box, prompt, tag) === true);
+
+    // 模拟 1.3.1 的事故：selectAll 把整页文字带进输入框
+    global.document.execCommand = (cmd, ui, text) => {
+      calls.push(cmd);
+      if (cmd === 'delete') return true;
+      if (cmd === 'insertText') {
+        const dirty = 'History Usage Share AI 评论 AI 评论 ' + String(text);
+        box.innerText = dirty; box.textContent = dirty;
+        return true;
+      }
+      return false;
+    };
+    A('1.3.2 提示词被页面文字污染时拒绝发送', () => {
+      let threw = false;
+      try { bridge.setPrompt(box, prompt, cfg, tag); }
+      catch (e) { threw = /校验失败/.test(String(e && e.message || e)); }
+      return threw;
+    });
+    A('verifyPrompt 拒绝前置噪声与超长内容', () =>
+      bridge.verifyPrompt({ innerText: 'HistoryUsage ' + prompt, tagName: 'DIV' }, prompt, tag) === false);
+  } finally {
+    if (prevDoc === undefined) delete global.document; else global.document = prevDoc;
+    if (prevWin === undefined) delete global.window; else global.window = prevWin;
+    if (prevIE === undefined) delete global.InputEvent; else global.InputEvent = prevIE;
+  }
+  return checks;
+}
+
 /* ---------- v1.3.0：页面模式端到端消息链路（mock x.com Grok 回包） ---------- */
 async function runPageModeEndToEnd() {
   const checks = [];
@@ -939,6 +1050,60 @@ async function runPageModeEndToEnd() {
     r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
     A('设为「不自动发送」时返回 prepared 指引而不是静默失败',
       r && r.ok === false && r.prepared === true && /读取 Grok 回答/.test(r.error || ''));
+
+    // ---------- 1.3.2：真机事故回归 ----------
+    const TPage = require('./grok.js');
+    const noisePage = 'History\nUsage\nShare\nNew chat\n' + TPage.PROMPT_TAG +
+      '\n【必须遵守的指令】\n写三条回复\n' + TPage.PROMPT_END + '\nThought for 7s';
+    let lastBridge = null;
+    scenario.grokPageHandler = (msg) => {
+      lastBridge = msg;
+      if (msg.action === 'ping') return { ok: true, hasInput: true, url: 'https://x.com/i/grok' };
+      return {
+        ok: true, text: '', allText: noisePage, candidates: [],
+        url: 'https://x.com/i/grok', hasAnswer: false, promptSent: true,
+        changed: false, stable: 'no-change', submitBy: 'button'
+      };
+    };
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
+    A('1.3.2 桥接消息带唯一任务标记', !!lastBridge && lastBridge.tag === TPage.PROMPT_TAG);
+    A('1.3.2 没读到 Grok 回答时明确报错，不再静默返回假候选',
+      r && r.ok === false && /没读到 Grok 的回答块|没返回可用结果/.test(r.error || ''));
+
+    // 旧版桥接回包（没有 hasAnswer 字段）也不能把侧栏词解析成候选
+    scenario.grokPageHandler = (msg) => {
+      if (msg.action === 'ping') return { ok: true, hasInput: true, url: 'https://x.com/i/grok' };
+      return {
+        ok: true, text: '', allText: noisePage, candidates: [],
+        url: 'https://x.com/i/grok', promptSent: true,
+        changed: true, stable: 'quiet', submitBy: 'button'
+      };
+    };
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
+    A('1.3.2 侧栏噪声不再变成 History/Usage/Share 三条候选',
+      r && r.ok === false && !/History|Usage|Share/.test(JSON.stringify(r.comments || [])));
+
+    // 真机回放：回答块是裸引号列表，整页 innerText 混着侧栏词和提示词
+    const realAnswer = 'Thought for 7s\n' +
+      '"确实看到越来越多AI生成的评论，信息密度低还容易同质化，真人讨论反而显得珍贵。", ' +
+      '"有没有比较靠谱的办法能快速判断一条评论是不是AI写的？", ' +
+      '"评论区堆满AI回复后，反而更想念以前那种吵吵闹闹的真实讨论。"';
+    scenario.grokPageHandler = (msg) => {
+      if (msg.action === 'ping') return { ok: true, hasInput: true, url: 'https://x.com/i/grok' };
+      return {
+        ok: true, text: realAnswer,
+        allText: 'History\nUsage\nShare\nNew chat\n' + TPage.PROMPT_TAG +
+          '\n【必须遵守的指令】\n写三条回复\n' + TPage.PROMPT_END + '\n' + realAnswer,
+        candidates: [], url: 'https://x.com/i/grok', hasAnswer: true, promptSent: true,
+        changed: true, stable: 'quiet', submitBy: 'button'
+      };
+    };
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
+    A('1.3.2 真机回放：整页混噪声时仍返回 Grok 的 3 条中文候选',
+      r && r.ok === true && r.comments && r.comments.length === 3 &&
+      /真人讨论/.test(r.comments[0]) && !r.comments.some((c) => /^(History|Usage|Share)$/.test(c)));
+    A('1.3.2 结果带诊断信息（是否真的读到 Grok 回答）',
+      r && r.diagnostics && r.diagnostics.hasAnswer === true && r.diagnostics.promptSent === true);
 
     delete scenario.grokPageHandler;
     scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: pageTabs.slice() };
@@ -1261,6 +1426,18 @@ async function runReplyComposerChecks() {
     A('execCommand 被拦时走 input 事件兜底',
       fallbackOk === true && rd.input.textContent.includes('兜底写入') &&
       (rd.input._events || []).length > 0);
+
+    // 1.3.2：点击后必须有可见的等待浮层，结果回来才关闭
+    const busy = vm.runInContext('showAiBusy("Grok 正在生成 3 条回复候选")', contentCtx);
+    A('1.3.2 点击后弹出等待浮层', !!busy && busy.id === 'wbx-ai-busy' &&
+      dom.getElementById('wbx-ai-busy') === busy);
+    A('1.3.2 等待浮层含 spinner / 阶段 / 耗时 / 关闭按钮',
+      busy._all().some((n) => n.className === 'wbx-busy-spin') &&
+      busy._all().some((n) => n.className === 'wbx-busy-stage') &&
+      busy._all().some((n) => n.className === 'wbx-busy-time') &&
+      busy._all().some((n) => n.className === 'wbx-busy-cancel'));
+    vm.runInContext('hideAiBusy()', contentCtx);
+    A('1.3.2 结果返回后等待浮层被移除', dom.getElementById('wbx-ai-busy') === null);
 
     // 端到端：候选面板里点「写入回复框」，应写进当前框且不开 intent 页
     contentCtx.__comments = ['候选甲', '候选乙', '候选丙'];
@@ -1835,6 +2012,7 @@ async function runScenario(name, cfg, expect) {
     .concat(await runReplyComposerChecks())
     .concat(runPageModeChecks())
     .concat(runPageBridgeDomChecks())
+    .concat(runPromptWriteChecks())
     .concat(await runPageModeEndToEnd());
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));

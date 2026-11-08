@@ -124,6 +124,30 @@ function injectStyle() {
     font-size:11px;padding:7px 5px;cursor:pointer;font-weight:600;
   }
   .wbx-c-manual button:hover{background:#f1ebff;}
+  /* 1.3.2：点击 AI 评论立即出现的等待浮层，结果回来才关闭 */
+  #wbx-ai-busy{
+    position:fixed !important;left:50% !important;top:50% !important;transform:translate(-50%,-50%) !important;
+    z-index:2147483647 !important;width:340px !important;max-width:90vw !important;box-sizing:border-box !important;
+    background:#fff !important;color:#222 !important;border:2px solid #6b46c1 !important;border-radius:16px !important;
+    box-shadow:0 14px 52px rgba(20,10,45,.38) !important;padding:22px 20px 18px !important;text-align:center !important;
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif !important;
+    animation:wbx-g-in .2s ease-out;
+  }
+  .wbx-busy-spin{
+    width:34px;height:34px;margin:0 auto 12px;border:3px solid #e6dcff;border-top-color:#6b46c1;
+    border-radius:50%;animation:wbx-spin .8s linear infinite;
+  }
+  @keyframes wbx-spin{to{transform:rotate(360deg)}}
+  .wbx-busy-title{font-weight:700;font-size:15px;color:#4c2a91;margin-bottom:6px;}
+  .wbx-busy-stage{color:#444;min-height:44px;}
+  .wbx-busy-time{color:#8b7aa8;font-size:12px;margin-top:8px;}
+  .wbx-busy-hint{color:#999;font-size:11px;margin-top:6px;}
+  .wbx-busy-cancel{
+    margin-top:12px;border:1px solid #d9cff2;background:#fff;color:#6b46c1;border-radius:8px;
+    font-size:12px;padding:6px 14px;cursor:pointer;font-weight:600;
+  }
+  .wbx-busy-cancel:hover{background:#f7f3ff;}
+  .wbx-c-diag{padding:7px 12px;background:#f4f0ff;color:#5b3b9e;font-size:11px;border-bottom:1px solid #eee;line-height:1.5;}
   .wbx-repost-mark{position:relative;}
   .wbx-repost-mark::after{
     content:"一键转发↪X";position:absolute;top:-16px;left:50%;transform:translateX(-50%);
@@ -874,7 +898,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.3.1';
+  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.3.2';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1230,6 +1254,63 @@ async function copyTextFallback(text) {
   } catch (e) { return false; }
 }
 
+/* 1.3.2：等待浮层 —— 点击即出现，结果回来 / 报错后才关闭。
+ * 网页版 Grok 会先输出思考过程，经常十几秒无反馈，之前只有一个 6 秒 toast，
+ * 用户根本看不出「到底有没有在跑」。 */
+let aiBusyTimer = null;
+
+function hideAiBusy() {
+  if (aiBusyTimer) { try { clearInterval(aiBusyTimer); } catch (e) {} aiBusyTimer = null; }
+  const n = document.getElementById('wbx-ai-busy');
+  if (n && n.remove) n.remove();
+}
+
+function showAiBusy(label) {
+  hideAiBusy();
+  const box = document.createElement('div');
+  box.id = 'wbx-ai-busy';
+  box.appendChild(makeCommentEl('div', 'wbx-busy-spin'));
+  box.appendChild(makeCommentEl('div', 'wbx-busy-title', label || 'Grok 正在生成 3 条回复候选'));
+  const stage = makeCommentEl('div', 'wbx-busy-stage', '正在连接 X 站内 Grok…');
+  const time = makeCommentEl('div', 'wbx-busy-time', '已等待 0.0 秒');
+  box.appendChild(stage);
+  box.appendChild(time);
+  box.appendChild(makeCommentEl('div', 'wbx-busy-hint',
+    '网页版 Grok 可能先显示「思考过程」，通常 10~40 秒；最长等待约 60 秒。期间不要关闭 X 的 Grok 标签。'));
+  const cancel = makeCommentEl('button', 'wbx-busy-cancel', '关闭等待提示');
+  cancel.type = 'button';
+  cancel.title = '只关掉这个提示，不中断后台生成；结果出来后候选卡片仍会自动弹出';
+  cancel.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hideAiBusy();
+    showToast('等待提示已关闭，后台仍在生成；结果出来后候选卡片会自动弹出。', 6000);
+  });
+  box.appendChild(cancel);
+  document.body.appendChild(box);
+
+  const t0 = Date.now();
+  const stages = [
+    [0, '正在连接 X 站内 Grok…'],
+    [2500, '提示词已写入，等待 Grok 开始回答…'],
+    [8000, 'Grok 正在生成 3 条回复候选（可能先显示思考过程）…'],
+    [22000, '还在等 Grok 输出，最长约 60 秒，请稍候…'],
+    [45000, '接近超时：若 Grok 一直没回答，可关闭提示并改用手动模式。']
+  ];
+  aiBusyTimer = setInterval(() => {
+    if (document.getElementById && document.getElementById('wbx-ai-busy') !== box) {
+      hideAiBusy();
+      return;
+    }
+    const sec = (Date.now() - t0) / 1000;
+    time.textContent = '已等待 ' + sec.toFixed(1) + ' 秒';
+    let s = stages[0][1];
+    for (const st of stages) if (sec * 1000 >= st[0]) s = st[1];
+    stage.textContent = s;
+  }, 400);
+  return box;
+}
+
 async function onAiComment(card, btn) {
   if (!SITE || SITE.id !== 'x') return;
   if (isStaleContext()) {
@@ -1248,26 +1329,29 @@ async function onAiComment(card, btn) {
   let permalink = '';
   try { permalink = card ? extractPermalink(card) : ''; } catch (e) {}
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中'; }
-  showToast('Grok 正在按设定提示词生成 3 条回复候选…（只生成候选，不会自动发布）', 6000);
+  showAiBusy('Grok 正在生成 3 条回复候选');
   try {
     const resp = await chrome.runtime.sendMessage({
       type: 'GROK_COMMENTS',
       payload: { text, statusId, url: permalink }
     });
-    if (btn) { btn.disabled = false; btn.textContent = 'AI 评论'; }
     if (resp && resp.prepared) {
       showToast('提示词已填进 X 的 Grok 输入框（当前设为「不自动发送」）：请到 Grok 里按发送，回答出来后点「读取 Grok 回答」。', 11000);
       return;
     }
     if (!resp || !resp.ok) {
       showToast('Grok 生成失败：' + String((resp && resp.error) || '后台没有响应') +
-        '\n请点插件图标，在「Grok 设置」里确认运行模式；页面模式需要已登录 X 且 Grok 可用，也可用「复制提示词 → 读取回答」的手动流程。', 11000);
+        '\n请点插件图标，在「Grok 设置」里确认运行模式；页面模式需要已登录 X 且 Grok 可用，也可用「复制提示词 → 读取回答」的手动流程。', 12000);
       return;
     }
-    showCommentPicker(resp.comments || [], statusId, card, btn, text, resp.mode);
+    showCommentPicker(resp.comments || [], statusId, card, btn, text, resp.mode,
+      Object.assign({ strict: resp.strict }, resp.diagnostics || {}));
   } catch (e) {
+    showToast('AI 评论调用失败：' + String(e && e.message || e) +
+      '\n若是 X 站内 Grok 超时，可用候选面板里的「复制提示词（手动）→ 读取 Grok 回答」。', 12000);
+  } finally {
+    hideAiBusy();
     if (btn) { btn.disabled = false; btn.textContent = 'AI 评论'; }
-    showToast('AI 评论调用失败：' + String(e && e.message || e), 9000);
   }
 }
 
@@ -1278,7 +1362,7 @@ function makeCommentEl(tag, cls, text) {
   return n;
 }
 
-function showCommentPicker(comments, statusId, card, btn, postText, mode) {
+function showCommentPicker(comments, statusId, card, btn, postText, mode, diag) {
   const old = document.getElementById('wbx-comments');
   if (old && old.remove) old.remove();
   const panel = document.createElement('div');
@@ -1295,6 +1379,14 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode) {
   panel.appendChild(head);
   panel.appendChild(makeCommentEl('div', 'wbx-c-tip',
     '选一条 → 直接写入当前 X 回复框（原本有草稿就追加一行）；文字同时复制。最后一步「回复」始终由你手动点。'));
+  // 1.3.2：把「是否真的触发 Grok / 读到回答」明确显示出来，不再静默兜底
+  if (diag && mode === 'page') {
+    const bits = [diag.hasAnswer === false ? '⚠️ 未确认读到 Grok 回答，请核对' : '✅ 已确认读到 Grok 回答'];
+    if (diag.promptSent === false) bits.push('提示词可能未发出');
+    if (diag.strict === false) bits.push('网页 Grok 未按 JSON 输出，按原文解析');
+    if (diag.stable) bits.push('等待状态 ' + diag.stable);
+    panel.appendChild(makeCommentEl('div', 'wbx-c-diag', bits.join(' · ')));
+  }
 
   comments.forEach((c, i) => {
     const item = makeCommentEl('div', 'wbx-c-item');
@@ -1372,6 +1464,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode) {
   prep.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    showAiBusy('正在把提示词填进 Grok');
     try {
       const r = await chrome.runtime.sendMessage({
         type: 'GROK_PAGE_PREPARE',
@@ -1385,6 +1478,8 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode) {
     } catch (err) {
       showToast('准备提示词失败：' + String(err && err.message || err) +
         '。请确认已登录 x.com 且 Grok 可用，或在设置里点「打开 Grok 页面」。', 10000);
+    } finally {
+      hideAiBusy();
     }
   });
   const read = makeCommentEl('button', '', '📥 读取 Grok 回答');
@@ -1392,21 +1487,25 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode) {
   read.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    showAiBusy('正在读取 Grok 回答');
     try {
       const r = await chrome.runtime.sendMessage({
         type: 'GROK_PAGE_READ',
         payload: { kind: 'comments', text: postText || '' }
       });
       if (!r || !r.ok) throw new Error((r && r.error) || '后台没有返回');
-      if (!r.comments || !r.comments.length) throw new Error('还没读到可用的回答，请等 Grok 生成完毕再点。');
+      if (!r.comments || !r.comments.length) throw new Error('还没读到 3 条可用候选：请等 Grok 回答完整生成，或到 Grok 里让它重新按 JSON 输出后再点。');
       if (panel.remove) panel.remove();
-      showCommentPicker(r.comments, statusId, card, btn, postText, r.mode);
+      showCommentPicker(r.comments, statusId, card, btn, postText, r.mode,
+        Object.assign({ strict: r.strict }, r.diagnostics || {}));
       showToast(r.strict === false
-        ? '已读回回答，但网页 Grok 没严格按 JSON 输出，以下按原文兜底解析，请自行核对。'
+        ? '已读回回答，但网页 Grok 没严格按 JSON 输出，以下按原文解析，请自行核对。'
         : '已从 X 站内 Grok 读回回答，选一条即可回复。', 8000);
     } catch (err) {
       showToast('读取失败：' + String(err && err.message || err) +
         '。请确认 Grok 回答已生成完毕、X 标签仍打开。', 10000);
+    } finally {
+      hideAiBusy();
     }
   });
   manual.appendChild(prep);

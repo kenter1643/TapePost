@@ -429,6 +429,24 @@ var TapeAI = (function () {
     '- 不要输出多个版本、解释、总结或后续建议。'
   ].join('\n');
 
+  /* 1.3.2：页面模式的任务标记。
+   * - 写进 Grok 输入框后用来校验「有没有把整页文字一起粘进去」；
+   * - 提交后检查用户气泡里是否出现它，用来确认真的发出去了；
+   * - 读回页面文本时用它切掉提示词区块，避免把指令当回答。 */
+  var PROMPT_TAG = '【TapePost 任务开始】';
+  var PROMPT_END = '【TapePost 任务结束】';
+
+  /* X / Grok 网页里会混进 innerText 的纯 UI 词。1.3.1 的 History/Usage/Share
+   * 就是被按行兜底当成 3 条评论返回了，这里统一拦掉。 */
+  var PAGE_UI_NOISE = [
+    'History', 'Usage', 'Share', 'New chat', 'Ask anything', 'Home', 'Explore',
+    'Notifications', 'Chat', 'Calls', 'Grok', 'Premium+', 'Money', 'Profile',
+    'More', 'Post', 'Copy', 'Regenerate', 'Good response', 'Bad response',
+    'Think Harder', 'AI 评论', '一键转发', '再来 3 条', '请生成英文回复',
+    '分析 AI 评论识别特征', 'Skip to home timeline', 'Skip to trending', 'X',
+    'Reply', 'Replying to', 'Post your reply'
+  ];
+
   /* service worker 与页面脚本共用的模式判定：auto 时没 Key 自动降级到 x.com 页面模式 */
   function pickGrokMode(cfg) {
     var mode = String((cfg && cfg.grokMode) || PAGE_MODE_DEFAULTS.grokMode).toLowerCase();
@@ -450,7 +468,8 @@ var TapeAI = (function () {
     });
     var head = sys.length ? '【必须遵守的指令】\n' + sys.join('\n') + '\n\n' : '';
     var tail = String(extra == null ? '' : extra).trim();
-    return (head + user.join('\n\n') + '\n' + PAGE_OUTPUT_RULE + (tail ? '\n\n' + tail : '')).trim();
+    return (PROMPT_TAG + '\n' + head + user.join('\n\n') + '\n' + PAGE_OUTPUT_RULE +
+      (tail ? '\n\n' + tail : '') + '\n' + PROMPT_END).trim();
   }
 
   // ---------- 3. URL 规范化与本地白名单判定 ----------
@@ -904,7 +923,8 @@ var TapeAI = (function () {
     return null;
   }
 
-  /* 页面模式解析入口：先宽松提取，失败再退回原有按行兜底 */
+  /* 页面模式解析入口：先宽松提取，失败再退回原有按行兜底。
+   * 注意：这个函数只给「已经是模型回答」的文本用，别把整页 innerText 传进来。 */
   function parsePageResult(raw, kind) {
     var hit = extractJsonLoose(raw, kind);
     if (hit) {
@@ -912,6 +932,84 @@ var TapeAI = (function () {
       return parseThreeComments(hit.text);
     }
     return kind === 'verdict' ? parseVerdict(raw) : parseThreeComments(raw);
+  }
+
+  function isPageNoiseLine(line) {
+    var t = String(line || '').trim();
+    if (!t) return true;
+    if (PAGE_UI_NOISE.indexOf(t) !== -1) return true;
+    if (/^Thought for \d+\s*(?:s|秒)/i.test(t)) return true;
+    if (/^\s*[-*•]\s*(?:直接给|只输出|不要输出)/.test(t)) return true;
+    if (/^【(?:必须遵守的指令|输出格式|TapePost 任务)/.test(t)) return true;
+    return false;
+  }
+
+  /* 把 Grok 对话区抓回来的混杂文本清成「只可能是回答」的部分：
+   * 1) 整段切掉用户提示词（从 PROMPT_TAG 到 PROMPT_END / 输出格式规则结束）；
+   * 2) 逐行丢掉侧栏、按钮、思考过程、指令行等 UI 噪声。
+   * 1.3.1 的事故就是没做这一步，History / Usage / Share 被当成 3 条评论。 */
+  function cleanPageAnswer(raw) {
+    var s = String(raw || '');
+    var a = s.indexOf(PROMPT_TAG);
+    if (a !== -1) {
+      var b = s.indexOf(PROMPT_END, a + PROMPT_TAG.length);
+      var cut = -1;
+      if (b > a) cut = b + PROMPT_END.length;
+      else {
+        var rule = s.indexOf('不要输出多个版本', a);
+        if (rule > a) cut = rule + 20;
+      }
+      s = cut > 0 ? s.slice(cut) : s.slice(a + PROMPT_TAG.length);
+    }
+    var lines = s.split(/\n+/).map(function (l) {
+      return String(l || '').replace(/\s+$/, '');
+    }).filter(function (l) { return !isPageNoiseLine(l); });
+    return stripCodeFence(lines.join('\n')).trim();
+  }
+
+  /* 网页版 Grok 实测（2026-11-08）会输出不带方括号的裸引号列表：
+   * "确实看到越来越多AI生成的评论……", "有没有比较靠谱的办法……", "评论区堆满……"
+   * 这不是合法 JSON，但确实是 3 条候选。取最后 3 个引号片段即可。 */
+  function quotedTriples(s) {
+    var re = /["“”「]([^"“”「」\n]{8,240})["”」]/g;
+    var out = [], m;
+    while ((m = re.exec(s))) {
+      var t = cleanCommentLine(m[1]);
+      if (t && t.length >= 8 && !isPageNoiseLine(t)) out.push(t);
+    }
+    return out.length >= 3 ? out.slice(-3) : [];
+  }
+
+  function looksLikeInstruction(x) {
+    return /要求[:：]|必须遵守|输出格式|只输出|不要输出|三条角度|角度各不相同|推文正文|提示词/.test(x);
+  }
+
+  /* 1.3.2 页面模式专用：只接受「清洗后的回答文本」。
+   * 严格 JSON → 裸引号列表 → 编号列表 → 3 行独立候选；
+   * 每行至少 8 字，绝不再把一句自然语言或页面按钮文字塞成候选。 */
+  function parsePageAnswer(raw, kind) {
+    var cleaned = cleanPageAnswer(raw);
+    var hit = extractJsonLoose(cleaned, kind);
+    if (hit) return kind === 'verdict' ? parseVerdict(hit.text) : parseThreeComments(hit.text);
+    if (kind === 'verdict') return null;
+
+    var quoted = quotedTriples(cleaned);
+    if (quoted.length === 3) return quoted;
+
+    // 「1. xxx 2. xxx 3. xxx」写在一行时，先按编号切开
+    var parts = cleaned.split(/(?:^|\s)(?:[①②③]|\d+[\.、)）])\s*/).map(function (x) {
+      return cleanCommentLine(x);
+    }).filter(function (x) {
+      return x && x.length >= 8 && !isPageNoiseLine(x) && !looksLikeInstruction(x);
+    });
+    if (parts.length >= 3) return parts.slice(0, 3).map(function (x) { return x.slice(0, 240); });
+
+    var lines = cleaned.split(/\n+/).map(function (x) { return cleanCommentLine(x); })
+      .filter(function (x) {
+        return x && x.length >= 8 && !isPageNoiseLine(x) && !looksLikeInstruction(x) &&
+          !/^(?:verdict|reason|risk|matched|comments|replies)\s*[:：]/i.test(x);
+      });
+    return lines.length >= 3 ? lines.slice(0, 3) : [];
   }
 
   return {
@@ -926,6 +1024,12 @@ var TapeAI = (function () {
     SYSTEM_HINT: SYSTEM_HINT,
     PAGE_MODE_DEFAULTS: PAGE_MODE_DEFAULTS,
     PAGE_OUTPUT_RULE: PAGE_OUTPUT_RULE,
+    PROMPT_TAG: PROMPT_TAG,
+    PROMPT_END: PROMPT_END,
+    PAGE_UI_NOISE: PAGE_UI_NOISE,
+    isPageNoiseLine: isPageNoiseLine,
+    cleanPageAnswer: cleanPageAnswer,
+    parsePageAnswer: parsePageAnswer,
     pickGrokMode: pickGrokMode,
     buildPagePrompt: buildPagePrompt,
     normalizeUrl: normalizeUrl,

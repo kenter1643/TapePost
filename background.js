@@ -331,15 +331,36 @@ async function callGrokPage(prompt, cfg, action) {
     throw new Error('已打开 X 的 Grok 页面，但一直没读到输入框。请确认 Chrome 已登录 x.com、账号可用 Grok；' +
       '若是后台标签被浏览器节流，点设置里的「打开 Grok 页面」激活它再重试。也可改用手动模式。');
   }
-  const r = await sendToTab(t.tabId, { type: 'GROK_PAGE_BRIDGE', action, prompt, config: cfg });
+  const r = await sendToTab(t.tabId, {
+    type: 'GROK_PAGE_BRIDGE', action, prompt, config: cfg, tag: TapeAI.PROMPT_TAG
+  });
   if (!r) throw new Error('Grok 页面没有响应（content script 可能失效），请刷新该 X 标签后重试。');
   if (!r.ok) throw new Error(r.error || 'Grok 页面操作失败');
+  // 1.3.2：自动发送后必须能证明「提示词发出去了 + 读到了回答」，
+  // 否则立刻报错，不再让按行兜底把页面按钮文字当成结果返回给用户。
+  if (action === 'auto' && !r.prepared) {
+    const why = [];
+    if (r.promptSent === false) why.push('页面上没看到本次任务标记，提示词可能没发出去');
+    if (r.hasAnswer === false || r.noAnswer === true) why.push('没读到 Grok 的回答块');
+    if (r.changed === false) why.push('等待期间 Grok 页面文本没有变化');
+    if (why.length) {
+      throw new Error('X 站内 Grok 没返回可用结果：' + why.join('；') +
+        '。请确认已登录 X、账号可用 Grok，且该标签没被浏览器节流；可点设置里的「打开 Grok 页面」激活后重试，' +
+        '或用候选面板的「复制提示词（手动）→ 读取 Grok 回答」。' +
+        (r.text ? ' 当前读到：' + String(r.text).slice(0, 120) : ''));
+    }
+  }
   return Object.assign({ tabId: t.tabId, createdTab: t.created }, r);
 }
 
-/* 网页 Grok 会把思考过程 / 用户气泡一起渲染；按 answer → 候选 → 全文顺序找严格 JSON */
+/* 网页 Grok 会把思考过程 / 用户气泡 / 侧栏按钮一起渲染。
+ * 1.3.2：整页 innerText 必须先 cleanPageAnswer 去掉噪声，才允许进入解析；
+ * 按行兜底也换成 parsePageAnswer（只认清洗后的回答，不接受 UI 词）。 */
 function parsePageText(r, kind) {
-  const tries = [r && r.text].concat((r && r.candidates) || [], [r && r.allText])
+  const cleanAll = TapeAI.cleanPageAnswer((r && r.allText) || '');
+  const tries = [r && r.text]
+    .concat((r && r.candidates) || [])
+    .concat([cleanAll])
     .filter((x) => typeof x === 'string' && x.trim());
   for (const t of tries) {
     const hit = TapeAI.extractJsonLoose(t, kind);
@@ -348,9 +369,26 @@ function parsePageText(r, kind) {
     const good = kind === 'verdict' ? !!out.parsed : out.length > 0;
     if (good) return { out, strict: true, text: t };
   }
-  const raw = (r && (r.allText || r.text)) || '';
-  const out = TapeAI.parsePageResult(raw, kind);
+  // 兜底优先只用「回答块」本身（最纯），不够才拼上候选与清洗后的全文，
+  // 避免侧栏/提示词把引号列表的后 3 条挤掉。
+  const primary = String((r && r.text) || '').trim();
+  const raw = primary || tries.join('\n');
+  let out = TapeAI.parsePageAnswer(raw, kind);
+  const empty = Array.isArray(out) ? !out.length : (!out || out.parsed === false);
+  if (empty && primary && tries.length > 1) out = TapeAI.parsePageAnswer(tries.join('\n'), kind);
   return { out, strict: false, text: raw };
+}
+
+function pageDiagnostics(r) {
+  return {
+    mode: r && r.mode,
+    promptSent: !!(r && r.promptSent !== false),
+    hasAnswer: !!(r && r.hasAnswer !== false && !r.noAnswer),
+    stable: (r && r.stable) || null,
+    changed: r ? r.changed !== false : null,
+    submitBy: (r && r.submitBy) || null,
+    answerPreview: String((r && (r.text || r.allText)) || '').slice(0, 160)
+  };
 }
 
 function messagesFor(kind, payload, cfg) {
@@ -380,7 +418,10 @@ async function runGrok(messages, maxTokens, cfg) {
     endpoint: r.url,
     submitBy: r.submitBy,
     stable: r.stable,
-    changed: r.changed
+    changed: r.changed,
+    hasAnswer: r.hasAnswer,
+    promptSent: r.promptSent,
+    noAnswer: r.noAnswer
   };
 }
 
@@ -434,9 +475,15 @@ async function handleGrokMessage(msg) {
       : { out: TapeAI.parseThreeComments(r.text), strict: true, text: r.text };
     const comments = p.out || [];
     if (!comments.length) {
-      throw new Error('Grok 返回的内容解析不出评论文本，可点「重新生成」，或在设置里把提示词改得更明确。原文：' + String(r.text || '').slice(0, 160));
+      throw new Error('没从 Grok 的回答里解析出 3 条评论（网页版 Grok 可能没按 JSON 输出，或回答被截断）。' +
+        '请点「重新生成」；仍失败就用候选面板的「复制提示词（手动）」到 Grok 里发送，再点「读取 Grok 回答」。' +
+        '读到的原文：' + String(p.text || r.text || '').slice(0, 200));
     }
-    return { ok: true, comments, model: r.model, mode: r.mode, strict: p.strict, raw: String(p.text || r.text || '').slice(0, 1200) };
+    return {
+      ok: true, comments, model: r.model, mode: r.mode, strict: p.strict,
+      raw: String(p.text || r.text || '').slice(0, 1200),
+      diagnostics: pageDiagnostics(r)
+    };
   }
 
   if (msg.type === 'GROK_VERIFY') {
@@ -480,7 +527,7 @@ async function handleGrokMessage(msg) {
         mode: 'page', strict: p.strict, raw: String(p.text || '').slice(0, 1200), source: TapeAI.SOURCE };
     }
     return { ok: true, comments: p.out || [], mode: 'page', strict: p.strict,
-      raw: String(p.text || '').slice(0, 1200) };
+      raw: String(p.text || '').slice(0, 1200), diagnostics: pageDiagnostics(r) };
   }
 
   throw new Error('未知的 Grok 消息类型：' + msg.type);

@@ -2,10 +2,10 @@
   "manifest_version": 3,
   "name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "author": "TapeOut 社区 · 昆哥",
   "minimum_chrome_version": "116",
-  "description": "7 站点一键转发到 X（去水印）；Grok 生成 3 条评论候选并写回 X 回复框（支持免 API Key 的站内 Grok 模式）；TapeOut 生态面板内置 295 条导航收录清单，绿标分级 + 链接真伪核验。",
+  "description": "7 站点一键转发到 X（去水印）；Grok 生成 3 条评论候选并写回 X 回复框（免 API Key 站内 Grok，带等待提示与结果校验）；TapeOut 生态面板内置 295 条导航收录清单，绿标分级 + 链接真伪核验。",
   "action": {
     "default_popup": "popup.html",
     "default_title": "TapePost · 转发 / AI 评论 / 生态面板",
