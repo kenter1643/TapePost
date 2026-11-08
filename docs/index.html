@@ -158,7 +158,7 @@
       <h1>一键转发到 X<br><span class="accent">AI 评论 · 官方链接防伪</span></h1>
       <p class="lead">7 个平台的内容清洗文字、去水印、整理成 X 草稿；在 X 上用 Grok 生成 3 条回复候选；生态面板用 295 条导航收录清单分级核验 TapeOut 生态链接。<br>发布与回复始终由你手动完成 —— 扩展不会替你发任何内容。</p>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="assets/TapePost_1.3.0_store.zip" download>下载扩展包 v1.3.0</a>
+        <a class="btn btn-primary" href="assets/TapePost_1.3.1_store.zip" download>下载扩展包 v1.3.1</a>
         <a class="btn btn-ghost" href="https://github.com/kenter1643/TapePost">GitHub 源码</a>
         <a class="btn btn-ghost" href="#ai">看看两个新功能</a>
       </div>
@@ -210,15 +210,15 @@
   <section id="ai" class="alt">
     <div class="wrap">
       <div class="sec-head">
-        <div class="kicker">New in 1.3.0</div>
+        <div class="kicker">New in 1.3.1</div>
         <h2>不止转发：AI 评论 + 官方链接防伪</h2>
-        <p>三个能力都由你主动点击触发。1.3.0 起 Grok 可以走「X 站内 Grok」模式 —— <strong>不需要 API Key、不调用任何 AI 接口、不产生费用</strong>。</p>
+        <p>三个能力都由你主动点击触发。1.3.0 起 Grok 可以走「X 站内 Grok」模式 —— <strong>不需要 API Key、不调用任何 AI 接口、不产生费用</strong>；1.3.1 起评论按钮移到 X 回复填写区右侧，候选可直接写回回复框。</p>
       </div>
       <div class="grid grid-2">
         <div class="card">
           <div class="num">01</div>
           <h3>💬 X 一键评论：3 条候选，你挑一条</h3>
-          <p>每条 X 推文右上角多一个紫色「AI 评论」。点击后 Grok 按你设定的提示词，结合该条正文生成 3 条角度不同的回复候选；选中一条会打开 X 回复框并预填文字，同时复制一份到剪贴板。<strong>最后一步「发送」仍由你手动点</strong>，插件不调用任何发布接口。</p>
+          <p>先点 X 推文的「回复」展开输入框，紫色「AI 评论」就出现在<strong>回复填写区右侧</strong>。点击后 Grok 按你设定的提示词，结合该条正文生成 3 条角度不同的回复候选；选中一条会<strong>直接写入当前回复框</strong>（原本有草稿就追加一行），同时复制一份到剪贴板。<strong>最后一步「回复」仍由你手动点</strong>，插件不调用任何发布接口。</p>
           <p style="margin-top:12px">两套提示词都能在设置里直接改，还能「预览实际发送内容」。默认模型 <code>grok-4.3</code>；没填 Key 时自动切到 X 站内 Grok 模式，不会报错中断。</p>
         </div>
         <div class="card">
@@ -304,12 +304,12 @@
             <li>点「加载已解压的扩展程序」，选择仓库根目录</li>
             <li>打开任一支持的站点，看到橙色「一键转发」即可</li>
           </ol>
-          <p style="margin-top:16px">不想克隆？直接<a href="assets/TapePost_1.3.0_store.zip" download>下载扩展包 v1.3.0</a>，解压后按上面第 2、3 步加载即可（包内即商店提交的 18 个文件）。改过代码后在扩展页点刷新，并刷新来源站页面。设置面板里有「运行环境自检」可排查 Service Worker、DNR 规则与离屏文档状态；要用 AI 评论或链接核验，默认免 Key 走 X 站内 Grok；想用官方 API 才在设置里填 Key。</p>
+          <p style="margin-top:16px">不想克隆？直接<a href="assets/TapePost_1.3.1_store.zip" download>下载扩展包 v1.3.1</a>，解压后按上面第 2、3 步加载即可（包内即商店提交的 18 个文件）。改过代码后在扩展页点刷新，并刷新来源站页面。设置面板里有「运行环境自检」可排查 Service Worker、DNR 规则与离屏文档状态；要用 AI 评论或链接核验，默认免 Key 走 X 站内 Grok；想用官方 API 才在设置里填 Key。</p>
         </div>
         <div>
           <div class="card">
             <h3>回归测试</h3>
-            <p>仓库自带 Node 端到端测试，模拟 MV3 消息链路跑完一次转发，另覆盖 295 条收录清单的分级防伪判定与 X 评论按钮注入，共 112 个场景，无需浏览器。</p>
+            <p>仓库自带 Node 端到端测试，模拟 MV3 消息链路跑完一次转发，另覆盖 295 条收录清单的分级防伪判定与 X 评论按钮注入，共 130 个场景（含回复框按钮注入与候选回写），无需浏览器。</p>
             <pre><code>node test-harness.js
 WBX_VERBOSE=1 node test-harness.js</code></pre>
             <p style="margin-top:14px"><a href="https://github.com/kenter1643/TapePost/blob/main/README.md">完整文档与目录说明 →</a></p>
@@ -325,7 +325,7 @@ WBX_VERBOSE=1 node test-harness.js</code></pre>
         <div class="kicker">FAQ</div>
         <h2>几个常见疑问</h2>
       </div>
-      <details open><summary>它会自动替我发推或评论吗？</summary><p>不会。转发只预填文字、把干净图片写入剪贴板或下载到本机；AI 评论只生成 3 条候选并把选中那条预填进 X 回复框。扩展不调用任何发布接口，最后一步必须你手动点发送。</p></details>
+      <details open><summary>它会自动替我发推或评论吗？</summary><p>不会。转发只预填文字、把干净图片写入剪贴板或下载到本机；AI 评论只生成 3 条候选并把选中那条写进当前 X 回复框（按钮就在回复填写区右侧）。扩展不调用任何发布接口，最后一步必须你手动点「回复」。</p></details>
       <details><summary>AI 评论和链接核验需要什么？会上传什么？</summary><p>默认不需要 Key：用「X 站内 Grok」模式，扩展把提示词填进你已登录的 x.com Grok 页面，由 X 完成对话，插件只读回回答文本在本机解析，不向 xAI 发任何请求。若切到 API 模式，才需要你自己的 xAI Key（只存本机），点击时发送推文正文（最多 1200 字符）或待核验链接 + 本地结论、清单摘要与提示词。两种模式都不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容。调用费用只在 API 模式产生。</p></details>
       <details><summary>绿标是怎么判定的？Grok 会不会把假站判成认可？</summary><p>绿标由扩展内置的 295 条收录清单精确比对得出：5 条项目方官方、56 条导航站编辑收录、234 条链上容器已索引，三档都算导航认可但界面分级显示（链上容器不代表项目方背书）。只有少数独立官网允许同域任意路径，网关域名按精确地址比对。Grok 只负责解释理由和识别形近域名、Punycode、短链等风险；即使模型误判，本地未命中也不会给绿标，界面还会标红提示冲突。</p></details>
       <details><summary>视频能去水印吗？</summary><p>微博视频会尝试通过公开接口取高清地址；X 视频通常是 HLS / blob 流，暂不能导出干净 mp4。其余站点只能取页面中出现的直链。</p></details>
@@ -344,13 +344,13 @@ WBX_VERBOSE=1 node test-harness.js</code></pre>
     </div>
     <div class="foot-links">
       <a href="https://github.com/kenter1643/TapePost">GitHub 源码</a>
-      <a href="assets/TapePost_1.3.0_store.zip" download>下载扩展包</a>
+      <a href="assets/TapePost_1.3.1_store.zip" download>下载扩展包</a>
       <a href="privacy.html">隐私政策</a>
       <a href="https://github.com/kenter1643/TapePost/blob/main/LICENSE">MIT 许可</a>
       <a href="https://github.com/kenter1643/TapePost/issues">反馈问题</a>
     </div>
   </div>
-  <div class="fine">TapeOut 社区 · 昆哥　｜　版本 1.3.0　｜　本页面为功能示意，截图仅作说明之用。TapePost 与 X、xAI、微博及上述任何站点均无官方关联；生态面板的清单来自 TapeOut.link 公开收录与 web.tapeout.link 索引，绿标不代表项目方背书或投资建议。</div>
+  <div class="fine">TapeOut 社区 · 昆哥　｜　版本 1.3.1　｜　本页面为功能示意，截图仅作说明之用。TapePost 与 X、xAI、微博及上述任何站点均无官方关联；生态面板的清单来自 TapeOut.link 公开收录与 web.tapeout.link 索引，绿标不代表项目方背书或投资建议。</div>
 </footer>
 </body>
 </html>

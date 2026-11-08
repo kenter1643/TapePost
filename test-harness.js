@@ -65,6 +65,9 @@ class MiniNode {
   appendChild(n) { n.parentElement = this; this.children.push(n); return n; }
   insertBefore(n) { return this.appendChild(n); }
   addEventListener(type, fn) { if (!this._handlers) this._handlers = {}; this._handlers[type] = fn; }
+  // 1.3.1 回写测试：focus 交给 makeDom 的 hook 记录 activeElement
+  focus() { this._focused = true; if (typeof globalThis.__wbxFocusHook === 'function') globalThis.__wbxFocusHook(this); }
+  dispatchEvent(ev) { (this._events || (this._events = [])).push(ev); return true; }
   remove() {
     if (this.parentElement) {
       const arr = this.parentElement.children;
@@ -129,6 +132,7 @@ let clipboardWrites = [];
 let clipboardTypes = [];
 let clipboardTextPayload = null;
 let downloadedFiles = [];
+let windowOpenCount = 0;   // 1.3.1：成功回写回复框时不应再打开 intent 页
 let scenario = {};
 
 const serialize = (v) => JSON.parse(JSON.stringify(v));
@@ -357,7 +361,7 @@ function baseGlobals(name) {
       }
     },
     window: {
-      open: (u) => { note('window', 'open() -> ' + String(u)); return {}; },
+      open: (u) => { note('window', 'open() -> ' + String(u)); windowOpenCount++; return {}; },
       addEventListener: () => {}
     },
     MutationObserver: class { observe() {} disconnect() {} },
@@ -391,6 +395,9 @@ function baseGlobals(name) {
         json: () => Promise.resolve({})
       });
     },
+    // 1.3.1 回写兜底路径会派发 InputEvent('input')
+    Event: class { constructor(type, opts) { this.type = type; Object.assign(this, opts || {}); } },
+    InputEvent: class { constructor(type, opts) { this.type = type; Object.assign(this, opts || {}); } },
     createImageBitmap: () => Promise.resolve({ width: 100, height: 100, close() {} }),
     OffscreenCanvas: class {
       constructor(w, h) {
@@ -441,16 +448,36 @@ function makeDom() {
     }
     return n;
   };
-  return {
+  // 1.3.1 起 document 要是真 DOM 树：回复框按钮注入靠 querySelectorAll 全页扫描
+  const root = new MiniNode('body');
+  root.id = 'body';
+  const rootAppend = root.appendChild.bind(root);
+  root.appendChild = (n) => { if (n && n.id) nodes[n.id] = n; return rootAppend(n); };
+  const doc = {
     readyState: 'complete',
     head: { appendChild() {} },
-    body: { appendChild(n) { if (n && n.id) nodes[n.id] = n; } },
+    body: root,
     createElement: (tag) => mk('new-' + tag, tag),
     getElementById: (id) => nodes[id] || null,
-    querySelectorAll: () => [],
+    querySelectorAll: (sel) => root.querySelectorAll(sel),
+    querySelector: (sel) => root.querySelector(sel),
     addEventListener: () => {},
-    _nodes: nodes
+    activeElement: null,
+    // execCommand('insertText') 是写回 X contenteditable 的主路径
+    execCommand: (cmd, ui, text) => {
+      const el = doc.activeElement;
+      if (cmd !== 'insertText' || !el) return false;
+      const cur = String(el.innerText || el.textContent || '');
+      el.innerText = cur + String(text);
+      el.textContent = el.innerText;
+      (doc._inserted || (doc._inserted = [])).push(String(text));
+      return true;
+    },
+    _nodes: nodes,
+    _root: root
   };
+  globalThis.__wbxFocusHook = (n) => { doc.activeElement = n; };
+  return doc;
 }
 
 let contentCtx, bgCtx, offCtx, dom;
@@ -665,6 +692,9 @@ async function runXGuards() {
 
   await boot('x.com', '/home');
   checks['X时间线正常扫描'] = vm.runInContext('isXIntentPage()', contentCtx) === false;
+  await boot('x.com', '/compose/post');
+  checks['回复弹窗页不注入卡片按钮'] = vm.runInContext('isXIntentPage()', contentCtx) === true;
+  await boot('x.com', '/home'); // 恢复时间线上下文，下面的断言不受影响
 
   // 引用推文比主推文长：按 DOM 顺序必须取第一个 tweetText
   const quoteCard = new MiniNode('article', { attrs: { 'data-testid': 'tweet' } });
@@ -1098,16 +1128,18 @@ async function runCommentButtonChecks() {
     vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 });
     const all = built.card._all();
     const group = all.find((n) => n.className === 'wbx-btn-group');
-    A('X 推文注入紫色 AI 评论按钮', all.some((n) => n.className === 'wbx-comment-btn'));
-    A('一键转发与 AI 评论并排在同一 group', !!group &&
+    // 1.3.1 行为变更：AI 评论按钮从推文卡片移到 X 回复填写区右侧
+    A('1.3.1：X 推文卡片不再挂 AI 评论按钮',
+      !all.some((n) => n.className === 'wbx-comment-btn'));
+    A('1.3.1：卡片上只保留一键转发按钮', !!group &&
       group.children.some((c) => c.className === 'wbx-repost-btn') &&
-      group.children.some((c) => c.className === 'wbx-comment-btn'));
+      !group.children.some((c) => String(c.className || '').includes('wbx-comment-btn')));
 
     // 真实浏览器里 innerText 会聚合子按钮文字；MiniNode 不会，这里手动模拟
-    built.textNode.innerText = '这是一条用于测试 AI 评论按钮的推文正文。 一键转发 AI 评论';
+    built.textNode.innerText = '这是一条用于测试 AI 评论按钮的推文正文。 一键转发';
     built.textNode.textContent = built.textNode.innerText;
     const post = vm.runInContext('resolvePost(__card)', contentCtx);
-    A('按钮文字不污染转发正文', !!post && !/一键转发|AI 评论/.test(post.text) && post.text.includes('推文正文'));
+    A('按钮文字不污染转发正文', !!post && !/一键转发/.test(post.text) && post.text.includes('推文正文'));
     A('回复目标 status id 可解析',
       vm.runInContext('extractXStatusId(__card)', contentCtx) === '1234567890');
 
@@ -1131,6 +1163,136 @@ async function runCommentButtonChecks() {
   } catch (e) {
     A('X 评论按钮检查无异常', false);
     note('ERROR', '评论按钮检查抛错: ' + (e && e.message));
+  }
+  return checks;
+}
+
+// ---------- 1.3.1：X 回复填写区按钮 + 候选精准回写 ----------
+/* 模拟实测的 /compose/post 回复弹窗：dialog 里有「Replying to @xxx」、
+ * 编辑区（占位符 Post your reply + div[aria-label="Post text"][role="textbox"]）、
+ * 工具栏末尾的 Reply 按钮。首页主发推框同样用 aria-label="Post text"，
+ * 必须靠上下文把它排除。 */
+function makeReplyDialog() {
+  const n = (tag, opts) => new MiniNode(tag, opts || {});
+  const dlg = n('div', { attrs: { role: 'dialog', 'aria-modal': 'true' } });
+  // MiniNode 不像真实 DOM 会聚合后代 innerText，这里手动模拟可见文本
+  dlg.innerText = '火星人Ryan @bitcoin2themars TapeOut 日报｜链上容器索引突破 200 个 ' +
+    'Replying to @bitcoin2themars Post your reply Reply';
+  dlg.textContent = dlg.innerText;
+  const quoted = n('div', { attrs: { role: 'group' } });
+  quoted.appendChild(n('a', { attrs: { href: '/bitcoin2themars/status/2119124304164270241' } }));
+  dlg.appendChild(quoted);
+  dlg.appendChild(n('button', { text: 'Replying to @bitcoin2themars' }));
+  const editor = n('div');
+  editor.appendChild(n('div', { text: 'Post your reply' }));
+  const input = n('div', { attrs: { 'aria-label': 'Post text', role: 'textbox', contenteditable: 'true' } });
+  editor.appendChild(input);
+  dlg.appendChild(editor);
+  const toolbar = n('div');
+  toolbar.appendChild(n('button', { attrs: { 'data-testid': 'tweetButtonInline' }, text: 'Reply' }));
+  dlg.appendChild(toolbar);
+  return { dlg: dlg, editor: editor, input: input };
+}
+
+async function runReplyComposerChecks() {
+  const checks = [];
+  const A = (name, v) => checks.push({ name, ok: !!v });
+  try {
+    resetWorld();
+    scenario = { hostname: 'x.com', path: '/compose/post' };
+    loadContent();
+    await vm.runInContext('loadSettings()', contentCtx);
+
+    const rd = makeReplyDialog();
+    const mainWrap = new MiniNode('div', { text: "What's happening?" });
+    const mainInput = new MiniNode('div', {
+      attrs: { 'aria-label': 'Post text', role: 'textbox', contenteditable: 'true' }
+    });
+    mainWrap.appendChild(mainInput);
+    const card = new MiniNode('article', { attrs: { 'data-testid': 'tweet' } });
+    card.appendChild(new MiniNode('div', {
+      attrs: { 'data-testid': 'tweetText' }, text: '时间线里的一条推文'
+    }));
+    dom.body.appendChild(rd.dlg);
+    dom.body.appendChild(mainWrap);
+    dom.body.appendChild(card);
+    Object.assign(contentCtx, {
+      __replyDlg: rd.dlg, __replyInput: rd.input, __mainInput: mainInput, __replyCard: card
+    });
+
+    const found = vm.runInContext('findReplyComposers()', contentCtx);
+    A('只认回复弹窗的输入框，排除首页主发推框',
+      found.length === 1 && found[0].input === rd.input);
+    A('上下文判定：Replying to 命中、What’s happening 排除',
+      vm.runInContext('isReplyInput(__replyInput, replyScopeOf(__replyInput))', contentCtx) === true &&
+      vm.runInContext('isReplyInput(__mainInput, replyScopeOf(__mainInput))', contentCtx) === false);
+    A('从弹窗原推链接解析出 status id',
+      vm.runInContext('extractXStatusIdFromScope(__replyDlg)', contentCtx) === '2119124304164270241');
+    const ctxText = vm.runInContext('contextTextFromScope(__replyDlg)', contentCtx);
+    A('上下文文本保留原推、剔除 X 的 UI 占位文案',
+      /TapeOut 日报/.test(ctxText) && !/Post your reply|Replying to/.test(ctxText));
+
+    vm.runInContext('scanAndInject()', contentCtx, { timeout: 3000 });
+    const replyBtns = () => (rd.editor.children || [])
+      .filter((n) => String(n.className || '').includes('wbx-reply-btn'));
+    const btn = replyBtns()[0];
+    A('AI 评论按钮挂在回复输入框的填写区右侧', !!btn && btn.parentElement === rd.editor);
+    A('/compose/post 回复弹窗不再往推文卡片注入一键转发',
+      !card._all().some((n) => n.className === 'wbx-btn-group'));
+    A('按钮带回复区标记，选中候选走精准回写', !!btn && btn.__wbxReply === true);
+
+    for (let i = 0; i < 3; i++) vm.runInContext('scanAndInject()', contentCtx, { timeout: 3000 });
+    A('重复扫描不重建回复框按钮（避免自触发死循环）',
+      replyBtns().length === 1 && replyBtns()[0] === btn);
+
+    contentCtx.__replyBtn = btn;
+    A('空回复框：候选直接写入',
+      vm.runInContext('applyCommentToReply("第一条候选", __replyBtn)', contentCtx) === true &&
+      rd.input.innerText === '第一条候选');
+    A('已有草稿：追加一行而不是覆盖',
+      vm.runInContext('applyCommentToReply("第二条候选", __replyBtn)', contentCtx) === true &&
+      rd.input.innerText === '第一条候选\n第二条候选');
+    A('写入走 execCommand insertText 主路径', (dom._inserted || []).length === 2);
+
+    const origExec = dom.execCommand;
+    dom.execCommand = () => false;
+    const fallbackOk = vm.runInContext('writeIntoReply(__replyInput, "兜底写入")', contentCtx);
+    dom.execCommand = origExec;
+    A('execCommand 被拦时走 input 事件兜底',
+      fallbackOk === true && rd.input.textContent.includes('兜底写入') &&
+      (rd.input._events || []).length > 0);
+
+    // 端到端：候选面板里点「写入回复框」，应写进当前框且不开 intent 页
+    contentCtx.__comments = ['候选甲', '候选乙', '候选丙'];
+    vm.runInContext('showCommentPicker(__comments, "2119124304164270241", null, __replyBtn, "推文正文", "page")',
+      contentCtx, { timeout: 3000 });
+    const panel = dom.getElementById('wbx-comments');
+    const useBtn = panel && panel._all().find((n) => n.className === 'wbx-c-use');
+    A('候选面板有「写入回复框」按钮', !!useBtn && useBtn.textContent === '写入回复框');
+    if (useBtn && useBtn._handlers && useBtn._handlers.click) {
+      useBtn._handlers.click({ preventDefault() {}, stopPropagation() {} });
+    }
+    A('点选候选后写进当前回复框，不再另开 intent 预填页',
+      rd.input.innerText.includes('候选甲') && windowOpenCount === 0);
+
+    vm.runInContext('settings.enableAiComment = false', contentCtx);
+    vm.runInContext('injectIntoReplyComposers()', contentCtx, { timeout: 3000 });
+    A('关闭开关后回复框按钮被清掉', replyBtns().length === 0);
+    vm.runInContext('settings.enableAiComment = true', contentCtx);
+    vm.runInContext('injectIntoReplyComposers()', contentCtx, { timeout: 3000 });
+    A('重新开启后按钮恢复', replyBtns().length === 1);
+
+    rd.input.remove();
+    A('找不到回复框时回写返回 false（交给 intent 兜底）',
+      vm.runInContext('applyCommentToReply("兜底候选", __replyBtn)', contentCtx) === false);
+
+    rd.editor.appendChild(rd.input);
+    vm.runInContext('settings.replyInputSelector = \'div[id="wbx-none"]\'', contentCtx);
+    A('自定义回复框选择器可覆盖内置选择器',
+      vm.runInContext('findReplyComposers().length', contentCtx) === 0);
+  } catch (e) {
+    A('回复框注入/回写检查无异常', false);
+    note('ERROR', '回复框检查抛错: ' + (e && e.message));
   }
   return checks;
 }
@@ -1230,6 +1392,7 @@ function resetWorld() {
   downloadedFiles = [];
   runtimeSendCount = 0;
   offscreenDocumentExists = false;
+  windowOpenCount = 0;
 }
 
 async function runScenario(name, cfg, expect) {
@@ -1261,7 +1424,7 @@ async function runScenario(name, cfg, expect) {
   try { vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 }); }
   catch (e) { note('ERROR', 'injectIntoCard 抛错: ' + (e && e.message)); }
   const expectedHost = cfg.textEmpty ? built.media : built.textNode;
-  // v1.1.0 起按钮包在 .wbx-btn-group 里（X 站点还要并排第二个「AI 评论」），
+  // v1.1.0 起按钮包在 .wbx-btn-group 里（1.3.1 起 X 的「AI 评论」已移到回复框右侧），
   // 断言改成「按钮在正文容器的子树里、不在作者区」，语义不变但不再要求它是直接子元素。
   const hasRepostBtn = (node) => !!(node && node._all && node._all().some((n) => n.className === 'wbx-repost-btn'));
   const inContent = hasRepostBtn(expectedHost);
@@ -1669,6 +1832,7 @@ async function runScenario(name, cfg, expect) {
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
   const aiChecks = runTapeAIChecks()
     .concat(await runCommentButtonChecks())
+    .concat(await runReplyComposerChecks())
     .concat(runPageModeChecks())
     .concat(runPageBridgeDomChecks())
     .concat(await runPageModeEndToEnd());

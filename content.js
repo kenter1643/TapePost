@@ -32,7 +32,8 @@ const SETTINGS_DEFAULT = {
   hashMode: 'truncate',          // truncate(删 # 及后) | stripTopics(只删话题块) | keep(不动)
   appendSignature: false,        // 是否在清洗后的正文末尾附上「昆哥 + 主页链接」
   appendSource: false,           // X 来源时是否在正文末尾附上原推文链接（默认关闭）
-  enableAiComment: true,         // X 推文上是否显示「AI 评论」按钮
+  enableAiComment: true,         // X 回复填写区右侧是否显示「AI 评论」按钮
+  replyInputSelector: '',        // X 改版时可覆盖回复框选择器（留空用 sites.js 内置）
   enabledSites: {}               // 各站点开关；默认全部启用（值为 false 才关闭）
 };
 let settings = Object.assign({}, SETTINGS_DEFAULT);
@@ -61,7 +62,7 @@ function injectStyle() {
   }
   .wbx-repost-btn:hover{background:#ff8c1a;}
   .wbx-repost-btn:disabled{opacity:.6;cursor:default;}
-  /* 两个按钮并排：由 group 负责绝对定位，组内按钮回到文档流，避免叠在一起 */
+  /* 转发按钮组：由 group 负责绝对定位，组内按钮回到文档流；1.3.1 起组内只有这一个按钮 */
   .wbx-btn-group{
     position:absolute;top:2px;right:2px;z-index:20;
     display:inline-flex;align-items:center;gap:4px;
@@ -75,6 +76,12 @@ function injectStyle() {
   }
   .wbx-comment-btn:hover{background:#7c56d6;}
   .wbx-comment-btn:disabled{opacity:.6;cursor:default;}
+  /* 1.3.1：AI 评论按钮挂在 X 回复填写区右侧，不再是推文正文右上角的并排按钮 */
+  .wbx-comment-btn.wbx-reply-btn{
+    position:absolute !important;top:2px !important;right:6px !important;z-index:30 !important;
+    height:20px !important;padding:0 8px !important;font-size:11px !important;line-height:20px !important;
+    box-shadow:0 1px 4px rgba(107,70,193,.5) !important;
+  }
   /* AI 评论候选卡片：与图片托盘同级的强可见浮层，不抢 X 的焦点 */
   #wbx-comments{
     position:fixed !important;right:20px !important;bottom:20px !important;
@@ -828,22 +835,23 @@ function injectIntoCard(card) {
    * 现在校验和保存统一用同一个 qfp，内容不变时一律早退、不再碰 DOM。
    */
   const qfp = quickFingerprint(card);
-  // X 站点额外挂一个「AI 评论」；开关变化也要能触发重建，所以纳入指纹校验
-  const wantComment = !!(SITE && SITE.id === 'x') && settings.enableAiComment !== false;
-  const commentFlag = wantComment ? '1' : '0';
+  // 1.3.1 起「AI 评论」按钮移到 X 回复填写区右侧，卡片上只留「一键转发」。
   const existing = card.querySelector('.wbx-btn-group') || card.querySelector('.wbx-repost-btn');
   const groupIntact = existing && (String(existing.className || '').indexOf('wbx-btn-group') === -1 ||
     (existing.querySelector && existing.querySelector('.wbx-repost-btn')));
-  if (existing && groupIntact && card.contains(existing) &&
-      card.dataset.wbxFp === qfp && card.dataset.wbxCommentMode === commentFlag) return;
+  if (existing && groupIntact && card.contains(existing) && card.dataset.wbxFp === qfp) return;
 
   const post = resolvePost(card);
   if (!post.text && !post.imageUrls.length && !post.hasVideo) return;
 
   // 内容变了 / 按钮被框架删掉 → 移除旧按钮重建
   if (existing) { try { existing.remove(); } catch (e) {} }
-  // 老版本残留的独立评论按钮（没包在 group 里）也一并清掉
-  try { card.querySelectorAll('.wbx-comment-btn').forEach((n) => n.remove()); } catch (e) {}
+  // 1.3.1 迁移：老版本把「AI 评论」挂在卡片正文里，全部清掉，改由回复区注入
+  try {
+    card.querySelectorAll('.wbx-comment-btn').forEach((n) => {
+      if (!String(n.className || '').includes('wbx-reply-btn')) n.remove();
+    });
+  } catch (e) {}
   delete card.dataset.wbxInjected;
 
   // 纯图/纯视频微博可能没有正文节点：退化到媒体墙，它同样位于内容区而非作者行
@@ -866,7 +874,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.3.0';
+  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.3.1';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -880,29 +888,204 @@ function injectIntoCard(card) {
   group.className = 'wbx-btn-group';
   group.appendChild(btn);
 
-  if (wantComment) {
-    const cbtn = document.createElement('button');
-    cbtn.className = 'wbx-comment-btn';
-    cbtn.type = 'button';
-    cbtn.textContent = 'AI 评论';
-    cbtn.title = 'TapePost · 用 Grok 按设定提示词生成 3 条回复候选，选一条后预填到 X 回复框（由你手动发送）';
-    cbtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const liveCard = (cbtn.closest && cbtn.closest(CARD_SELECTORS.join(','))) || card;
-      return onAiComment(liveCard, cbtn);
-    });
-    group.appendChild(cbtn);
-  }
-
   host.appendChild(group);
   card.dataset.wbxFp = qfp;   // 与早退判断同口径，切勿改成 postFingerprint(post)
-  card.dataset.wbxCommentMode = commentFlag;
   card.dataset.wbxInjected = '1';
 }
 
-/* 插件自己打开的 X 发布页不注入按钮：否则发推框里会再叠一个「一键转发」。
- * 只放在扫描入口判定（不放 init），X 是 SPA，从发布页返回时间线后还能恢复扫描。 */
+/* ---------- 1.3.1：X 回复填写区右侧的「AI 评论」按钮 ----------
+ * 实测（2026-11-08，已登录 x.com）：点推文的「回复」会跳 /compose/post 弹窗，
+ * 输入框 <div aria-label="Post text" role="textbox" contenteditable>，
+ * 空值旁显示「Post your reply」，下方工具栏末尾是 Reply 按钮。
+ * 主发推框也用 aria-label="Post text"，所以必须靠 Replying to / Post your reply
+ * 这类上下文判定，不能只按选择器抓。按钮挂在输入框父容器（编辑区）右上角，
+ * 选中候选后直接写回这个框，不再另开 intent 发推页。
+ */
+const REPLY_CFG = (SITE && SITE.reply) || {
+  inputSelectors: ['div[aria-label="Post text"][role="textbox"]'],
+  scopeSelectors: ['[role="dialog"]'],
+  sendSelectors: ['[data-testid="tweetButtonInline"]'],
+  replyHints: ['Replying to', 'Post your reply'],
+  postHints: ["What's happening"]
+};
+
+function replyInputSelectors() {
+  const custom = String((settings && settings.replyInputSelector) || '').trim();
+  return custom ? custom.split(',').map((s) => s.trim()).filter(Boolean) : REPLY_CFG.inputSelectors;
+}
+
+function queryReplyNodes(selectors) {
+  const out = [];
+  const seen = new Set();
+  for (const sel of selectors) {
+    try {
+      document.querySelectorAll(sel).forEach((el) => {
+        if (!seen.has(el)) { seen.add(el); out.push(el); }
+      });
+    } catch (e) { /* 单个选择器非法不影响其它 */ }
+  }
+  return out;
+}
+
+function nodeText(n) {
+  if (!n) return '';
+  try { return String(n.innerText || n.textContent || ''); } catch (e) { return ''; }
+}
+
+/* 判定用的大范围容器：向上找到包含「Replying to」或 Reply 发送按钮的那一层。
+ * 挂按钮不用它（否则会飘到整个弹窗右上角），只用输入框的父容器。 */
+function replyScopeOf(input) {
+  let el = input && input.parentElement;
+  let best = el;
+  const hints = REPLY_CFG.replyHints || [];
+  const sendSel = (REPLY_CFG.sendSelectors || []).join(',');
+  for (let i = 0; i < 8 && el; i++) {
+    const tag = String(el.tagName || '').toLowerCase();
+    // 不能让 scope 一路涨到 body：否则「回复弹窗 + 首页主发推框」同页时，
+    // 主发推框会读到弹窗里的 Replying to，被误判成回复框。
+    if (tag === 'body' || tag === 'html') break;
+    const t = nodeText(el);
+    const hasHint = hints.some((h) => t.indexOf(h) !== -1);
+    const hasSend = !!(sendSel && el.querySelector && el.querySelector(sendSel));
+    const isDialog = el.getAttribute && /^(dialog)$/.test(String(el.getAttribute('role') || '')) ||
+      String(el.getAttribute && el.getAttribute('aria-modal') || '') === 'true';
+    if (hasHint || hasSend || isDialog) best = el;
+    if (isDialog) break;
+    el = el.parentElement;
+  }
+  return best || (input && input.parentElement);
+}
+
+function isReplyInput(input, scope) {
+  if (!input) return false;
+  // 插件自己的候选面板里也可能有 textbox，别把它当回复框
+  if (input.closest && input.closest('[id="wbx-comments"]')) return false;
+  const blob = nodeText(scope) + ' ' + nodeText(input) + ' ' +
+    String((input.getAttribute && input.getAttribute('aria-label')) || '') + ' ' +
+    String((input.getAttribute && input.getAttribute('data-placeholder')) || '');
+  const hints = REPLY_CFG.replyHints || [];
+  const postHints = REPLY_CFG.postHints || [];
+  const hasReply = hints.some((h) => blob.indexOf(h) !== -1);
+  const hasMain = postHints.some((h) => blob.indexOf(h) !== -1);
+  const inDialog = !!(input.closest && input.closest('[role="dialog"],[aria-modal="true"]'));
+  const inlineSend = !!(scope && scope.querySelector &&
+    scope.querySelector((REPLY_CFG.sendSelectors || []).join(',')));
+  return (hasReply || inlineSend || (inDialog && !hasMain)) && !hasMain;
+}
+
+function findReplyComposers() {
+  const out = [];
+  for (const input of queryReplyNodes(replyInputSelectors())) {
+    const scope = replyScopeOf(input);
+    if (!isReplyInput(input, scope)) continue;
+    const host = (input.parentElement && input.parentElement.appendChild) ? input.parentElement : input;
+    out.push({ input: input, scope: scope, host: host });
+  }
+  return out;
+}
+
+function injectIntoReplyComposers() {
+  if (!SITE || SITE.id !== 'x') return;
+  const enabled = settings.enableAiComment !== false;
+  // 关掉开关时把已注入的按钮清掉（只清自己的，不动页面上其它插件的按钮）
+  if (!enabled) {
+    try {
+      document.querySelectorAll('.wbx-reply-btn').forEach((n) => { if (n.remove) n.remove(); });
+    } catch (e) {}
+    return;
+  }
+  findReplyComposers().forEach((c) => {
+    const host = c.host;
+    if (!host || !host.appendChild) return;
+    // 内容不变时一律早退：注入按钮本身会触发 MutationObserver，删了重建会自触发死循环
+    const old = (host.children || []).filter
+      ? (host.children || []).filter((n) => String(n.className || '').indexOf('wbx-reply-btn') !== -1)[0]
+      : null;
+    if (old) return;
+    ensureRelative(host);
+    const btn = document.createElement('button');
+    btn.className = 'wbx-comment-btn wbx-reply-btn';
+    btn.type = 'button';
+    btn.textContent = 'AI 评论';
+    btn.title = 'TapePost · 用 Grok 按设定提示词生成 3 条回复候选，选一条后直接写入本回复框（由你手动发送）';
+    btn.__wbxReply = true;
+    btn.__wbxScope = c.scope;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // 点击瞬间实时定位，避免 X 重渲染后闭包里拿到旧的回复框
+      const live = findReplyComposers().find((x) => x.scope === btn.__wbxScope) || findReplyComposers()[0];
+      const ctx = resolveReplyContext(btn, live && live.scope);
+      return onAiComment(ctx, btn);
+    });
+    host.appendChild(btn);
+  });
+}
+
+/* 回复弹窗里被回复的推文正文：优先弹窗内的 article，其次按钮所在 article，
+ * 再退到详情页的 tweetDetail。找不到时 onAiComment 会给出明确提示。 */
+function resolveReplyContext(btn, scope) {
+  try {
+    if (scope && scope.querySelector) {
+      const a = scope.querySelector('article[data-testid="tweet"],[data-testid="tweetDetail"],article');
+      if (a) return a;
+    }
+    if (btn && btn.closest) {
+      const a = btn.closest('article');
+      if (a) return a;
+    }
+    return document.querySelector('[data-testid="tweetDetail"]') || null;
+  } catch (e) { return null; }
+}
+
+/* 把候选写进 X 的 contenteditable 回复框。execCommand('insertText') 会触发
+ * 真实 input 事件，React 受控组件能识别（1.3.0 的 Grok 输入框已验证同一机制）。
+ * 框里已有草稿时追加一行，绝不静默覆盖用户写的内容。 */
+function writeIntoReply(input, text) {
+  if (!input || !text) return false;
+  try {
+    if (input.focus) input.focus();
+    try {
+      const sel = (typeof window !== 'undefined' && typeof window.getSelection === 'function')
+        ? window.getSelection() : null;
+      if (sel && typeof document.createRange === 'function') {
+        const r = document.createRange();
+        if (r.selectNodeContents && r.collapse) {
+          r.selectNodeContents(input);
+          r.collapse(false);
+          if (sel.removeAllRanges) sel.removeAllRanges();
+          if (sel.addRange) sel.addRange(r);
+        }
+      }
+    } catch (e) { /* 光标定位失败不影响插入 */ }
+    const existing = nodeText(input).trim();
+    const payload = existing ? '\n' + text : text;
+    if (document.execCommand && document.execCommand('insertText', false, payload)) return true;
+    // 兜底：直接改文本并派发 input 事件（X 改版导致 execCommand 被拦时）
+    const next = existing ? existing + '\n' + text : text;
+    if (input.textContent != null) input.textContent = next;
+    if (input.innerText != null) input.innerText = next;
+    try {
+      const Ev = (typeof InputEvent === 'function') ? InputEvent : Event;
+      const ev = new Ev('input', { bubbles: true, inputType: 'insertText', data: payload });
+      if (input.dispatchEvent) input.dispatchEvent(ev);
+      return true;
+    } catch (e) { return false; }
+  } catch (e) { return false; }
+}
+
+function applyCommentToReply(text, btn) {
+  if (!btn || !btn.__wbxReply) return false;
+  const list = findReplyComposers();
+  if (!list.length) return false;
+  const target = list.find((c) => c.scope === btn.__wbxScope) || list[0];
+  return writeIntoReply(target.input, text);
+}
+
+/* 插件自己打开的 X 发布页不注入「一键转发」按钮：否则发推框里会再叠一个。
+ * 1.3.1：/compose/post 也是用户点「回复」后的弹窗页，卡片按钮同样不注入，
+ * 但「AI 评论」要照常注入到回复框右侧——这两件事拆开处理。
+ * 只放在扫描入口判定（不放 init），X 是 SPA，返回时间线后还能恢复扫描。 */
 function isXIntentPage() {
   if (!SITE || SITE.id !== 'x') return false;
   const p = String(PAGE_PATH || '/').toLowerCase();
@@ -911,8 +1094,11 @@ function isXIntentPage() {
 }
 
 function scanAndInject() {
-  if (isXIntentPage()) return;
-  try { getCards().forEach(injectIntoCard); } catch (e) { /* ignore */ }
+  if (!isXIntentPage()) {
+    try { getCards().forEach(injectIntoCard); } catch (e) { /* ignore */ }
+  }
+  // 回复框可能在时间线内联展开，也可能在 /compose/post 弹窗里，两种都要扫
+  try { injectIntoReplyComposers(); } catch (e) { /* ignore */ }
 }
 
 // ---------- 点击处理 ----------
@@ -986,9 +1172,10 @@ async function onRepost(card, btn) {
 
 // ---------- X 一键评论：Grok 生成 3 条候选，选一条后由用户手动回复 ----------
 /*
- * 与「一键转发」保持同一套原则：插件只生成 / 预填，绝不自动发布。
- * 回复目标用 X Web Intent 的 in_reply_to 参数（官方预填渠道），比往 X 的
- * React 受控输入框里塞 textContent 可靠得多；文字同时进剪贴板做兜底。
+ * 与「一键转发」保持同一套原则：插件只生成 / 写入，绝不自动发布。
+ * 1.3.1 主路径：按钮就在回复填写区右侧，选中候选后直接写进当前回复框，
+ * 不再另开 intent 发推页。找不到回复框 / 写入失败时才退回 intent 预填 +
+ * 剪贴板兜底，保证功能不会倒退。
  */
 function extractXStatusId(card) {
   try {
@@ -1000,6 +1187,27 @@ function extractXStatusId(card) {
     if (m) return m[1];
   } catch (e) {}
   return '';
+}
+
+/* 回复弹窗页 URL 是 /compose/post，没有 status id；从弹窗里的原推链接取。 */
+function extractXStatusIdFromScope(scope) {
+  try {
+    const a = scope && scope.querySelector && scope.querySelector('a[href*="/status/"]');
+    if (a) {
+      const m = /\/status\/(\d+)/.exec(String(a.getAttribute('href') || a.href || ''));
+      if (m) return m[1];
+    }
+  } catch (e) {}
+  return '';
+}
+
+/* 弹窗里拿不到规整的 article 时，用「Replying to」上方的原推文本做上下文，
+ * 去掉 X 自己的 UI 文案，避免把占位符当推文正文发给 Grok。 */
+function contextTextFromScope(scope) {
+  let t = nodeText(scope).replace(/\s+/g, ' ').trim();
+  t = t.replace(/Drafts|Replying to\s*@?\S+|Post your reply|Add photos or video|Add a GIF|Generate image|Add poll|Add emoji|Schedule post|Content disclosure|Reply/gi, ' ');
+  t = t.replace(/\s+/g, ' ').trim();
+  return t.slice(0, 600);
 }
 
 async function copyTextFallback(text) {
@@ -1028,19 +1236,23 @@ async function onAiComment(card, btn) {
     showToast('插件刚重新加载过，旧按钮已失效：请刷新 X 页面（Cmd+R）后再点「AI 评论」。', 9000);
     return;
   }
-  const post = resolvePost(card);
-  const text = post.text || '';
+  let text = '';
+  try { if (card) text = resolvePost(card).text || ''; } catch (e) {}
+  const scope = (btn && btn.__wbxScope) || null;
+  if (!text && scope) text = contextTextFromScope(scope);
   if (!text) {
-    showToast('没有读到这条推文的正文（可能是纯图/纯视频推文），已取消生成评论。', 7000);
+    showToast('没有读到被回复推文的正文（可能是纯图推文或 X 结构改版），已取消生成评论。可刷新页面，或在设置里填「回复框选择器」。', 8000);
     return;
   }
-  const statusId = extractXStatusId(card);
+  const statusId = extractXStatusId(card) || extractXStatusIdFromScope(scope);
+  let permalink = '';
+  try { permalink = card ? extractPermalink(card) : ''; } catch (e) {}
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中'; }
   showToast('Grok 正在按设定提示词生成 3 条回复候选…（只生成候选，不会自动发布）', 6000);
   try {
     const resp = await chrome.runtime.sendMessage({
       type: 'GROK_COMMENTS',
-      payload: { text, statusId, url: extractPermalink(card) }
+      payload: { text, statusId, url: permalink }
     });
     if (btn) { btn.disabled = false; btn.textContent = 'AI 评论'; }
     if (resp && resp.prepared) {
@@ -1082,7 +1294,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode) {
   head.appendChild(close);
   panel.appendChild(head);
   panel.appendChild(makeCommentEl('div', 'wbx-c-tip',
-    '选一条 → 打开 X 回复框并预填文字，最后一步「发送」始终由你手动点；文字也已复制，可随时粘贴。'));
+    '选一条 → 直接写入当前 X 回复框（原本有草稿就追加一行）；文字同时复制。最后一步「回复」始终由你手动点。'));
 
   comments.forEach((c, i) => {
     const item = makeCommentEl('div', 'wbx-c-item');
@@ -1090,11 +1302,20 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode) {
     item.appendChild(makeCommentEl('div', 'wbx-c-text', c));
     const actions = makeCommentEl('div', 'wbx-c-actions');
 
-    const use = makeCommentEl('button', 'wbx-c-use', '用它回复 ↗');
+    const use = makeCommentEl('button', 'wbx-c-use', '写入回复框');
     use.type = 'button';
     use.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // 1.3.1 主路径：直接写进按钮旁边那个回复框，不再另开 intent 页面
+      const wrote = applyCommentToReply(c, btn);
+      if (wrote) {
+        showToast('已写入当前 X 回复框（框里原本有草稿时自动追加一行），文字也已复制；确认无误后手动点「回复」。', 8000);
+        copyTextFallback(c);
+        if (panel.remove) panel.remove();
+        return;
+      }
+      // 兜底：X 改版导致找不到回复框 / 写入被拒时，退回官方 intent 预填
       const domain = settings.xDomain === 'twitter.com' ? 'twitter.com' : 'x.com';
       const params = new URLSearchParams();
       params.set('text', c);
@@ -1107,8 +1328,8 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode) {
       }
       copyTextFallback(c).then((ok) => {
         showToast(statusId
-          ? (ok ? '已打开 X 回复框并预填，文字也已复制；确认无误后手动点「回复」。'
-                : '已打开 X 回复框并预填；剪贴板复制被浏览器拒绝，文字已在候选卡片里可手动复制。')
+          ? (ok ? '没能写入当前回复框，已改用 X 官方预填页并复制文字；确认后手动点「回复」。'
+                : '没能写入当前回复框，已改用 X 官方预填页；文字在候选卡片里可手动复制。')
           : (ok ? '没取到本条推文的 ID：已打开新发推框并预填，文字也已复制；如需回复请粘到该推文的回复框。'
                 : '没取到本条推文的 ID：已打开新发推框并预填，请手动复制文字。'), 9000);
       });
@@ -1132,7 +1353,9 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode) {
   again.type = 'button';
   again.addEventListener('click', () => {
     if (panel.remove) panel.remove();
-    const liveCard = (btn && btn.closest && btn.closest(CARD_SELECTORS.join(','))) || card;
+    const liveCard = (btn && btn.__wbxReply)
+      ? resolveReplyContext(btn, btn.__wbxScope)
+      : ((btn && btn.closest && btn.closest(CARD_SELECTORS.join(','))) || card);
     return onAiComment(liveCard, btn);
   });
   const dismiss = makeCommentEl('button', '', '关闭');

@@ -18,6 +18,7 @@ const DEFAULTS = Object.assign({
   appendSignature: false,
   appendSource: false,
   enableAiComment: true,
+  replyInputSelector: '',  // 空 = 用 sites.js 内置的 X 回复框选择器
   commentPrompt: '',       // 空 = 用 grok.js 内置默认提示词
   verifyPrompt: '',
   enabledSites: {}
@@ -137,6 +138,8 @@ function load() {
     document.getElementById('domain').value = s.xDomain || 'x.com';
     const ai = document.getElementById('aiComment');
     if (ai) ai.checked = s.enableAiComment !== false;
+    const replySel = document.getElementById('replyInputSelector');
+    if (replySel) replySel.value = s.replyInputSelector || '';
     renderPrompt('commentPrompt', s.commentPrompt);
     renderPrompt('verifyPrompt', s.verifyPrompt);
     const mode = document.getElementById('grokMode');
@@ -176,6 +179,7 @@ function save() {
     appendSignature: document.getElementById('sig').checked,
     appendSource: !!(document.getElementById('source') || {}).checked,
     enableAiComment: !!(document.getElementById('aiComment') || {}).checked,
+    replyInputSelector: (document.getElementById('replyInputSelector') || {}).value || '',
     commentPrompt: promptToStore('commentPrompt'),
     verifyPrompt: promptToStore('verifyPrompt'),
     xDomain: document.getElementById('domain').value,

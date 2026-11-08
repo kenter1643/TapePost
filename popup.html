@@ -78,7 +78,7 @@
 </head>
 <body>
   <h1>TapePost · 一键转发到 X</h1>
-  <p class="sub">7 站点一键转发到 X；X 推文上另有紫色「AI 评论」用 Grok 生成 3 条候选；生态面板用 295 条导航收录清单核验链接真伪。所有发送都由你手动完成。</p>
+  <p class="sub">7 站点一键转发到 X；X 回复框右侧的紫色「AI 评论」用 Grok 生成 3 条候选并直接写回回复框；生态面板用 295 条导航收录清单核验链接真伪。所有发送都由你手动完成。</p>
 
   <div class="me">
     <div class="avatar" id="meAvatar">昆</div>
@@ -141,8 +141,17 @@
 
     <div class="row" style="margin:9px 0">
       <input type="checkbox" id="aiComment" />
-      <label for="aiComment" style="margin:0;font-weight:400">X 推文上显示紫色「AI 评论」按钮（默认开启，改完要刷新 X 页面）</label>
+      <label for="aiComment" style="margin:0;font-weight:400">X 回复填写区右侧显示紫色「AI 评论」按钮（默认开启，改完要刷新 X 页面）</label>
     </div>
+
+    <div class="mode-hint" style="margin:0 0 10px">
+      <b>1.3.1 位置变化</b>：先点 X 推文的「回复」展开输入框，紫色「AI 评论」会出现在<b>填写区右侧</b>；选一条候选后<b>直接写进当前回复框</b>，不再另开预填页。
+    </div>
+
+    <label for="replyInputSelector">X 回复框选择器（留空＝内置，X 改版时再填）</label>
+    <input type="text" id="replyInputSelector" spellcheck="false"
+      style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d9d2e9;border-radius:8px;font-size:12px;margin:4px 0 10px"
+      placeholder="div[aria-label=&quot;Post text&quot;][role=&quot;textbox&quot;]" />
 
     <label for="grokMode">运行模式</label>
     <select id="grokMode">
@@ -257,7 +266,7 @@
 
   <div class="note">
     说明：<br>
-    · <b>AI 评论</b>：在 X 推文上点紫色「AI 评论」，Grok 按上面设定的提示词生成 3 条候选，选一条后会打开 X 回复框并预填文字，最后一步「发送」仍由你手动点；插件不会自动发布。没有填 xAI API Key 时按钮会明确报错。<br>
+    · <b>AI 评论</b>：先点 X 推文的「回复」展开回复框，紫色「AI 评论」在<b>填写区右侧</b>；Grok 按设定的提示词生成 3 条候选，选一条后<b>直接写进当前回复框</b>（框里原本有草稿就追加一行），最后一步「回复」仍由你手动点；插件不会自动发布。默认走 X 站内 Grok、不需要 API Key，只有切到 xAI API 模式才需要 Key。X 改版导致按钮不出现时，可在上面填「回复框选择器」。<br>
     · <b>生态面板</b>：内置 295 条导航收录清单（5 项目方官方 / 56 导航收录 / 234 链上容器已索引），三档都给绿标但界面分级显示；只有本地清单精确命中的地址才有绿标，Grok 只补充理由与仿冒风险，<b>不能</b>把清单外的链接判成认可平台。清单是内置静态数据、不联网拉取；核验即使 Grok 不可用，本地结论依然有效。<br>
     · API Key 只存本机、不同步、不入库；调用时后台直连 xAI，页面脚本拿不到密钥。请自行确认 xAI 的调用额度与费用。<br>
     · 身份卡片上的「TapeOut社区成员：昆哥」为内置社区标注，仅显示在设置面板，不会写进转发正文；需要改称呼只改内置账号配置即可。<br>

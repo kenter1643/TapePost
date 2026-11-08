@@ -279,6 +279,40 @@ var SITE_PROFILES = {
     preferFirstText: true,
     // 顺带兼容用户装的 X 辅助插件注入的账号统计标签（不是推文正文）
     metaWords: /(?:涌浪\s*[\d.]+\/分|粉丝比|互粉号|回复\s*\d+|转推\s*\d+|喜欢\s*\d+|查看翻译|推广|关注了|来自\s)/gi,
+    /* ---------- 回复填写区（1.3.1） ----------
+     * 用户实测 x.com 点「回复」会跳 /compose/post 弹窗，输入框是
+     *   <div aria-label="Post text" role="textbox" contenteditable>，
+     * 空值时旁边显示「Post your reply」，下面一行是工具栏 + Reply 按钮。
+     * 主发推框同样用 aria-label="Post text"，所以必须靠上下文区分：
+     * 有 Replying to / Post your reply 的才是回复框。
+     * 这里只放选择器与语言线索，判定/注入逻辑在 content.js。
+     */
+    reply: {
+      inputSelectors: [
+        'div[aria-label="Post text"][role="textbox"]',
+        '[data-testid="tweetTextarea_0"][contenteditable="true"]',
+        'div[role="textbox"][contenteditable="true"]',
+        'textarea[aria-label="Post text"]'
+      ],
+      // 回复框外围（用来判定上下文，不是挂按钮的位置）
+      scopeSelectors: [
+        '[data-testid="inlineReplyComposer"]',
+        '[role="dialog"]',
+        '[aria-modal="true"]'
+      ],
+      sendSelectors: [
+        '[data-testid="tweetButtonInline"]',
+        '[data-testid="tweetButton"]'
+      ],
+      // 命中任一即认为是「回复」而不是「新发推」
+      replyHints: [
+        'Replying to', 'Post your reply', '正在回复', '发布你的回复', '回复给'
+      ],
+      // 命中且没有 replyHints → 主发推框，必须排除
+      postHints: [
+        "What's happening", 'What is happening', '有什么新鲜事', '发生什么事'
+      ]
+    }
   }
 };
 

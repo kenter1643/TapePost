@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.3.0　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.3.1　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -18,6 +18,17 @@
 3. **本地去水印**：Canvas 先检测底部白色水印，只在命中时用包围盒插值 / BFS 重建；没检测到的图原样保留，不会强行抹图。
 4. **多图托盘**：右下角弹出「干净图 N 张」，可逐张复制、拼长图、全部下载；托盘就绪后再点按钮打开 X，避免 X 抢焦点。
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
+
+### 1.3.1 新增：AI 评论按钮移到 X 回复填写区右侧
+
+- 紫色「AI 评论」不再挂在推文卡片右上角。先点 X 推文的「回复」展开输入框，按钮就出现在**回复填写区右侧**；时间线内联回复框与 `/compose/post` 回复弹窗都支持（此前 `/compose/` 被整页排除，回复弹窗里根本看不到按钮）。
+- 选中候选后**直接写回当前回复框**：`execCommand('insertText')` 触发真实 input 事件，X 的 React 受控输入框能识别；框里已有草稿时追加一行，不覆盖。文字同时进剪贴板。
+- 找不到回复框或写入被拒时，才退回原来的 `intent/tweet?in_reply_to=...` 预填页 + 剪贴板兜底。
+- 回写是页面内 DOM 操作，**不新增任何网络请求**；插件仍不替你点「回复」。
+- 设置面板新增可编辑「回复框选择器」（留空用内置 `div[aria-label="Post text"][role="textbox"]` 等候选），X 改版时无需升版本即可自救。
+- 选择器来源：2026-11-08 在已登录 x.com 上点「回复」后的实测 DOM（`div[aria-label="Post text"][role="textbox"]`、`Replying to @xxx`、`Post your reply`、Reply 按钮）。主发推框也用 `aria-label="Post text"`，靠上下文线索排除，不会误注入。
+
+> 注：下面 1.1.0 章节描述的「推文卡片右上角按钮 / 打开 intent 预填」是历史行为，1.3.1 起以上述新流程为准。
 
 ### 1.1.0 新增：X 一键评论（Grok 生成 3 条候选）
 
@@ -83,7 +94,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 
 ## 安装
 
-**Chrome 网上应用店**：1.3.0 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
+**Chrome 网上应用店**：1.3.1 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
 
 **本地加载（开发者模式）**
 
@@ -93,10 +104,10 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 4. 打开任一支持的站点，内容右上角出现「一键转发」即可使用
 5. 要用 AI 评论 / 链接核验：默认「自动」模式，没填 API Key 就用已登录的 X 站内 Grok（免费）；想走官方 API 才在「Grok 设置 → API 模式专属设置」填 Key 并点「测试当前模式」
 
-商店提交包 `store/TapePost_1.3.0_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.3.0_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
+商店提交包 `store/TapePost_1.3.1_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.3.1_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
 
 ```bash
-zip -q store/TapePost_1.3.0_store.zip \
+zip -q store/TapePost_1.3.1_store.zip \
   manifest.json account.js sites.js grok.js background.js content.js inpaint.js \
   offscreen.html offscreen.js popup.html popup.js panel.html panel.js \
   icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png
@@ -138,7 +149,7 @@ zip -q store/TapePost_1.3.0_store.zip \
 ## 开发与测试
 
 ```bash
-node test-harness.js                  # 112 个场景：转发链路 + 全量清单防伪 + 分级判定 + X 评论按钮 + 非 API 页面模式端到端
+node test-harness.js                  # 130 个场景：转发链路 + 全量清单防伪 + 分级判定 + 回复框按钮注入/候选回写 + 非 API 页面模式端到端
 WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 ```
 
@@ -148,7 +159,7 @@ WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 
 `store/listing.json` 里已备好名称、摘要、详细描述、分类、单一用途、逐项权限理由、数据使用披露、审核员验证步骤与提交清单；`store/upload.mjs` 用官方 API v2 做后续版本的上传 / 查状态 / 发布（凭证只从环境变量读取，不落盘）。
 
-注意：Chrome Web Store API v2 **没有新建条目接口**，首个版本必须由开发者本人在 Dashboard 点「Add new item」上传 zip 创建条目，拿到 `ITEM_ID` / `PUBLISHER_ID` 并配置 OAuth 后，脚本才能更新后续版本。1.3.0 的数据使用披露里 `transmits_data_off_device` 已改为 `true`：AI 功能会把用户点选的文字/链接发送给 xAI，提交表单时务必如实勾选。
+注意：Chrome Web Store API v2 **没有新建条目接口**，首个版本必须由开发者本人在 Dashboard 点「Add new item」上传 zip 创建条目，拿到 `ITEM_ID` / `PUBLISHER_ID` 并配置 OAuth 后，脚本才能更新后续版本。当前版本的数据使用披露里 `transmits_data_off_device` 已改为 `true`：AI 功能会把用户点选的文字/链接发送给 xAI，提交表单时务必如实勾选。
 
 ## 隐私
 

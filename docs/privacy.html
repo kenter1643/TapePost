@@ -39,7 +39,7 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　适用版本：1.3.0 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　适用版本：1.3.1 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
     <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能有两种模式</strong>：默认的「X 站内 Grok」模式不调用任何 AI 接口、不需要 API Key，只把提示词填进你已登录的 X 站内 Grok 页面并读回回答文本（这段对话由 X 提供，受 X 的条款约束）；只有你主动切换到「xAI API」模式并填写自己的 Key 时，扩展才会把你点选的文字或链接、连同设定提示词发送给 xAI。不使用 AI 功能时不会发起任何相关请求。
@@ -76,7 +76,7 @@
     <p style="margin-top:0">两个由你手动触发的 AI 功能（X 一键评论、链接真伪查询）支持两种运行模式，可在设置里选择；默认「自动」：<strong>填了 Key 走 API，没填就走 X 站内 Grok</strong>。</p>
     <p><strong>① API 模式（xAI Grok）</strong>：需要你自己的 xAI API Key，扩展后台才会向 <code>https://api.x.ai/v1</code>（或你自填的兼容网关）发起请求：</p>
     <ul>
-      <li><strong>X 一键评论</strong>：点击后把该条推文的正文 + 你设定的评论提示词发送给 <code>https://api.x.ai/v1</code>（或你在设置里填写的兼容网关），由 Grok 生成 3 条回复候选。候选只显示在本机浮层里；选中后才预填到 X 回复框，发送由你手动完成。</li>
+      <li><strong>X 一键评论</strong>：点击后把该条推文的正文 + 你设定的评论提示词发送给 <code>https://api.x.ai/v1</code>（或你在设置里填写的兼容网关），由 Grok 生成 3 条回复候选。候选只显示在本机浮层里；选中后才写入当前 X 回复框（1.3.1 起按钮位于回复填写区右侧，写入是页面内 DOM 操作，不产生新的网络请求），发送由你手动完成。</li>
       <li><strong>链接真伪查询</strong>：点击核验后把待核验链接 + 插件本地比对得出的结论 + 与本次判定相关的少量清单条目 + 你设定的核验提示词发送给同一接口，由 Grok 生成解释与仿冒风险判断。最终是否给绿标由本地清单决定，不采信模型结论。</li>
     </ul>
     <p><strong>② X 站内 Grok 模式（1.3.0 新增，免 API Key）</strong>：扩展<strong>不向 xAI 或任何 AI 接口发送网络请求</strong>，也不读取、保存或传输你的 X 登录凭据。它只在你已登录的 <code>x.com/i/grok</code>（或 X 页面上的 Grok 浮窗）里，把设定好的提示词填入输入框、按需点击发送，并从该页面读取 Grok 回答的文本，在本机解析成评论候选或核验结论。必要时会复用已打开的 X 标签，或在后台新开一个 Grok 标签（不抢焦点）。<strong>与 Grok 的对话由 X 自己完成并保存在你的 X 账号里，受 X 的服务条款与隐私政策约束</strong>；扩展不读取你的对话历史、其它标签页或账号信息。此模式不产生 API 调用费用，但受 X 账号的 Grok 使用权限与额度限制。</p>
