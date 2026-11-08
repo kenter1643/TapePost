@@ -1007,6 +1007,17 @@ function replyScopeOf(input) {
   return best || (input && input.parentElement);
 }
 
+/* 1.3.4：X 详情页的「内联回复框」刷新后不带「Replying to / Post your reply」
+ * 文案，只剩一个文字为 Reply 的发送按钮。只靠文案线索会判定失败，
+ * 用户就会看到「AI 评论按钮不见了 / 点了没反应」。 */
+function hasReplySendButton(scope) {
+  if (!scope || !scope.querySelectorAll) return false;
+  try {
+    const btns = Array.from(scope.querySelectorAll('button, [role="button"]'));
+    return btns.some((b) => /^(?:Reply|回复)$/i.test(String(nodeText(b) || '').trim()));
+  } catch (e) { return false; }
+}
+
 function isReplyInput(input, scope) {
   if (!input) return false;
   // 插件自己的候选面板里也可能有 textbox，别把它当回复框
@@ -1021,7 +1032,7 @@ function isReplyInput(input, scope) {
   const inDialog = !!(input.closest && input.closest('[role="dialog"],[aria-modal="true"]'));
   const inlineSend = !!(scope && scope.querySelector &&
     scope.querySelector((REPLY_CFG.sendSelectors || []).join(',')));
-  return (hasReply || inlineSend || (inDialog && !hasMain)) && !hasMain;
+  return (hasReply || inlineSend || hasReplySendButton(scope) || (inDialog && !hasMain)) && !hasMain;
 }
 
 function findReplyComposers() {

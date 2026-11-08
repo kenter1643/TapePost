@@ -250,7 +250,7 @@
         <div class="num">06</div>
         <h3>🧹 1.3.4：按钮不再刷屏，正文不再串词</h3>
         <p>真机排查发现：X 的 React 重渲染会换掉回复框父节点，而旧判断误把 <code>children</code> 当数组用（真实 DOM 的 <code>HTMLCollection</code> 没有 <code>filter</code>），导致每轮扫描都往回复区再塞一个「AI 评论」——实测堆到 <strong>33 个</strong>。这些按钮文字被当成推文正文发给 Grok，模型只回了一个表情，于是报「没读到 Grok 的回答块」。</p>
-        <p style="margin-top:12px">1.3.4 会清理孤儿按钮、每个回复区只保留一个；评论正文优先取 X 官方 <code>[data-testid="tweetText"]</code> 节点，所有取正文路径都剥掉插件界面文字。只剩界面文字时会直接取消并提示，绝不把垃圾内容发给 Grok。回归测试 169 个场景，含 HTMLCollection 事故回放。</p>
+        <p style="margin-top:12px">1.3.4 会清理孤儿按钮、每个回复区只保留一个；评论正文优先取 X 官方 <code>[data-testid="tweetText"]</code> 节点，所有取正文路径都剥掉插件界面文字。只剩界面文字时会直接取消并提示，绝不把垃圾内容发给 Grok。另外补上详情页内联回复框（没有「Replying to」、只有 Reply 按钮）的识别，避免按钮不见了。回归测试 170 个场景，含 HTMLCollection 事故回放。</p>
       </div>
       <p class="micro" style="text-align:center;margin-top:22px">收录清单是内置静态数据，运行时不联网拉取；API 模式才把文字/链接发给 xAI，页面模式只在 X 站内对话、扩展自身不发 AI 请求。详见<a href="privacy.html">隐私政策</a>。</p>
     </div>

@@ -1608,6 +1608,19 @@ async function runReplyComposerChecks() {
     vm.runInContext('settings.replyInputSelector = \'div[id="wbx-none"]\'', contentCtx);
     A('自定义回复框选择器可覆盖内置选择器',
       vm.runInContext('findReplyComposers().length', contentCtx) === 0);
+
+    // 1.3.4：X 详情页内联回复框刷新后没有「Replying to」，只剩一个 Reply 发送按钮
+    const inlineWrap = new MiniNode('div');
+    const inlineInput = new MiniNode('div', {
+      attrs: { 'aria-label': 'Post text', role: 'textbox', contenteditable: 'true' }
+    });
+    inlineWrap.appendChild(inlineInput);
+    inlineWrap.appendChild(new MiniNode('button', { text: 'Reply' }));
+    dom.body.appendChild(inlineWrap);
+    Object.assign(contentCtx, { __inlineWrap: inlineWrap, __inlineInput: inlineInput });
+    A('1.3.4 无 Replying to 文案、只有 Reply 按钮的内联回复框也能识别',
+      vm.runInContext('isReplyInput(__inlineInput, replyScopeOf(__inlineInput))', contentCtx) === true);
+    inlineWrap.remove();
   } catch (e) {
     A('回复框注入/回写检查无异常', false);
     note('ERROR', '回复框检查抛错: ' + (e && e.message));
