@@ -146,7 +146,8 @@
 
     <div class="mode-hint" style="margin:0 0 10px">
       <b>1.3.1 位置变化</b>：先点 X 推文的「回复」展开输入框，紫色「AI 评论」会出现在<b>填写区右侧</b>；选一条候选后<b>直接写进当前回复框</b>，不再另开预填页。<br>
-      <b>1.3.2 稳定性</b>：点击后弹出等待浮层直到结果回来；页面模式会校验「提示词真的发给 Grok、回答真的读回来了」，候选面板顶部显示诊断结果。解析不出 3 条候选会明确报错，不会拿页面文字冒充评论。
+      <b>1.3.2 稳定性</b>：点击后弹出等待浮层直到结果回来；页面模式会校验「提示词真的发给 Grok、回答真的读回来了」，候选面板顶部显示诊断结果。解析不出 3 条候选会明确报错，不会拿页面文字冒充评论。<br>
+      <b>1.3.3 连接自愈</b>：在 <code>chrome://extensions</code> 重新加载扩展后，旧的 X 标签里留着失效脚本，会报「Receiving end does not exist」。现在插件会自动刷新旧 Grok 标签、必要时新建标签；也可以直接点最下面的「<b>♻️ 重建 Grok 标签</b>」一键修复。
     </div>
 
     <label for="replyInputSelector">X 回复框选择器（留空＝内置，X 改版时再填）</label>
@@ -250,6 +251,9 @@
     <div class="btnrow">
       <button type="button" id="grantOrigin">允许网关域名</button>
       <button type="button" id="showKey">👁 显示 Key</button>
+    </div>
+    <div class="btnrow">
+      <button type="button" id="resetGrokTab">♻️ 重建 Grok 标签（修复连接失败）</button>
     </div>
     <div id="grokStatus"></div>
 

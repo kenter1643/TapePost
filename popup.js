@@ -250,6 +250,28 @@ function previewPrompt() {
   grokStatus('已生成预览：这就是页面模式下会填进 Grok 输入框的完整文本（用示例内容拼装，不会真的发送）。', true);
 }
 
+/* 1.3.3：扩展重载后旧 X 标签的 content script 是孤儿，页面模式会报
+ * "Receiving end does not exist"。这个按钮刷新旧的 Grok 标签并新建干净标签。 */
+function resetGrokTab() {
+  grokStatus('正在刷新旧的 Grok 标签并重建连接…', true);
+  saveGrokSecrets().then(() => {
+    try {
+      chrome.runtime.sendMessage({ type: 'GROK_PAGE_RESET' }, (r) => {
+        const err = chrome.runtime && chrome.runtime.lastError;
+        if (err) return grokStatus('连不上后台：' + err.message + '（请到 chrome://extensions 重新加载扩展）', false);
+        if (!r || !r.ok) {
+          return grokStatus('重建失败：' + ((r && r.error) || '后台没有返回结果') +
+            '｜请先手动刷新所有 X 页面（Cmd+R），或点「打开 Grok 页面」。', false);
+        }
+        grokStatus('✅ ' + (r.note || '已重建') + (r.url ? '｜' + r.url : '') +
+          '｜输入框 ' + (r.hasInput ? '可用' : '未就绪'), true);
+      });
+    } catch (e) {
+      grokStatus('重建调用失败：' + String(e && e.message || e), false);
+    }
+  });
+}
+
 function openGrokPage() {
   const el = document.getElementById('grokPageUrl');
   let url = String((el && el.value) || PAGE_DEFAULTS.grokPageUrl || 'https://x.com/i/grok').trim();
@@ -346,6 +368,7 @@ bind('openPanel', () => {
   catch (e) { grokStatus('打开生态面板失败：' + String(e && e.message || e), false); }
 });
 bind('testGrok', testGrok);
+bind('resetGrokTab', resetGrokTab);
 bind('grantOrigin', grantOrigin);
 bind('showKey', () => {
   const k = document.getElementById('grokKey');

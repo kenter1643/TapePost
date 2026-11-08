@@ -267,15 +267,34 @@ let pageTabPromise = null;
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+/* 1.3.3：扩展在 chrome://extensions 里「重新加载」后，之前已打开的 X 标签
+ * 里留的是旧实例的 content script（孤儿上下文）。后台再给它发消息，Chrome 会报
+ * "Could not establish connection. Receiving end does not exist."。
+ * 这里把这类错误单独打标记，交给上层自动刷新 / 新建标签恢复；
+ * 也绝不把 Chrome 的英文原始错误原样抛到用户面前。 */
+const TAB_UNREACHABLE_RE = /Could not establish connection|Receiving end does not exist|Extension context invalidated|message port closed/i;
+const TAB_HINT = 'X 标签里的插件脚本没响应（通常是刚重新加载过扩展，旧标签还留着失效的脚本）。';
+
+function tabError(raw, tabId) {
+  const text = String(raw || '');
+  const bad = TAB_UNREACHABLE_RE.test(text);
+  const e = new Error(bad
+    ? TAB_HINT + '插件已自动尝试刷新 / 新建标签；若仍失败，请刷新所有 X 页面（Cmd+R），或关闭旧的 Grok 对话标签后重试。（原始错误：' + text + '）'
+    : text);
+  e.tabUnreachable = bad;
+  e.tabId = tabId;
+  return e;
+}
+
 function sendToTab(tabId, message) {
   return new Promise((resolve, reject) => {
     try {
       chrome.tabs.sendMessage(tabId, message, (r) => {
         const err = chrome.runtime && chrome.runtime.lastError;
-        if (err) return reject(new Error(err.message));
+        if (err) return reject(tabError(String(err.message || err), tabId));
         resolve(r);
       });
-    } catch (e) { reject(e); }
+    } catch (e) { reject(tabError(String(e && e.message || e), tabId)); }
   });
 }
 
@@ -284,39 +303,57 @@ async function pagePing(tabId, cfg) {
   catch (e) { return null; }
 }
 
-async function ensurePageTab(cfg) {
-  if (pageTabPromise) return pageTabPromise;
+/* 刷新标签是修复「扩展重载后孤儿 content script」的唯一可靠手段：
+ * 新页面会重新注入当前实例的 grok-page.js / content.js。 */
+async function reloadTab(tabId) {
+  try { await chrome.tabs.reload(tabId); return true; }
+  catch (e) { return false; }
+}
+
+let pageCreatedTabs = [];   // 扩展自己新建的 Grok 标签，供「重建连接」时识别
+
+async function ensurePageTab(cfg, forceFresh) {
+  if (pageTabPromise && !forceFresh) return pageTabPromise;
   const job = (async () => {
     let tabs = [];
     try {
       tabs = (await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] })) || [];
     } catch (e) { /* 没有 tabs 权限时可能拿不到，直接走新建分支 */ }
 
-    // 1) 已经能对话的标签：时间线浮窗 / 用户自己开着的 Grok 页
-    for (const t of tabs) {
-      const p = await pagePing(t.id, cfg);
-      if (p && p.ok && p.hasInput) return { tabId: t.id, ping: p, created: false };
-    }
-    // 2) 已打开但还在加载的 /i/grok
-    const grok = tabs.find((t) => /\/i\/grok(?:\/|\?|$)/.test(String(t.url || '')));
-    if (grok) {
-      for (let i = 0; i < 12; i++) {
-        const p = await pagePing(grok.id, cfg);
-        if (p && p.ok && p.hasInput) return { tabId: grok.id, ping: p, created: false };
-        await sleep(500);
+    if (!forceFresh) {
+      // 1) 已经能对话的标签：时间线浮窗 / 用户自己开着的 Grok 页
+      for (const t of tabs) {
+        const p = await pagePing(t.id, cfg);
+        if (p && p.ok && p.hasInput) return { tabId: t.id, ping: p, created: false };
       }
-      return { tabId: grok.id, ping: null, created: false };
+      // 2) 已打开的 /i/grok：扩展重载后这里的脚本是旧实例的孤儿 → 主动刷新一次
+      const grok = tabs.find((t) => /\/i\/grok(?:\/|\?|$)/.test(String(t.url || t.pendingUrl || '')));
+      if (grok) {
+        let p = await pagePing(grok.id, cfg);
+        if (p && p.ok && p.hasInput) return { tabId: grok.id, ping: p, created: false };
+        await reloadTab(grok.id);
+        for (let i = 0; i < 16; i++) {
+          await sleep(500);
+          p = await pagePing(grok.id, cfg);
+          if (p && p.ok && p.hasInput) return { tabId: grok.id, ping: p, created: false, healed: true };
+        }
+        // 1.3.3 关键修复：刷新后仍然不通，绝不再把这个坏标签交给 callGrokPage
+        // （1.3.2 就是在这里把失效标签返回，才冒出 "Receiving end does not exist"）。
+        // 直接走第 3 步新建标签 —— 新标签必定注入当前实例的 content script。
+      }
     }
+
     // 3) 后台新开一个 Grok 页面（active:false，不抢焦点）
     let url = String(cfg.grokPageUrl || 'https://x.com/i/grok').trim();
     if (!/^https:\/\/(?:x\.com|twitter\.com)\//i.test(url)) url = 'https://x.com/i/grok'; // 只允许 X 站内
     const created = await chrome.tabs.create({ url, active: false });
+    if (pageCreatedTabs.indexOf(created.id) === -1) pageCreatedTabs.push(created.id);
     for (let i = 0; i < 24; i++) {
       await sleep(500);
       const p = await pagePing(created.id, cfg);
       if (p && p.ok && p.hasInput) return { tabId: created.id, ping: p, created: true };
     }
-    return { tabId: created.id, ping: null, created: true, notReady: true };
+    return { tabId: created.id, ping: null, created: true, notReady: true, staleTabs: tabs.length };
   })();
   pageTabPromise = job.then(
     (v) => { pageTabPromise = null; return v; },
@@ -326,15 +363,37 @@ async function ensurePageTab(cfg) {
 }
 
 async function callGrokPage(prompt, cfg, action) {
-  const t = await ensurePageTab(cfg);
+  let t = await ensurePageTab(cfg);
   if (t.notReady) {
-    throw new Error('已打开 X 的 Grok 页面，但一直没读到输入框。请确认 Chrome 已登录 x.com、账号可用 Grok；' +
-      '若是后台标签被浏览器节流，点设置里的「打开 Grok 页面」激活它再重试。也可改用手动模式。');
+    throw new Error('已打开 / 新建了 X 的 Grok 页面，但一直没读到输入框。请确认 Chrome 已登录 x.com、账号可用 Grok；' +
+      '刚重新加载过扩展的话，请刷新所有 X 页面；若是后台标签被浏览器节流，点设置里的「重建 Grok 标签」激活它再重试。也可改用手动模式。');
   }
-  const r = await sendToTab(t.tabId, {
-    type: 'GROK_PAGE_BRIDGE', action, prompt, config: cfg, tag: TapeAI.PROMPT_TAG
-  });
-  if (!r) throw new Error('Grok 页面没有响应（content script 可能失效），请刷新该 X 标签后重试。');
+  const message = { type: 'GROK_PAGE_BRIDGE', action, prompt, config: cfg, tag: TapeAI.PROMPT_TAG };
+  let r;
+  try {
+    r = await sendToTab(t.tabId, message);
+  } catch (e) {
+    if (!e.tabUnreachable) throw e;
+    // 标签脚本在 ensurePageTab 之后才失效（例如用户刚好刷新/关闭了它）：
+    // 先刷新同一个标签等新脚本注入，救不回来再强制新建标签重试一次。
+    console.warn('[bg][grok] 标签脚本失效，尝试刷新恢复：' + t.tabId);
+    await reloadTab(t.tabId);
+    let healed = false;
+    for (let i = 0; i < 16; i++) {
+      await sleep(400);
+      const p = await pagePing(t.tabId, cfg);
+      if (p && p.ok && p.hasInput) { healed = true; break; }
+    }
+    if (healed) {
+      r = await sendToTab(t.tabId, message);
+    } else {
+      pageTabPromise = null;
+      t = await ensurePageTab(cfg, true);
+      if (t.notReady) throw e;
+      r = await sendToTab(t.tabId, message);
+    }
+  }
+  if (!r) throw new Error('Grok 页面没有响应（content script 可能失效），请刷新该 X 标签，或点设置里的「重建 Grok 标签」后重试。');
   if (!r.ok) throw new Error(r.error || 'Grok 页面操作失败');
   // 1.3.2：自动发送后必须能证明「提示词发出去了 + 读到了回答」，
   // 否则立刻报错，不再让按行兜底把页面按钮文字当成结果返回给用户。
@@ -350,7 +409,7 @@ async function callGrokPage(prompt, cfg, action) {
         (r.text ? ' 当前读到：' + String(r.text).slice(0, 120) : ''));
     }
   }
-  return Object.assign({ tabId: t.tabId, createdTab: t.created }, r);
+  return Object.assign({ tabId: t.tabId, createdTab: t.created, healed: !!t.healed }, r);
 }
 
 /* 网页 Grok 会把思考过程 / 用户气泡 / 侧栏按钮一起渲染。
@@ -442,6 +501,28 @@ async function handleGrokMessage(msg) {
   if (typeof TapeAI === 'undefined') throw new Error('grok.js 未加载，请重新加载扩展。');
   const cfg = await getGrokConfig();
   const mode = TapeAI.pickGrokMode(cfg);
+
+  // 1.3.3：一键修复「重新加载扩展后旧 X 标签脚本失效」。
+  // 只刷新已打开的 /i/grok 页面（不关闭用户标签），再强制新开一个干净标签。
+  if (msg.type === 'GROK_PAGE_RESET') {
+    let tabs = [];
+    try { tabs = (await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] })) || []; }
+    catch (e) { /* 无 tabs 权限时跳过刷新，直接走新建分支 */ }
+    const grokTabs = tabs.filter((t) => /\/i\/grok(?:\/|\?|$)/.test(String(t.url || t.pendingUrl || '')));
+    for (const t of grokTabs) await reloadTab(t.id);
+    pageTabPromise = null;
+    if (mode === 'api') {
+      return { ok: true, mode: 'api', reloaded: grokTabs.length,
+        note: '当前是 xAI API 模式，用不到 X 站内 Grok 标签；已刷新旧的 Grok 页面。' };
+    }
+    const r = await callGrokPage('', cfg, 'ping');
+    return {
+      ok: true, mode: 'page', reloaded: grokTabs.length,
+      url: r.url || '', hasInput: !!r.hasInput, createdTab: !!r.createdTab,
+      note: '已刷新 ' + grokTabs.length + ' 个旧 Grok 标签，并' +
+        (r.createdTab ? '新开' : '复用') + '一个可用标签。'
+    };
+  }
 
   if (msg.type === 'GROK_TEST') {
     const started = Date.now();
@@ -642,7 +723,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // 单次 await + sendResponse，与其它消息一样保持通道打开；失败也一定回包，
   // 避免 content script / 面板那边一直转圈等不到结果。
   if (msg.type === 'GROK_COMMENTS' || msg.type === 'GROK_VERIFY' || msg.type === 'GROK_TEST' ||
-      msg.type === 'GROK_PAGE_PREPARE' || msg.type === 'GROK_PAGE_READ') {
+      msg.type === 'GROK_PAGE_PREPARE' || msg.type === 'GROK_PAGE_READ' || msg.type === 'GROK_PAGE_RESET') {
     handleGrokMessage(msg).then((out) => {
       lastGrokError = null;
       try { sendResponse(Object.assign({ type: 'GROK_RESULT' }, out)); } catch (e) {}

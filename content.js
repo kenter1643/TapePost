@@ -898,7 +898,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.3.2';
+  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.3.3';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1340,15 +1340,20 @@ async function onAiComment(card, btn) {
       return;
     }
     if (!resp || !resp.ok) {
-      showToast('Grok 生成失败：' + String((resp && resp.error) || '后台没有响应') +
-        '\n请点插件图标，在「Grok 设置」里确认运行模式；页面模式需要已登录 X 且 Grok 可用，也可用「复制提示词 → 读取回答」的手动流程。', 12000);
+      const rawErr = String((resp && resp.error) || '后台没有响应');
+      const connErr = /没响应|Receiving end|Could not establish|重新加载过扩展|刷新所有 X/i.test(rawErr);
+      showToast('Grok 生成失败：' + rawErr +
+        (connErr
+          ? '\n👉 先刷新所有 X 页面（Cmd+R），或点插件图标 →「Grok 设置」→「重建 Grok 标签」；刚在 chrome://extensions 重新加载过扩展时最容易遇到。'
+          : '\n请点插件图标，在「Grok 设置」里确认运行模式；页面模式需要已登录 X 且 Grok 可用，也可用「复制提示词 → 读取回答」的手动流程。'), 12000);
       return;
     }
     showCommentPicker(resp.comments || [], statusId, card, btn, text, resp.mode,
       Object.assign({ strict: resp.strict }, resp.diagnostics || {}));
   } catch (e) {
     showToast('AI 评论调用失败：' + String(e && e.message || e) +
-      '\n若是 X 站内 Grok 超时，可用候选面板里的「复制提示词（手动）→ 读取 Grok 回答」。', 12000);
+      '\n若是刚重新加载过扩展，请刷新所有 X 页面或点「Grok 设置」→「重建 Grok 标签」；' +
+      '若是 X 站内 Grok 超时，可用候选面板里的「复制提示词（手动）→ 读取 Grok 回答」。', 12000);
   } finally {
     hideAiBusy();
     if (btn) { btn.disabled = false; btn.textContent = 'AI 评论'; }

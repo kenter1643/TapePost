@@ -1,9 +1,9 @@
 {
   "product_name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.3.2",
-  "manifest_description_132": "7 站点一键转发到 X（去水印）；Grok 生成 3 条评论候选并写回 X 回复框（免 API Key 站内 Grok，带等待提示与结果校验）；TapeOut 生态面板内置 295 条导航收录清单，绿标分级 + 链接真伪核验。",
-  "summary_132": "7 站点正文/配图整理成 X 草稿；Grok 生成 3 条回复候选并写回 X 回复框（免 Key 走 X 站内 Grok，带等待提示与结果校验）；内置 295 条导航收录 + DeWeb 索引清单，绿标分级核验链接防仿冒。",
+  "version": "1.3.3",
+  "manifest_description_132": "7 站点一键转发到 X（去水印）；Grok 生成 3 条评论候选并写回 X 回复框（免 API Key 站内 Grok，带等待提示、结果校验与连接自愈）；TapeOut 生态面板内置 295 条导航收录清单，绿标分级 + 链接真伪核验。",
+  "summary_132": "7 站点正文/配图整理成 X 草稿；Grok 生成 3 条回复候选并写回 X 回复框（免 Key 走 X 站内 Grok，带等待提示、结果校验与连接自愈）；内置 295 条导航收录 + DeWeb 索引清单，绿标分级核验链接防仿冒。",
   "category": "productivity",
   "primary_language": "zh-CN",
   "additional_languages": [
@@ -12,9 +12,12 @@
   "detailed_description": [
     "TapePost 是一个内容转发辅助工具：在你正在浏览的内容页上，给每条内容加一个橙色「一键转发」按钮。点击后，它提取这一条的正文与配图，清洗文字、按需去水印，把文字预填进 X 发推框，并把处理后的媒体放进剪贴板或下载到本机。最后一步始终由你手动完成 —— 扩展不会替你发布任何内容，也不调用任何自动发布接口。",
     "",
+    "【1.3.3 修复：扩展重载后 X 标签连接失败（Receiving end does not exist）】",
+    "在 chrome://extensions 重新加载扩展后，之前打开的 X 标签（尤其是插件自动新建的 /i/grok 对话标签）里留着旧实例的 content script，属于孤儿上下文，页面模式原本会抛 Chrome 原生错误。1.3.3 现在自动刷新失效的 Grok 标签、必要时后台新建干净标签；正式发送消息时标签才失效也能刷新重试。设置面板新增「♻️ 重建 Grok 标签」一键修复，所有连接错误都转成中文可操作指引。刷新 / 新建标签属浏览器本地操作，不新增网络请求、不上传任何数据。回归测试 163 个场景，含 12 个失效标签恢复场景。",
+    "",
     "【1.3.2 修复：X 站内 Grok 评论错乱 + 点击等待浮层】",
     "真机排查确认 Grok 确实被触发并回答，问题出在提示词写入与结果读回：1.3.1 用 selectAll 清空输入框时把整页文字（侧栏词、插件按钮文字）一起粘进 Grok，且读回时把左侧栏 History / Usage / Share 当成 3 条候选返回。1.3.2 改为 Range 精确选中输入框内部、加唯一任务标记校验（校验失败拒绝发送），读回时切掉用户提示词与 UI 噪声；解析不出 3 条候选就明确报错，绝不拿页面文字伪装成评论。网页版 Grok 常输出不带方括号的裸引号列表，现在也能正确解析。",
-    "点击「AI 评论」立即弹出等待浮层（spinner、随耗时推进的阶段文案、耗时秒数、关闭按钮），结果回来或报错才自动关闭；候选面板顶部显示「是否真的读到 Grok 回答」等诊断信息。回归测试 151 个场景，含真机事故回放。",
+    "点击「AI 评论」立即弹出等待浮层（spinner、随耗时推进的阶段文案、耗时秒数、关闭按钮），结果回来或报错才自动关闭；候选面板顶部显示「是否真的读到 Grok 回答」等诊断信息。该版本回归测试 151 个场景，含真机事故回放（1.3.3 扩到 163 个）。",
     "",
     "【1.3.1 新增：AI 评论按钮移到 X 回复填写区右侧，候选精准回写】",
     "紫色「AI 评论」不再挂在推文卡片上：先点 X 推文的「回复」展开输入框，按钮即出现在回复填写区右侧，时间线内联回复框与 /compose/post 回复弹窗都支持。选中 Grok 生成的候选后，插件用 insertText 直接写进当前回复框；框里已有草稿时追加一行，不覆盖用户内容；文字同时进剪贴板。找不到回复框或写入被拒时才退回 X 官方 intent 预填页。整个过程只做页面内 DOM 操作，不调用任何发布接口、不新增网络请求。设置里新增可编辑的「回复框选择器」，X 改版时可自行适配。",
@@ -84,7 +87,7 @@
   },
   "privacy_policy_url": "https://kenter1643.github.io/TapePost/privacy.html",
   "privacy_policy_local": "docs/privacy.html",
-  "privacy_policy_note": "正式地址由 GitHub Pages 托管（仓库 kenter1643/TapePost 的 main 分支 /docs 目录），已实测 HTTP 200。1.3.2 版政策补充了「AI 功能两种运行模式」与「评论候选写回回复框属于页面内 DOM 操作、不新增网络请求」的说明；提交前请确认商店表单填的是这个最新版。独立部署副本在 store/privacy-site/index.html；产品介绍页 https://kenter1643.github.io/TapePost/ 。",
+  "privacy_policy_note": "正式地址由 GitHub Pages 托管（仓库 kenter1643/TapePost 的 main 分支 /docs 目录），已实测 HTTP 200。1.3.3 版政策补充了「AI 功能两种运行模式」「评论候选写回回复框属于页面内 DOM 操作、不新增网络请求」与「连接自愈只刷新 / 新建标签、不上传数据」的说明；提交前请确认商店表单填的是这个最新版。独立部署副本在 store/privacy-site/index.html；产品介绍页 https://kenter1643.github.io/TapePost/ 。",
   "assets": {
     "icon": "icons/icon128.png",
     "screenshots": [
@@ -96,7 +99,7 @@
     "promo_tile_text": "TapePost · 转发 / 免 Key AI 评论 / 295 条生态绿标核验 · 7 平台",
     "screenshots_note": "当前 3 张为功能示意图（非真机截图）。正式提交前建议用真实微博/X 页面截取替换，以免审核认为是误导性展示。"
   },
-  "reviewer_notes": "全部功能验证都无需 xAI API Key：1) 打开 weibo.com 或 x.com 时间线，内容右上角出现橙色「一键转发」；2) 点击后右下角出现图片托盘（多图）或 X 新标签页（单图/纯文字），X 发推框文字已预填，发送按钮未被自动触发。3) AI 功能默认走「X 站内 Grok」模式：审核员只需登录任意可用 Grok 的 X 账号，先点任一推文的「回复」展开输入框，紫色「AI 评论」即在回复填写区右侧；点它后插件会把提示词填进 x.com/i/grok（必要时后台新开标签）并读回回答，生成 3 条候选，选中一条即写回当前回复框（不会自动发布）；设置里点「测试当前模式」可只做页面连通性自检，不会发起真实提问。若 X 账号无 Grok 权限，可切到 API 模式自备 Key，或用「复制提示词 / 读取 Grok 回答」手动流程。生态面板（点插件图标 →「打开 TapeOut 生态面板」）内置 295 条静态清单，不联网也能判定；可试 https://tapeout.net/（项目方官方绿标）、https://tapeoutscan.io/（导航收录绿标）、https://evil.tapekit.org/（不给绿标）。本地绿标结论不依赖 Grok；设置面板有「🔍 运行环境自检」可查看 SW / DNR 规则 / 离屏文档状态。",
+  "reviewer_notes": "全部功能验证都无需 xAI API Key：1) 打开 weibo.com 或 x.com 时间线，内容右上角出现橙色「一键转发」；2) 点击后右下角出现图片托盘（多图）或 X 新标签页（单图/纯文字），X 发推框文字已预填，发送按钮未被自动触发。3) AI 功能默认走「X 站内 Grok」模式：审核员只需登录任意可用 Grok 的 X 账号，先点任一推文的「回复」展开输入框，紫色「AI 评论」即在回复填写区右侧；点它后插件会把提示词填进 x.com/i/grok（必要时后台新开标签）并读回回答，生成 3 条候选，选中一条即写回当前回复框（不会自动发布）；设置里点「测试当前模式」可只做页面连通性自检，不会发起真实提问；若刚重载过扩展出现连接失败，点「♻️ 重建 Grok 标签」即可自愈（插件也会自动尝试）。若 X 账号无 Grok 权限，可切到 API 模式自备 Key，或用「复制提示词 / 读取 Grok 回答」手动流程。生态面板（点插件图标 →「打开 TapeOut 生态面板」）内置 295 条静态清单，不联网也能判定；可试 https://tapeout.net/（项目方官方绿标）、https://tapeoutscan.io/（导航收录绿标）、https://evil.tapekit.org/（不给绿标）。本地绿标结论不依赖 Grok；设置面板有「🔍 运行环境自检」可查看 SW / DNR 规则 / 离屏文档状态。",
   "distribution": {
     "visibility": "public",
     "countries": "all",
@@ -105,13 +108,13 @@
   "publishing_api_note": "Chrome Web Store API v2 只提供 upload / publish / fetchStatus，没有「新建条目」接口：首个版本必须在 Developer Dashboard 手动 Add new item 上传 zip 并创建条目，拿到 ITEM_ID 与 Publisher ID 后，才能用 store/upload.mjs 自动上传后续版本或提交发布。v2 端点：POST /upload/v2/publishers/{publisherId}/items/{itemId}:upload、POST /v2/publishers/{publisherId}/items/{itemId}:publish；OAuth scope 为 https://www.googleapis.com/auth/chromewebstore。",
   "pre_submit_checklist": [
     "用 Google 账号登录 Chrome Web Store Developer Dashboard，并完成一次性开发者注册（注册费 US$5）",
-    "在 Dashboard 点「Add new item」上传 store/TapePost_1.3.2_store.zip",
+    "在 Dashboard 点「Add new item」上传 store/TapePost_1.3.3_store.zip",
     "把本文件里的名称、摘要、详细描述、分类、单一用途、逐项权限理由复制到商店表单",
     "隐私政策已托管在 GitHub Pages：https://kenter1643.github.io/TapePost/privacy.html ，直接填入表单即可（如改用自有域名，替换 privacy_policy_url 并同步更新页面）",
     "上传 128×128 图标之外的 3 张截图与 440×280 宣传图；建议替换为真机截图",
     "勾选数据使用声明：不收集个人数据、无远程代码、无第三方分析；但「是否将数据传出设备」必须选「是」—— 用户切到 API 模式时扩展会向 xAI 发送文字/链接；默认页面模式不发 AI 请求，详见 data_use_disclosure",
     "保存草稿并预览，确认无误后点「Submit for review」",
     "审核通常 1–3 个工作日；被要求补充权限说明时，直接引用 permission_justifications",
-    "在「数据使用」页如实披露 xAI Grok 为第三方 AI 服务，并确认隐私政策链接指向 1.3.2 最新版（含 AI 章节与回复框回写说明）"
+    "在「数据使用」页如实披露 xAI Grok 为第三方 AI 服务，并确认隐私政策链接指向 1.3.3 最新版（含 AI 章节、回复框回写与连接自愈说明）"
   ]
 }

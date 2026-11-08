@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.3.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.3.3　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -18,6 +18,20 @@
 3. **本地去水印**：Canvas 先检测底部白色水印，只在命中时用包围盒插值 / BFS 重建；没检测到的图原样保留，不会强行抹图。
 4. **多图托盘**：右下角弹出「干净图 N 张」，可逐张复制、拼长图、全部下载；托盘就绪后再点按钮打开 X，避免 X 抢焦点。
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
+
+### 1.3.3 修复：扩展重载后 X 标签连接失败（Receiving end does not exist）
+
+真机复现：在 `chrome://extensions` 点「重新加载」后，之前打开过的 X 标签（尤其是后台自动新建的 `/i/grok?conversation=…` 对话标签）里留的是**旧扩展实例的 content script**，属于孤儿上下文。1.3.2 的 `ensurePageTab()` 在 ping 不通这个旧标签时仍把它返回，`sendToTab()` 随即抛出 Chrome 原生错误 `Could not establish connection. Receiving end does not exist.`。
+
+对应修复：
+
+- `sendToTab()` 识别 `Receiving end does not exist / Extension context invalidated` 等原生错误，转成**中文可操作指引**（刷新 X 页面 / 重建 Grok 标签），不再把英文报错原样弹给用户。
+- `ensurePageTab()`：ping 不通的旧 `/i/grok` 标签**主动 `chrome.tabs.reload()` 一次**等新脚本注入；刷新后仍不通就**不再返回坏标签**，改为后台新建干净的 `/i/grok` 标签（新标签必定注入当前实例的 `grok-page.js`）。
+- `callGrokPage()`：正式发消息时标签才失效也能自愈 —— 刷新同标签重试，救不回来强制新建标签再试一次。
+- 设置面板新增 **「♻️ 重建 Grok 标签」**：刷新所有旧 Grok 对话标签 + 强制新建可用标签；`GROK_TEST` 连接测试同样会自愈。
+- 刷新 / 新建标签只是浏览器本地操作，**不新增任何网络请求、不上传数据**。
+
+回归测试扩到 **163 个场景**（新增 12 个：旧标签失效自愈、刷新无效新建标签兜底、新旧标签全失效的中文报错、发送阶段失效重试、一键重建、连接测试自愈）。
 
 ### 1.3.2 修复：X 站内 Grok 评论错乱 + 点击等待浮层
 
@@ -35,7 +49,7 @@
 - 自动发送后校验 `promptSent / hasAnswer / changed`，任一不满足就带诊断信息报错；候选面板顶部显示「✅ 已确认读到 Grok 回答」。
 - **点击即弹出等待浮层**：spinner、随耗时推进的阶段文案、「关闭等待提示」按钮；结果回来或报错才自动关闭。手动「复制提示词 / 读取 Grok 回答」同样有等待反馈。
 
-回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM。
+该版本回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM（1.3.3 再扩到 163 个）。
 
 ### 1.3.1 新增：AI 评论按钮移到 X 回复填写区右侧
 
@@ -112,7 +126,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 
 ## 安装
 
-**Chrome 网上应用店**：1.3.2 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
+**Chrome 网上应用店**：1.3.3 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
 
 **本地加载（开发者模式）**
 
@@ -122,10 +136,10 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 4. 打开任一支持的站点，内容右上角出现「一键转发」即可使用
 5. 要用 AI 评论 / 链接核验：默认「自动」模式，没填 API Key 就用已登录的 X 站内 Grok（免费）；想走官方 API 才在「Grok 设置 → API 模式专属设置」填 Key 并点「测试当前模式」
 
-商店提交包 `store/TapePost_1.3.2_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.3.2_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
+商店提交包 `store/TapePost_1.3.3_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.3.3_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
 
 ```bash
-zip -q store/TapePost_1.3.2_store.zip \
+zip -q store/TapePost_1.3.3_store.zip \
   manifest.json account.js sites.js grok.js background.js content.js inpaint.js \
   offscreen.html offscreen.js popup.html popup.js panel.html panel.js \
   icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png
@@ -167,7 +181,7 @@ zip -q store/TapePost_1.3.2_store.zip \
 ## 开发与测试
 
 ```bash
-node test-harness.js                  # 151 个场景：转发链路 + 全量清单防伪 + 分级判定 + 回复框按钮注入/候选回写 + 非 API 页面模式端到端
+node test-harness.js                  # 163 个场景：转发链路 + 全量清单防伪 + 分级判定 + 回复框按钮注入/候选回写 + 非 API 页面模式端到端
 WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 ```
 

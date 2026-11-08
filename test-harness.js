@@ -137,6 +137,10 @@ let scenario = {};
 
 const serialize = (v) => JSON.parse(JSON.stringify(v));
 
+/* 1.3.3：标签刷新 / 新建标签的等待循环在测试里加速，否则单个场景要等十几秒。
+ * 只压缩 >=200ms 的延时，短延时保持原样，不影响逻辑断言。 */
+const fastSetTimeout = (fn, ms, ...args) => setTimeout(fn, Number(ms) >= 200 ? 5 : ms, ...args);
+
 function makeChrome(name) {
   return {
     runtime: {
@@ -156,7 +160,19 @@ function makeChrome(name) {
         const t = { id: 88, url: o && o.url };
         scenario.pageTabs = (scenario.pageTabs || []).concat([t]);
         note('tabs', 'create ' + t.url);
+        scenario.createdTabs = (scenario.createdTabs || []).concat([t.id]);
         return Promise.resolve(t);
+      },
+      reload: (id) => {
+        note('tabs', 'reload ' + id);
+        scenario.reloadedTabs = (scenario.reloadedTabs || []).concat([id]);
+        // 默认「刷新即修复」：清掉该标签的孤儿脚本标记
+        if (scenario.reloadHeals !== false) {
+          scenario.tabUnreachable = (scenario.tabUnreachable || []).filter((x) => x !== id);
+          scenario.tabNoInput = (scenario.tabNoInput || []).filter((x) => x !== id);
+          delete scenario.failBridgeAction;   // 刷新后正式消息也恢复
+        }
+        return Promise.resolve();
       },
       sendMessage: (tabId, msg, cb) => {
         if (!cb) return tabsSend(name, tabId, msg);
@@ -274,6 +290,19 @@ async function runtimeSend(from, msg, cb) {
 
 async function tabsSend(from, tabId, msg) {
   note('bus', `${from} --tabs.sendMessage(tab=${tabId}, ${msg.type})--> content`);
+  // 1.3.3：模拟扩展重载后的孤儿 content script（Chrome 原生报错）
+  if ((scenario.tabUnreachable || []).indexOf(tabId) !== -1) {
+    return Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'));
+  }
+  // ping 正常、正式发送时才失效（模拟用户在两次消息之间刷新/关闭了标签）
+  if (msg.type === 'GROK_PAGE_BRIDGE' && scenario.failBridgeAction === msg.action &&
+      (scenario.failBridgeTabs || []).indexOf(tabId) !== -1) {
+    return Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'));
+  }
+  if (msg.type === 'GROK_PAGE_BRIDGE' && msg.action === 'ping' &&
+      (scenario.tabNoInput || []).indexOf(tabId) !== -1) {
+    return Promise.resolve({ ok: true, url: 'https://x.com/i/grok', hasInput: false, hasSend: false });
+  }
   // 页面模式：模拟 x.com 里 grok-page.js 的回包（含思考过程 / 模板 JSON 等噪声）
   if (msg.type === 'GROK_PAGE_BRIDGE') {
     if (typeof scenario.grokPageHandler === 'function') {
@@ -315,7 +344,7 @@ function baseGlobals(name) {
     Blob: FakeBlob,
     URL: FakeURLWithCtor,
     ClipboardItem,
-    setTimeout,
+    setTimeout: fastSetTimeout,
     clearTimeout,
     setInterval: () => 1,
     clearInterval: () => {},
@@ -1116,6 +1145,65 @@ async function runPageModeEndToEnd() {
   } catch (e) {
     note('ERROR', '页面模式端到端异常: ' + (e && e.message));
     A('页面模式端到端无异常抛出', false);
+  } finally {
+    scenario = prev;
+  }
+  return checks;
+}
+
+/* ---------- 1.3.3：扩展重载后失效 X 标签（孤儿 content script）的连接恢复 ---------- */
+async function runStaleTabRecoveryChecks() {
+  const checks = [];
+  const A = (name, ok) => checks.push({ name, ok: !!ok });
+  const prev = scenario;
+  // 真机同款：1.3.1 后台新建、重载扩展后没刷新的旧 Grok 对话标签
+  const grokTab = () => [{ id: 77, url: 'https://x.com/i/grok?conversation=0b17a677' }];
+  const english = /Receiving end does not exist|Could not establish connection/;
+  try {
+    // A：1.3.2 事故回放 —— 旧标签 ping 不通，旧版会把这个坏标签返回并抛英文错误
+    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77] };
+    let r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '一条测试推文' } });
+    A('1.3.3 旧 Grok 标签失效时自动刷新并成功生成 3 条候选',
+      r && r.ok === true && r.comments && r.comments.length === 3);
+    A('1.3.3 自动刷新过失效标签', (scenario.reloadedTabs || []).indexOf(77) !== -1);
+    A('1.3.3 不再把 Chrome 原生英文错误抛给用户', !english.test(String((r && r.error) || '')));
+
+    // B：刷新也救不回来 → 强制新建一个干净标签（新标签必定注入当前实例脚本）
+    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77], reloadHeals: false };
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
+    A('1.3.3 刷新无效时新建标签兜底并返回候选',
+      r && r.ok === true && r.comments && r.comments.length === 3);
+    A('1.3.3 确实新建了 Grok 标签', (scenario.createdTabs || []).indexOf(88) !== -1);
+
+    // C：新旧标签全失效 → 中文可操作指引，而不是英文原生报错
+    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77, 88], reloadHeals: false };
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
+    A('1.3.3 完全连不上时返回中文指引',
+      r && r.ok === false && /刷新所有 X 页面|重建 Grok 标签/.test(r.error || ''));
+    A('1.3.3 完全连不上时也不残留英文原生错误', !english.test(String((r && r.error) || '')));
+
+    // D：ping 通过、正式发送那一刻脚本才失效 → callGrokPage 自身刷新重试
+    scenario = { grokMode: 'page', pageTabs: grokTab(), failBridgeAction: 'auto', failBridgeTabs: [77] };
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
+    A('1.3.3 正式发送时标签失效也能刷新重试成功',
+      r && r.ok === true && r.comments && r.comments.length === 3);
+    A('1.3.3 发送阶段失效触发了刷新', (scenario.reloadedTabs || []).indexOf(77) !== -1);
+
+    // E：设置面板「重建 Grok 标签」一键修复
+    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77] };
+    r = await runtimeSend('popup', { type: 'GROK_PAGE_RESET' });
+    A('1.3.3「重建 Grok 标签」返回可用输入框',
+      r && r.ok === true && r.hasInput === true && r.reloaded >= 1);
+    A('1.3.3「重建 Grok 标签」确实刷新了旧页面',
+      (scenario.reloadedTabs || []).indexOf(77) !== -1);
+
+    // F：连接测试同样能自愈
+    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77] };
+    r = await runtimeSend('popup', { type: 'GROK_TEST' });
+    A('1.3.3「测试当前模式」在失效标签下也能自愈', r && r.ok === true && r.mode === 'page');
+  } catch (e) {
+    note('ERROR', '失效标签恢复检查异常: ' + (e && e.message));
+    A('1.3.3 失效标签恢复检查无异常抛出', false);
   } finally {
     scenario = prev;
   }
@@ -2013,7 +2101,8 @@ async function runScenario(name, cfg, expect) {
     .concat(runPageModeChecks())
     .concat(runPageBridgeDomChecks())
     .concat(runPromptWriteChecks())
-    .concat(await runPageModeEndToEnd());
+    .concat(await runPageModeEndToEnd())
+    .concat(await runStaleTabRecoveryChecks());
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);
