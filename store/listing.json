@@ -1,9 +1,9 @@
 {
   "product_name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.1.0",
-  "manifest_description_132": "7 站点一键提取正文与配图、去水印后预填到 X；X 上用 Grok 生成 3 条评论候选；TapeOut 生态面板核验官方链接防仿冒。发送全部手动完成。",
-  "summary_132": "7 站点正文/配图整理成 X 草稿；Grok 生成 3 条 X 回复候选；内置白名单 + Grok 核验 TapeOut 官方链接，绿标防仿冒。",
+  "version": "1.2.0",
+  "manifest_description_132": "7 站点一键提取正文与配图、去水印后预填到 X；Grok 生成 3 条评论候选；TapeOut 生态面板内置 295 条导航收录清单，绿标分级防仿冒。发送全部手动完成。",
+  "summary_132": "7 站点正文/配图整理成 X 草稿；Grok 生成 3 条 X 回复候选；内置 295 条 TapeOut.link 导航收录 + DeWeb 索引清单，绿标分级核验链接防仿冒。",
   "category": "productivity",
   "primary_language": "zh-CN",
   "additional_languages": [
@@ -12,11 +12,15 @@
   "detailed_description": [
     "TapePost 是一个内容转发辅助工具：在你正在浏览的内容页上，给每条内容加一个橙色「一键转发」按钮。点击后，它提取这一条的正文与配图，清洗文字、按需去水印，把文字预填进 X 发推框，并把处理后的媒体放进剪贴板或下载到本机。最后一步始终由你手动完成 —— 扩展不会替你发布任何内容，也不调用任何自动发布接口。",
     "",
+    "【1.2.0 新增：TapeOut 生态导航全量收录】",
+    "生态面板的绿标清单从「仅 5 条 OFFICIAL」扩展为 TapeOut.link 生态导航收录的全部链接，共 295 条，分三档显示：①项目方官方（导航站 OFFICIAL 标记，5 条）；②生态导航收录认可（第三方交易、数据、工具、社区、链游等，56 条）；③链上容器 · 已索引（web.tapeout.link 扫描索引到的 DeWeb 容器，234 条，按官方网关精确子域比对）。三档均属导航认可并给绿标，但界面明确区分等级 —— 链上容器内容由容器所有者部署，不代表项目方背书。",
+    "清单是本地内置的静态数据（由 tools/refresh-sites.mjs 从导航站公开的 data/sites.js 与 /api/sites 生成），插件运行时不会联网拉取清单；只有少数独立官网允许同域任意路径，网关域名严格按精确地址比对，未索引的容器子域、形近域名、其它 X 账号 / Telegram 群都不会拿到绿标。面板提供搜索、等级筛选与一键核验。",
+    "",
     "【1.1.0 新增：X 一键评论】",
     "X 推文右上角另有紫色「AI 评论」按钮。点击后由用户自己的 xAI API Key 调用 Grok，按用户可编辑的提示词，结合该条推文正文生成 3 条角度不同的回复候选；右下角浮层逐条列出，选中后才打开 X 回复框并预填文字，文字同时进剪贴板。发送 / 回复始终由用户手动点击，扩展不调用任何发布接口。",
     "",
     "【1.1.0 新增：TapeOut 生态面板 / 链接真伪查询】",
-    "独立面板列出 TapeOut.link 上带 OFFICIAL 标记的 5 个官方平台，只有内置白名单精确命中的地址才显示绿标，用于防范仿冒站。面板可粘贴任意链接做真伪查询：Grok 按用户可编辑的提示词，结合内置官方清单给出解释与风险提示（形近域名、Punycode、短链、非 HTTPS）。结论以本地白名单为准，模型不能把白名单外的链接判为官方；两者冲突会标红提示。即使 AI 不可用，本地结论依然有效。",
+    "独立面板列出全量导航收录清单并给绿标。粘贴任意链接即可做真伪查询：Grok 按用户可编辑的提示词，结合插件本地比对得出的权威结论与清单摘要给出解释和风险提示（形近域名、Punycode、短链、非 HTTPS、第三方网关）。结论以本地清单为准，模型不能把清单外的链接判为认可平台；两者冲突会标红提示。即使 AI 不可用，本地结论依然有效。",
     "",
     "【工作流程】",
     "1. 打开支持的站点，内容右上角出现「一键转发」；",
@@ -30,11 +34,10 @@
     "",
     "【设置项】",
     "转发设置：图片去水印、视频取原片、# 话题处理、附原推链接 / 署名、X 域名、7 个站点开关、运行环境自检。Grok 设置：AI 评论开关、API Key、接口协议、模型 ID、接口地址、测试连接、两套可编辑提示词。",
-    "图片去水印（默认开）、视频取原片（默认开）、正文 # 话题的三种处理方式、附原推链接、附个人署名、X 域名、7 个站点开关，以及「运行环境自检」按钮。",
     "",
     "【隐私与数据使用】",
     "「一键转发」全链路纯本地：无自有服务器、无账号、无遥测、无远程代码，图片/文字不上传。",
-    "仅当用户主动使用 AI 功能并填了自己的 xAI API Key 时，扩展才会把该条推文正文（≤1200 字符）或待核验链接，连同内置官方清单与设定提示词，发送给 api.x.ai 或用户自填的兼容网关。不发送浏览历史、Cookie、登录态、图片/视频文件或其它标签页内容。删除 Key 后 AI 功能立即停用，转发仍完全离线可用。发送给 xAI 的内容受 xAI 隐私政策约束，调用费用由用户承担。完整说明见商店隐私政策链接。",
+    "仅当用户主动使用 AI 功能并填了自己的 xAI API Key 时，扩展才会把该条推文正文（≤1200 字符）或待核验链接与本地判定结论、清单摘要，连同设定提示词，发送给 api.x.ai 或用户自填的兼容网关。收录清单本身是内置静态数据，不会联网拉取，也不会整份上传。不发送浏览历史、Cookie、登录态、图片/视频文件或其它标签页内容。删除 Key 后 AI 功能立即停用，转发仍完全离线可用。发送给 xAI 的内容受 xAI 隐私政策约束，调用费用由用户承担。完整说明见商店隐私政策链接。",
     "",
     "【请注意】",
     "· 需要你已登录 X（x.com / twitter.com）；部分地区的网络可达性由你自行解决。",
@@ -42,8 +45,8 @@
     "· X 视频通常是 HLS/blob 流，暂不能导出干净 mp4；各站水印样式不同，检测不到时一律原图保留，不会强行抹图。",
     "· 转载他人内容前请确认授权，建议开启「附原推链接」标注来源。TapePost 与 X 及上述任何站点均无官方关联。"
   ],
-  "single_purpose": "在用户主动点击时提供内容辅助：①把当前网页一条公开内容的正文与配图整理成可由用户手动发布到 X 的草稿素材（清洗文字、去水印、复制/下载媒体、预填发推框）；②在 X 上按用户设定的提示词生成 3 条回复候选供用户选择后手动回复；③用内置官方清单与 Grok 核验链接是否为 TapeOut 官方认定平台，防范仿冒。所有发布与回复动作均由用户手动完成。",
-  "host_access_justification": "内容脚本仅在清单明确列出的 7 个站点域名上注入按钮；图片/视频 CDN 主机权限仅用于下载当前这条内容的媒体。新增的 api.x.ai 主机权限只用于用户主动点击「AI 评论」/「核验链接」时向 xAI 官方接口发送生成请求，不使用时不发请求。可选主机权限默认未授予，仅在用户填写自定义网关并主动点「允许网关域名」时申请该单一域名。扩展不读取浏览历史、不访问其它标签页，所有站点均可在设置中单独关闭。",
+  "single_purpose": "在用户主动点击时提供内容辅助：①把当前网页一条公开内容的正文与配图整理成可由用户手动发布到 X 的草稿素材（清洗文字、去水印、复制/下载媒体、预填发推框）；②在 X 上按用户设定的提示词生成 3 条回复候选供用户选择后手动回复；③用内置静态清单（TapeOut.link 导航收录 + DeWeb 索引，共 295 条，分三档）与 Grok 核验链接是否被生态导航认可，防范仿冒。所有发布与回复动作均由用户手动完成。",
+  "host_access_justification": "内容脚本仅在清单明确列出的 7 个站点域名上注入按钮；图片/视频 CDN 主机权限仅用于下载当前这条内容的媒体。新增的 api.x.ai 主机权限只用于用户主动点击「AI 评论」/「核验链接」时向 xAI 官方接口发送生成请求，不使用时不发请求。可选主机权限默认未授予，仅在用户填写自定义网关并主动点「允许网关域名」时申请该单一域名。生态面板的收录清单为内置静态数据，运行时不访问 tapeout.link 或 web.tapeout.link；扩展不读取浏览历史、不访问其它标签页，所有站点均可在设置中单独关闭。",
   "permission_justifications": {
     "storage": "偏好与提示词保存在 chrome.storage.sync（随用户自己的 Chrome 同步设置），xAI API Key 与接口配置保存在 chrome.storage.local（仅本机、不同步）。不保存任何网页内容。",
     "downloads": "仅在用户点击转发或点击「全部下载」时，把处理后的图片/视频保存到本机下载目录，文件名前缀 xpost_。",
@@ -60,13 +63,13 @@
     "third_party_analytics": false,
     "handles_user_generated_content": true,
     "third_party_ai_service": "xAI Grok（api.x.ai）或用户自填的兼容网关",
-    "what_is_transmitted": "仅用户主动点「AI 评论」时的该条推文正文（≤1200 字符）+ 设定提示词，或点「核验链接」时的待核验链接 + 内置官方清单 + 设定提示词；用用户自己的 API Key 认证。",
-    "what_is_not_transmitted": "浏览历史、Cookie、X 登录态、其它标签页内容、图片/视频文件、账号密码、API Key 之外的任何凭据。",
+    "what_is_transmitted": "仅用户主动点「AI 评论」时的该条推文正文（≤1200 字符）+ 设定提示词，或点「核验链接」时的待核验链接 + 本地判定结论 + 与本次判定相关的清单摘要 + 设定提示词；用用户自己的 API Key 认证。295 条收录清单是内置静态数据，不联网拉取、不整份上传。",
+    "what_is_not_transmitted": "浏览历史、Cookie、X 登录态、其它标签页内容、图片/视频文件、账号密码、API Key 之外的任何凭据。生态导航清单不会从远端下载，也不整份发送给 xAI。",
     "note": "「一键转发」全链路纯本地；不填 API Key 时不会发出任何 AI 请求。开发者不运营后端、不接收也不留存上述内容。发送给 xAI 的内容受 xAI 隐私政策约束，调用费用由用户承担。"
   },
   "privacy_policy_url": "https://kenter1643.github.io/TapePost/privacy.html",
   "privacy_policy_local": "docs/privacy.html",
-  "privacy_policy_note": "正式地址由 GitHub Pages 托管（仓库 kenter1643/TapePost 的 main 分支 /docs 目录），已实测 HTTP 200。1.1.0 版政策已如实补充「AI 功能按需向 xAI 发送文字/链接」章节，提交前请确认商店表单填的是这个最新版。独立部署副本在 store/privacy-site/index.html；产品介绍页 https://kenter1643.github.io/TapePost/ 。",
+  "privacy_policy_note": "正式地址由 GitHub Pages 托管（仓库 kenter1643/TapePost 的 main 分支 /docs 目录），已实测 HTTP 200。1.2.0 版政策已如实补充「AI 功能按需向 xAI 发送文字/链接」与「收录清单为内置静态数据、运行时不联网拉取」章节，提交前请确认商店表单填的是这个最新版。独立部署副本在 store/privacy-site/index.html；产品介绍页 https://kenter1643.github.io/TapePost/ 。",
   "assets": {
     "icon": "icons/icon128.png",
     "screenshots": [
@@ -75,10 +78,10 @@
       "store/assets/screenshots/03_gallery_1280x800.png"
     ],
     "promo_tile": "store/assets/promo_440x280.png",
-    "promo_tile_text": "TapePost · 转发 / AI 评论 / 官方链接核验 · 7 平台",
+    "promo_tile_text": "TapePost · 转发 / AI 评论 / 295 条生态绿标核验 · 7 平台",
     "screenshots_note": "当前 3 张为功能示意图（非真机截图）。正式提交前建议用真实微博/X 页面截取替换，以免审核认为是误导性展示。"
   },
-  "reviewer_notes": "转发功能验证无需任何账号或 API Key：1) 打开 weibo.com 或 x.com 时间线，内容右上角出现橙色「一键转发」；2) 点击后右下角出现图片托盘（多图）或 X 新标签页（单图/纯文字）；3) X 发推框文字已预填，发送按钮未被自动触发。AI 功能需要审核员自备 xAI API Key：设置面板填入后点「测试连接」；无 Key 时紫色「AI 评论」会给出明确错误提示，不影响转发功能验证。生态面板（点插件图标 →「打开 TapeOut 生态面板」）的绿标来自内置静态白名单，不联网也能判定；链接核验的 AI 解释在无 Key 时会提示但本地结论仍显示。设置面板有「🔍 运行环境自检」可查看 SW / DNR 规则 / 离屏文档状态。",
+  "reviewer_notes": "转发功能验证无需任何账号或 API Key：1) 打开 weibo.com 或 x.com 时间线，内容右上角出现橙色「一键转发」；2) 点击后右下角出现图片托盘（多图）或 X 新标签页（单图/纯文字）；3) X 发推框文字已预填，发送按钮未被自动触发。AI 功能需要审核员自备 xAI API Key：设置面板填入后点「测试连接」；无 Key 时紫色「AI 评论」会给出明确错误提示，不影响转发功能验证。生态面板（点插件图标 →「打开 TapeOut 生态面板」）内置 295 条静态清单，不联网也能判定；可试 https://tapeout.net/（项目方官方绿标）、https://tapeoutscan.io/（导航收录绿标）、https://evil.tapekit.org/（不给绿标）。链接核验的 AI 解释在无 Key 时会提示但本地结论仍显示。设置面板有「🔍 运行环境自检」可查看 SW / DNR 规则 / 离屏文档状态。",
   "distribution": {
     "visibility": "public",
     "countries": "all",
@@ -87,13 +90,13 @@
   "publishing_api_note": "Chrome Web Store API v2 只提供 upload / publish / fetchStatus，没有「新建条目」接口：首个版本必须在 Developer Dashboard 手动 Add new item 上传 zip 并创建条目，拿到 ITEM_ID 与 Publisher ID 后，才能用 store/upload.mjs 自动上传后续版本或提交发布。v2 端点：POST /upload/v2/publishers/{publisherId}/items/{itemId}:upload、POST /v2/publishers/{publisherId}/items/{itemId}:publish；OAuth scope 为 https://www.googleapis.com/auth/chromewebstore。",
   "pre_submit_checklist": [
     "用 Google 账号登录 Chrome Web Store Developer Dashboard，并完成一次性开发者注册（注册费 US$5）",
-    "在 Dashboard 点「Add new item」上传 store/TapePost_1.1.0_store.zip",
+    "在 Dashboard 点「Add new item」上传 store/TapePost_1.2.0_store.zip",
     "把本文件里的名称、摘要、详细描述、分类、单一用途、逐项权限理由复制到商店表单",
     "隐私政策已托管在 GitHub Pages：https://kenter1643.github.io/TapePost/privacy.html ，直接填入表单即可（如改用自有域名，替换 privacy_policy_url 并同步更新页面）",
     "上传 128×128 图标之外的 3 张截图与 440×280 宣传图；建议替换为真机截图",
     "勾选数据使用声明：不收集个人数据、无远程代码、无第三方分析；但「是否将数据传出设备」必须选「是」—— AI 功能会按用户主动操作向 xAI 发送文字/链接，详见 data_use_disclosure",
     "保存草稿并预览，确认无误后点「Submit for review」",
     "审核通常 1–3 个工作日；被要求补充权限说明时，直接引用 permission_justifications",
-    "在「数据使用」页如实披露 xAI Grok 为第三方 AI 服务，并确认隐私政策链接指向 1.1.0 最新版（含 AI 章节）"
+    "在「数据使用」页如实披露 xAI Grok 为第三方 AI 服务，并确认隐私政策链接指向 1.2.0 最新版（含 AI 章节）"
   ]
 }

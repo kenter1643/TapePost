@@ -283,6 +283,8 @@ async function handleGrokMessage(msg) {
       ok: local.status !== 'invalid',
       local: {
         status: local.status,
+        tier: local.tier || null,
+        viaGateway: local.viaGateway || null,
         normalized: local.normalized || null,
         site: local.site || null,
         risks: local.risks || [],

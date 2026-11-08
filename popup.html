@@ -66,7 +66,7 @@
 </head>
 <body>
   <h1>TapePost · 一键转发到 X</h1>
-  <p class="sub">7 站点一键转发到 X；X 推文上另有紫色「AI 评论」用 Grok 生成 3 条候选；生态面板用官方白名单核验链接真伪。所有发送都由你手动完成。</p>
+  <p class="sub">7 站点一键转发到 X；X 推文上另有紫色「AI 评论」用 Grok 生成 3 条候选；生态面板用 295 条导航收录清单核验链接真伪。所有发送都由你手动完成。</p>
 
   <div class="me">
     <div class="avatar" id="meAvatar">昆</div>
@@ -78,7 +78,7 @@
     </div>
   </div>
 
-  <button id="openPanel" type="button">🛡 打开 TapeOut 生态面板（官方绿标 + 链接核验）</button>
+  <button id="openPanel" type="button">🛡 打开 TapeOut 生态面板（295 条绿标 + 链接核验）</button>
 
   <label>已启用站点（关掉后该站不再出现「一键转发」）</label>
   <div class="sites" id="sites">
@@ -164,7 +164,7 @@
       <label for="commentPrompt">X 一键评论：生成 3 条候选，保留 {POST}</label>
       <textarea id="commentPrompt" spellcheck="false"></textarea>
       <button class="resetbtn" type="button" id="resetComment">恢复默认评论提示词</button>
-      <label for="verifyPrompt">链接真伪查询：保留 {OFFICIAL_LIST} 与 {URL}</label>
+      <label for="verifyPrompt">链接真伪查询：保留 {LOCAL_RESULT} / {OFFICIAL_LIST} / {URL}（旧版自定义提示词请点下方恢复默认）</label>
       <textarea id="verifyPrompt" spellcheck="false"></textarea>
       <button class="resetbtn" type="button" id="resetVerify">恢复默认核验提示词</button>
     </details>
@@ -185,7 +185,7 @@
   <div class="note">
     说明：<br>
     · <b>AI 评论</b>：在 X 推文上点紫色「AI 评论」，Grok 按上面设定的提示词生成 3 条候选，选一条后会打开 X 回复框并预填文字，最后一步「发送」仍由你手动点；插件不会自动发布。没有填 xAI API Key 时按钮会明确报错。<br>
-    · <b>生态面板</b>：绿标只给 tapeout.link 上带 OFFICIAL 标记的 5 个地址，由本地白名单精确比对得出；Grok 只补充理由与仿冒风险，<b>不能</b>把白名单外的链接判成官方。链接真伪查询即使 Grok 不可用，本地结论依然有效。<br>
+    · <b>生态面板</b>：内置 295 条导航收录清单（5 项目方官方 / 56 导航收录 / 234 链上容器已索引），三档都给绿标但界面分级显示；只有本地清单精确命中的地址才有绿标，Grok 只补充理由与仿冒风险，<b>不能</b>把清单外的链接判成认可平台。清单是内置静态数据、不联网拉取；核验即使 Grok 不可用，本地结论依然有效。<br>
     · API Key 只存本机、不同步、不入库；调用时后台直连 xAI，页面脚本拿不到密钥。请自行确认 xAI 的调用额度与费用。<br>
     · 身份卡片上的「TapeOut社区成员：昆哥」为内置社区标注，仅显示在设置面板，不会写进转发正文；需要改称呼只改内置账号配置即可。<br>
     · 多站点：每个站点的选择器、图床域名、Referer、文字清洗与水印策略都在内置站点配置里。「删 # 后内容」只对微博生效，其他站保留原文；图片自动去水印也只对微博启用（其他站水印压在图上，强行处理会毁图，因此原图保留）。<br>

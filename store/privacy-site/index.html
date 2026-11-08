@@ -28,7 +28,7 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　适用版本：1.1.0 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　适用版本：1.2.0 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
     <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>只有当你主动使用 AI 功能</strong>（X 上的「AI 评论」或生态面板的「链接真伪查询」）时，扩展才会把你点选的那段文字或那条链接，连同你设定的提示词，用你自己的 API Key 发送给 xAI 的 Grok 接口；不使用时不会发出这类请求。
@@ -51,7 +51,7 @@
     <li><strong>xAI API Key 与接口配置</strong>（模型、协议、网关地址）保存在 <code>chrome.storage.local</code>，<strong>仅存本机、不同步、不随扩展分发</strong>，只用于向你指定的接口发起带 <code>Authorization</code> 头的请求。开发者无法读取它。</li>
     <li><strong>处理后的图片</strong>写入系统剪贴板，或按你的操作下载到本机下载目录；文件名前缀为 <code>xpost_</code>。</li>
     <li><strong>文字</strong>只通过 URL 参数预填到 <code>x.com/intent/tweet</code> 或 <code>twitter.com/intent/tweet</code> 的新标签页，由你手动点击发送。扩展不调用任何发布接口，也不会替你发帖或回复。</li>
-    <li><strong>官方平台清单</strong>是内置在扩展代码里的静态数据（来源 <a href="https://tapeout.link/">TapeOut.link</a> 的 OFFICIAL 标记，核验日期 2026-11-08），不会联网拉取，也不包含你的任何信息。</li>
+    <li><strong>生态收录清单</strong>（295 条）是内置在扩展代码里的静态数据，来源为 <a href="https://tapeout.link/">TapeOut.link</a> 公开的站点数据与 <a href="https://web.tapeout.link/">web.tapeout.link</a> 的 DeWeb 索引（核验日期 2026-11-08），不会联网拉取，也不包含你的任何信息。</li>
   </ul>
   <p>我们（开发者）不运营任何后端服务，因此无法访问、收集、存储或分析上述数据。</p>
 
@@ -62,11 +62,12 @@
 
   <h2>4. AI 功能与第三方服务（xAI Grok）</h2>
   <div class="box">
-    <p style="margin-top:0">1.1.0 起新增两个由你手动触发的 AI 功能。它们共用同一个后台请求通道，<strong>不填 API Key 就不会发出任何 AI 请求</strong>：</p>
+    <p style="margin-top:0">1.1.0 起新增两个由你手动触发的 AI 功能（1.2.0 扩展了生态收录清单）。它们共用同一个后台请求通道，<strong>不填 API Key 就不会发出任何 AI 请求</strong>：</p>
     <ul>
       <li><strong>X 一键评论</strong>：点击后把该条推文的正文 + 你设定的评论提示词发送给 <code>https://api.x.ai/v1</code>（或你在设置里填写的兼容网关），由 Grok 生成 3 条回复候选。候选只显示在本机浮层里；选中后才预填到 X 回复框，发送由你手动完成。</li>
-      <li><strong>链接真伪查询</strong>：点击核验后把待核验链接 + 内置官方清单 + 你设定的核验提示词发送给同一接口，由 Grok 生成解释与仿冒风险判断。最终是否给「官方绿标」由本地白名单决定，不采信模型结论。</li>
+      <li><strong>链接真伪查询</strong>：点击核验后把待核验链接 + 插件本地比对得出的结论 + 与本次判定相关的少量清单条目 + 你设定的核验提示词发送给同一接口，由 Grok 生成解释与仿冒风险判断。最终是否给绿标由本地清单决定，不采信模型结论。</li>
     </ul>
+    <p>生态面板的 295 条收录清单是<strong>内置在扩展里的静态数据</strong>：运行时不会访问 tapeout.link 或 web.tapeout.link 拉取清单，也不会把整份清单上传给 xAI；核验时只发送你输入的链接、本地结论和上述少量相关条目。</p>
     <p><strong>不会发送：</strong>浏览历史、Cookie、X 登录态、其它标签页内容、图片/视频文件、你的账号密码，以及除 API Key 之外的任何凭据。</p>
     <p><strong>第三方责任：</strong>发送给 xAI 的内容受 <a href="https://x.ai/legal/privacy-policy">xAI 的隐私政策</a>与其服务条款约束，xAI 可能会按其政策临时处理请求内容；调用额度与费用由你自行承担。如果你填写的是第三方兼容网关，该网关的运营方同样会收到上述内容，请先确认你信任它。扩展开发者不接收、不留存这些内容。</p>
   </div>

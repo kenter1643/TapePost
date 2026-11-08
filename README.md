@@ -1,11 +1,11 @@
 # TapePost · 一键转发到 X
 
-> 在内容页点一下，把正文和配图整理成 X 草稿素材；在 X 上用 Grok 生成 3 条评论候选；用官方白名单核验 TapeOut 生态链接。**发送与回复始终由你手动完成，扩展不会替你发帖。**
+> 在内容页点一下，把正文和配图整理成 X 草稿素材；在 X 上用 Grok 生成 3 条评论候选；用 295 条导航收录清单核验 TapeOut 生态链接。**发送与回复始终由你手动完成，扩展不会替你发帖。**
 
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.1.0　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.2.0　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -30,16 +30,26 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 
 提示词、模型（默认 `grok-4.3`）、接口协议（Chat Completions / Responses）、接口地址都可在设置里改。没有 API Key 时按钮会明确报错，不会静默失败。
 
-### 1.1.0 新增：TapeOut 生态面板（官方绿标 + 链接真伪查询）
+### TapeOut 生态面板（1.2.0：生态导航全量收录）
 
-点工具栏图标里的「打开 TapeOut 生态面板」，会打开一个独立的扩展页：
+点工具栏图标里的「打开 TapeOut 生态面板」，会打开一个独立的扩展页。绿标清单来自 **TapeOut.link 生态导航收录的全部链接**，共 **295 条**，分三档：
 
-- **官方绿标清单**：内置 [TapeOut.link](https://tapeout.link/) 上带 `OFFICIAL` 标记的 5 个平台（核验日期 2026-11-08，写在 `grok.js` 里），只有本地白名单精确命中的地址才给绿标；
-- **链接真伪查询**：粘贴任意链接 → Grok 按设定提示词，结合内置官方清单给出解释与仿冒风险（形近域名、Punycode、短链、非 HTTPS 等）；
-- **防伪底线**：结论以本地白名单为准，Grok 不能把白名单外的链接判成官方；两者冲突会在界面标红提示。即使 Grok 不可用，本地判定依然有效；
-- 面板里另列 8 条常见生态参考链接（非 OFFICIAL），一律不给绿标，用于区分「第三方」与「官方认定」。
+| 档位 | 数量 | 含义 |
+| --- | ---: | --- |
+| 项目方官方 | 5 | 导航站带 `OFFICIAL` 标记的官方入口 |
+| 生态导航收录认可 | 56 | 导航站编辑收录的第三方交易、数据、工具、社区、链游等 |
+| 链上容器 · 已索引 | 234 | `web.tapeout.link` 扫描索引到的 DeWeb 容器，按官方网关精确子域比对 |
 
-清单是内置静态数据，不联网拉取；要更新官方条目请改 `grok.js` 的 `OFFICIAL_SITES` 并提升版本号。
+三档**都算导航认可并给绿标**，但界面明确区分等级 —— 链上容器的内容由容器所有者部署，**不代表项目方背书**。清单核验日期 2026-11-08，内置在 `grok.js` 的 GENERATED 区块里。
+
+- **链接真伪查询**：粘贴任意链接 → 本地清单先精确比对 → Grok 按设定提示词结合本地权威结论给出解释与仿冒风险（形近域名、Punycode、短链、非 HTTPS、第三方网关）；
+- **防伪底线**：结论以本地清单为准，Grok 不能把清单外的链接判成认可平台；两者冲突会在界面标红提示。即使 Grok 不可用，本地判定依然有效；
+- **安全边界**：只有 4 个独立官网域名允许「同域任意路径 / 子域」，网关域名一律精确比对；未索引的容器子域、其它 X 账号 / Telegram 群、形近域名都拿不到绿标；
+- 面板提供搜索、三档筛选、一键核验与「复制 / 打开」；一次最多渲染 120 张卡片，其余用搜索定位，但**全部 295 条都参与核验**。
+
+清单是**本地内置静态数据**，运行时不联网拉取。要刷新清单：`node tools/refresh-sites.mjs`（从 `https://tapeout.link/data/sites.js` 与 `https://web.tapeout.link/api/sites` 重新生成，断网可加 `--offline` 用缓存），然后提升扩展版本号。
+
+> 从 1.1.0 升级且手动改过「核验提示词」的用户，请在设置里点一次「恢复默认核验提示词」，新版提示词会带上 `{LOCAL_RESULT}` 本地权威结论占位符。
 
 ## 支持的站点
 
@@ -57,7 +67,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 
 ## 安装
 
-**Chrome 网上应用店**：1.1.0 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
+**Chrome 网上应用店**：1.2.0 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
 
 **本地加载（开发者模式）**
 
@@ -67,10 +77,10 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 4. 打开任一支持的站点，内容右上角出现「一键转发」即可使用
 5. 要用 AI 评论 / 链接核验，点插件图标 →「Grok 设置」填入自己的 xAI API Key，再点「测试连接」
 
-商店提交包 `store/TapePost_1.1.0_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.1.0_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
+商店提交包 `store/TapePost_1.2.0_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.2.0_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
 
 ```bash
-zip -q store/TapePost_1.1.0_store.zip \
+zip -q store/TapePost_1.2.0_store.zip \
   manifest.json account.js sites.js grok.js background.js content.js inpaint.js \
   offscreen.html offscreen.js popup.html popup.js panel.html panel.js \
   icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png
@@ -84,7 +94,7 @@ zip -q store/TapePost_1.1.0_store.zip \
 - **Grok**：X 上是否显示「AI 评论」、xAI API Key、接口协议、模型 ID、接口地址、测试连接、允许自定义网关域名、两套可编辑提示词；
 - **工具**：「🔍 运行环境自检」（Service Worker / DNR 规则 / 离屏文档状态）、「打开 TapeOut 生态面板」。
 
-密钥与接口配置只存 `chrome.storage.local`（本机、不同步、不入库）；偏好与提示词存 `chrome.storage.sync`。提示词留空＝用 `grok.js` 内置默认；删掉 `{POST}` / `{OFFICIAL_LIST}` / `{URL}` 占位符时，插件会自动把对应内容补到提示词末尾。
+密钥与接口配置只存 `chrome.storage.local`（本机、不同步、不入库）；偏好与提示词存 `chrome.storage.sync`。提示词留空＝用 `grok.js` 内置默认；删掉 `{POST}` / `{LOCAL_RESULT}` / `{OFFICIAL_LIST}` / `{URL}` 占位符时，插件会自动把对应内容补到提示词末尾。
 
 插件内置的 X 账号与社区身份在 `account.js`；改名或换号只改这一处。
 
@@ -95,7 +105,7 @@ zip -q store/TapePost_1.1.0_store.zip \
 ├── manifest.json          # MV3 清单（权限 / 主机权限 / content scripts）
 ├── account.js             # 内置账号与社区身份（单一来源）
 ├── sites.js               # 7 个站点的配置表与 detectSite()
-├── grok.js                # 官方认定清单、URL 防伪判定、提示词与结果解析（共享层）
+├── grok.js                # 295 条收录清单、URL 防伪判定、提示词与结果解析（共享层）
 ├── content.js             # 按钮注入、正文/配图提取、多图托盘、X 评论候选浮层
 ├── background.js          # Service Worker：DNR 规则、消息路由、Grok 客户端、下载
 ├── offscreen.html/js      # 离屏文档：Canvas 去水印、剪贴板写入、视频地址解析
@@ -103,6 +113,7 @@ zip -q store/TapePost_1.1.0_store.zip \
 ├── popup.html/js          # 设置面板（转发 / Grok / 面板入口）
 ├── panel.html/js          # TapeOut 生态面板（绿标清单 + 链接真伪查询）
 ├── test-harness.js        # Node 端到端回归（无需浏览器）
+├── tools/refresh-sites.mjs # 从导航站公开数据重新生成收录清单
 ├── docs/                  # GitHub Pages：介绍页 + 隐私政策 + 静态资源
 └── store/                 # 上架素材：listing.json、截图、宣传图、上传脚本
 ```
@@ -110,7 +121,7 @@ zip -q store/TapePost_1.1.0_store.zip \
 ## 开发与测试
 
 ```bash
-node test-harness.js                  # 68 个场景：转发链路 + 官方白名单防伪 + X 评论按钮
+node test-harness.js                  # 83 个场景：转发链路 + 全量清单防伪 + 分级判定 + X 评论按钮
 WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 ```
 
@@ -120,13 +131,13 @@ WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 
 `store/listing.json` 里已备好名称、摘要、详细描述、分类、单一用途、逐项权限理由、数据使用披露、审核员验证步骤与提交清单；`store/upload.mjs` 用官方 API v2 做后续版本的上传 / 查状态 / 发布（凭证只从环境变量读取，不落盘）。
 
-注意：Chrome Web Store API v2 **没有新建条目接口**，首个版本必须由开发者本人在 Dashboard 点「Add new item」上传 zip 创建条目，拿到 `ITEM_ID` / `PUBLISHER_ID` 并配置 OAuth 后，脚本才能更新后续版本。1.1.0 的数据使用披露里 `transmits_data_off_device` 已改为 `true`：AI 功能会把用户点选的文字/链接发送给 xAI，提交表单时务必如实勾选。
+注意：Chrome Web Store API v2 **没有新建条目接口**，首个版本必须由开发者本人在 Dashboard 点「Add new item」上传 zip 创建条目，拿到 `ITEM_ID` / `PUBLISHER_ID` 并配置 OAuth 后，脚本才能更新后续版本。1.2.0 的数据使用披露里 `transmits_data_off_device` 已改为 `true`：AI 功能会把用户点选的文字/链接发送给 xAI，提交表单时务必如实勾选。
 
 ## 隐私
 
 **转发链路纯本地**：无自有服务器、无账号、无遥测、无远程代码。所有提取、去水印、剪贴板写入与下载都发生在本机。
 
-**AI 功能按需联网**：只有你主动点「AI 评论」或「核验链接」，并填了自己的 xAI API Key 时，扩展才会把该条推文正文或待核验链接（连同内置官方清单与设定提示词）发给 `api.x.ai` 或你自填的兼容网关。不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容。删除 Key 后 AI 功能立即停用，转发仍完全离线可用。
+**AI 功能按需联网**：只有你主动点「AI 评论」或「核验链接」，并填了自己的 xAI API Key 时，扩展才会把该条推文正文或待核验链接（连同本地判定结论、清单摘要与设定提示词）发给 `api.x.ai` 或你自填的兼容网关。不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容。删除 Key 后 AI 功能立即停用，转发仍完全离线可用。
 
 完整说明见 [隐私政策](https://kenter1643.github.io/TapePost/privacy.html)（源码 `docs/privacy.html`）。
 

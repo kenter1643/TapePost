@@ -6,4 +6,6 @@ __pycache__/
 .env.*
 *.pem
 *.key
+# 收录清单刷新脚本抓取的第三方原始数据（可用 --offline 复用本机缓存，不入库）
+tools/.cache/
 # 商店提交包体积很小，随仓库分发（docs/assets 下另有一份供介绍页下载）

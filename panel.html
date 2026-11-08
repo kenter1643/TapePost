@@ -8,6 +8,8 @@
       --brand: #ff7800;
       --green: #16a34a;
       --green-bg: #f0fdf4;
+      --listed: #22c55e;
+      --deweb: #0d9488;
       --red: #dc2626;
       --red-bg: #fef2f2;
       --amber: #b45309;
@@ -22,7 +24,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
       color: var(--ink); background: #f8fafc; line-height: 1.6;
     }
-    .wrap { max-width: 960px; margin: 0 auto; }
+    .wrap { max-width: 1020px; margin: 0 auto; }
     header { padding: 28px 0 18px; border-bottom: 1px solid var(--line); }
     .brandline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo {
@@ -32,7 +34,7 @@
     }
     h1 { font-size: 21px; margin: 0; letter-spacing: .2px; }
     .ver { font-size: 11px; color: #94a3b8; border: 1px solid var(--line); border-radius: 20px; padding: 2px 9px; }
-    .sub { margin: 10px 0 0; font-size: 13px; color: var(--slate); max-width: 760px; }
+    .sub { margin: 10px 0 0; font-size: 13px; color: var(--slate); max-width: 820px; }
     .badge-me {
       display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 6px;
       background: linear-gradient(90deg, #ff7800, #ff9d3d); color: #fff;
@@ -43,20 +45,56 @@
       background: var(--green-bg); border: 1px solid #bbf7d0; color: #14532d; font-size: 13px;
     }
     .rule b { color: var(--green); }
+    .rule ul { margin: 8px 0 0; padding-left: 20px; }
+    .rule li { margin: 2px 0; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+    .stat { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+    .stat .num { font-size: 22px; font-weight: 800; line-height: 1.2; }
+    .stat .lbl { font-size: 11px; color: var(--slate); margin-top: 3px; }
+    .stat.s-official .num { color: var(--green); }
+    .stat.s-listed .num { color: var(--listed); }
+    .stat.s-deweb .num { color: var(--deweb); }
+
     section { margin-top: 30px; }
-    h2 { font-size: 16px; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+    h2 { font-size: 16px; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .h2note { font-size: 12px; color: #94a3b8; font-weight: 400; }
+    .filters {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0 0;
+    }
+    #filterInput {
+      flex: 1; min-width: 200px; padding: 8px 11px; font-size: 13px; border: 1px solid #cbd5e1;
+      border-radius: 8px; outline: none; font-family: inherit;
+    }
+    #filterInput:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(255,120,0,.12); }
+    .fbtn {
+      font-size: 12px; padding: 8px 12px; border-radius: 8px; cursor: pointer;
+      border: 1px solid var(--line); background: #fff; color: var(--slate);
+    }
+    .fbtn:hover { background: #f1f5f9; }
+    .fbtn.on { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
+    .fcount { font-size: 12px; color: #94a3b8; margin: 10px 0 0; }
+    .more-note {
+      margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 12px;
+      background: var(--amber-bg); border: 1px solid #fde68a; color: #78350f;
+    }
+
     .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(285px, 1fr)); gap: 12px; margin-top: 14px; }
     .card {
       background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--green);
       border-radius: 10px; padding: 14px 15px; box-shadow: 0 1px 3px rgba(15,23,42,.05);
     }
+    .card.t-official { border-left-color: var(--green); }
+    .card.t-listed { border-left-color: var(--listed); }
+    .card.t-deweb { border-left-color: var(--deweb); }
     .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
     .cname { font-size: 15px; font-weight: 700; }
     .green-tag {
       flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--green);
       background: var(--green-bg); border: 1px solid #86efac; border-radius: 20px; padding: 2px 9px;
     }
+    .green-tag.g-listed { color: #15803d; background: #f0fdf4; border-color: #86efac; }
+    .green-tag.g-deweb { color: #0f766e; background: #f0fdfa; border-color: #99f6e4; }
     .cat { font-size: 11px; color: var(--slate); margin-top: 2px; }
     .curl {
       display: block; margin: 9px 0 0; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -64,13 +102,14 @@
     }
     .curl:hover { text-decoration: underline; }
     .cdesc { font-size: 12px; color: var(--slate); margin: 8px 0 0; }
-    .cactions { display: flex; gap: 8px; margin-top: 12px; }
+    .cactions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
     .cactions button, .cactions a {
       font-size: 12px; padding: 5px 10px; border-radius: 7px; cursor: pointer;
       border: 1px solid var(--line); background: #fff; color: var(--slate); text-decoration: none;
     }
     .cactions button:hover, .cactions a:hover { background: #f1f5f9; }
     .cactions .primary { border-color: var(--green); color: var(--green); font-weight: 600; }
+    .empty { color: #94a3b8; font-size: 13px; margin-top: 16px; }
 
     .verify { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
     .input-row { display: flex; gap: 10px; }
@@ -122,20 +161,42 @@
       <div class="brandline">
         <div class="logo">T</div>
         <h1>TapeOut 生态面板</h1>
-        <span class="ver">TapePost v1.1.0</span>
+        <span class="ver">TapePost v1.2.0</span>
       </div>
-      <p class="sub">官方认定平台入口 + 链接真伪核验。面向防范仿冒站：只有本地内置白名单精确命中的地址才会给绿标，Grok 只负责解释理由和识别仿冒特征。</p>
+      <p class="sub">TapeOut 生态导航收录的全量平台入口 + 链接真伪核验。绿标由插件本地内置清单精确比对得出，Grok 只负责解释理由和识别仿冒特征，不能把清单外的链接变成认可平台。</p>
       <span class="badge-me" id="meBadge">TapeOut社区成员：昆哥</span>
     </header>
 
     <div class="rule">
-      <b>判定原则：</b>绿标只看 <b>tapeout.link</b> 上带 OFFICIAL 标记的条目（核验于 <span id="checkedAt"></span>），
-      由插件本地精确比对域名 + 路径得出。Grok 的回答<b>不能</b>把白名单外的链接变成官方；两者冲突时一律以本地结论为准。
+      <b>判定原则：</b>凡是 <b>TapeOut.link 生态导航收录</b>的链接、以及 <b>web.tapeout.link 已索引</b>的链上容器，都算「导航认可」并给绿标（核验于 <span id="checkedAt"></span>）。为避免误读，绿标分三档：
+      <ul>
+        <li><b>项目方官方</b> —— 导航站带 OFFICIAL 标记的 5 条；</li>
+        <li><b>生态导航收录认可</b> —— 导航站编辑收录的其余链接（第三方交易、工具、社区、链游等）；</li>
+        <li><b>链上容器 · 已索引</b> —— DeWeb 扫描索引到的容器，按官方网关精确子域比对，<b>内容由容器所有者部署，不代表项目方背书</b>。</li>
+      </ul>
+      只有少数独立官网允许同域任意路径 / 子域；网关域名按精确地址比对，未索引的容器子域不会拿到绿标。Grok 的结论与本地冲突时一律以本地为准。
+    </div>
+
+    <div class="stats">
+      <div class="stat s-official"><div class="num" id="nOfficial">—</div><div class="lbl">项目方官方 OFFICIAL</div></div>
+      <div class="stat s-listed"><div class="num" id="nListed">—</div><div class="lbl">生态导航收录</div></div>
+      <div class="stat s-deweb"><div class="num" id="nDeweb">—</div><div class="lbl">链上容器已索引</div></div>
+      <div class="stat"><div class="num" id="nTotal">—</div><div class="lbl">合计绿标条目</div></div>
     </div>
 
     <section>
-      <h2>✅ 官方认定平台 <span class="h2note" id="officialCount"></span></h2>
+      <h2>✅ 导航认可的平台 <span class="h2note" id="officialCount"></span></h2>
+      <div class="filters">
+        <input id="filterInput" type="text" spellcheck="false" placeholder="搜索名称、域名或分类，例如 tapeout / 交易 / 1-2-210" />
+        <button class="fbtn on" data-tier="all" type="button">全部</button>
+        <button class="fbtn" data-tier="official" type="button">项目方官方</button>
+        <button class="fbtn" data-tier="listed" type="button">导航站收录</button>
+        <button class="fbtn" data-tier="deweb" type="button">链上容器</button>
+      </div>
+      <p class="fcount" id="fcount"></p>
       <div class="cards" id="officialCards"></div>
+      <p class="empty" id="emptyHint" style="display:none">没有匹配的条目，换个关键词试试。</p>
+      <div class="more-note" id="moreNote" style="display:none"></div>
     </section>
 
     <section>
@@ -146,20 +207,22 @@
                  placeholder="粘贴要核验的链接，例如 https://tapeout.net/ 或 tapeout-net.com" />
           <button id="verifyBtn" type="button">核验链接</button>
         </div>
-        <p class="hint">支持直接粘贴不带 https:// 的域名；短链、跳转参数、形近域名会单独标出风险。查询会把链接与内置清单发给 Grok 做解释，不会上传你的浏览记录或 API Key 之外的任何数据。</p>
+        <p class="hint">支持直接粘贴不带 https:// 的域名；短链、跳转参数、形近域名、未索引容器会单独标出风险。查询会把链接与本地结论发给 Grok 做解释，不会上传你的浏览记录或 API Key 之外的任何数据。</p>
         <div id="result"></div>
       </div>
     </section>
 
     <details>
-      <summary>参考链接（生态内常见，但没有 OFFICIAL 标记，一律不给绿标）</summary>
+      <summary>未收录 / 待核验的参考链接（一律不给绿标）</summary>
       <ul class="ref-list" id="refList"></ul>
     </details>
 
     <footer>
       清单来源：<a href="https://tapeout.link/" target="_blank" rel="noopener noreferrer">TapeOut.link</a>
-      的 OFFICIAL 标记条目，核验日期 <span class="checkedAt"></span>。HOT / NEW / DeWEB 标记不代表官方认定。<br>
-      本面板不构成投资建议；访问任何链上平台前请再次核对地址、谨慎授权钱包。
+      的 <a href="https://tapeout.link/data/sites.js" target="_blank" rel="noopener noreferrer">data/sites.js</a> +
+      <a href="https://web.tapeout.link/" target="_blank" rel="noopener noreferrer">web.tapeout.link</a> 的
+      <a href="https://web.tapeout.link/api/sites" target="_blank" rel="noopener noreferrer">/api/sites</a>，核验日期 <span class="checkedAt"></span>。<br>
+      绿标只说明「导航站已收录 / 已索引」，不构成项目方背书，也不构成投资建议；访问任何链上平台前请再次核对地址、谨慎授权钱包。
       · 插件设置与 API Key 在工具栏图标里 · <a href="https://github.com/kenter1643/TapePost" target="_blank" rel="noopener noreferrer">源码</a>
     </footer>
   </div>

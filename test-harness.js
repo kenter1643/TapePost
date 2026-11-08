@@ -675,10 +675,25 @@ function runTapeAIChecks() {
     checks.push({ name, ok });
   };
 
-  A('官方清单 5 条，含来源与核验日期', () =>
-    T.OFFICIAL_SITES.length === 5 && !!T.SOURCE.url && /^\d{4}-\d{2}-\d{2}$/.test(T.SOURCE.checkedAt));
-  A('5 条官方 URL 全部命中绿标', () =>
-    T.OFFICIAL_SITES.every((s) => T.matchOfficial(s.url).status === 'official'));
+  A('全量清单 295 条，含来源、数据文件与核验日期', () =>
+    T.ALL_SITES.length >= 290 && T.SOURCE.total === T.ALL_SITES.length &&
+    !!T.SOURCE.url && !!T.SOURCE.dataUrl && !!T.SOURCE.dewebApi &&
+    /^\d{4}-\d{2}-\d{2}$/.test(T.SOURCE.checkedAt));
+  A('清单分三档：5 官方 / 56 导航收录 / 234 链上容器', () => {
+    const n = { official: 0, listed: 0, deweb: 0 };
+    T.ALL_SITES.forEach((s) => { n[s.tier] = (n[s.tier] || 0) + 1; });
+    return n.official === 5 && n.listed >= 50 && n.deweb >= 200 &&
+      T.OFFICIAL_SITES.every((s) => s.source === 'nav') && T.DEWEB_SITES.every((s) => s.tier === 'deweb');
+  });
+  A('全量 295 条收录地址全部命中绿标', () =>
+    T.ALL_SITES.every((s) => {
+      const r = T.matchOfficial(s.url);
+      return r.status === 'official' && r.tier === s.tier && r.site && r.site.url === s.url;
+    }));
+  A('清单 URL 唯一且均为 https 地址', () => {
+    const urls = T.ALL_SITES.map((s) => s.url);
+    return new Set(urls).size === urls.length && urls.every((u) => /^https:\/\//.test(u));
+  });
   A('等价写法仍命中（www / 大小写 / query / 省略协议 / 末尾斜杠）', () => [
     'https://www.tapeout.net/#/', 'TAPEOUT.NET', 'https://tapehub.ai/?ref=x',
     'tapekit.org', 'https://x.com/Blonskr/'
@@ -733,17 +748,70 @@ function runTapeAIChecks() {
   });
   A('自定义提示词删掉占位符时自动补正文', () =>
     T.buildCommentMessages('自定义正文', '只写三条短评')[1].content.includes('自定义正文'));
-  A('核验提示词注入全部官方 URL 与待核验链接', () => {
+  A('核验提示词注入本地权威结论、清单摘要与待核验链接', () => {
     const m = T.buildVerifyMessages('https://tapeout-net.com/', null);
     const body = m[1].content;
-    return T.OFFICIAL_SITES.every((s) => body.includes(s.url)) &&
-      body.includes('tapeout-net.com') && body.includes('不要凭记忆补充');
+    return body.includes('未命中本地白名单') && body.includes('tapeout-net.com') &&
+      body.includes('不要凭记忆补充') && body.includes('清单总数：') &&
+      T.OFFICIAL_SITES.filter((s) => s.tier === 'official').every((s) => body.includes(s.url)) &&
+      body.indexOf('{LOCAL_RESULT}') === -1 && body.indexOf('{URL}') === -1;
   });
+  A('核验提示词长度受控（不把数百条清单塞给模型）', () =>
+    T.buildVerifyMessages('https://tapeout.net/', null)[1].content.length < 3000 &&
+    T.buildVerifyMessages('https://1-2-210.tapekit.org/', null)[1].content.length < 3000);
+  A('命中链接的本地结论写进提示词且带等级', () => {
+    const body = T.buildVerifyMessages('https://tapeoutscan.io/', null)[1].content;
+    return body.includes('已命中本地白名单') && body.includes('生态导航收录认可');
+  });
+  A('旧版自定义提示词缺占位符时自动追加权威结论', () =>
+    T.buildVerifyMessages('https://tapeout.net/', '只回答是不是官方')[1].content.includes('已命中本地白名单'));
   A('模型判 official 也不能改变本地未命中的结论', () => {
     const local = T.matchOfficial('https://tapeout-net.com/');
     const grok = T.parseVerdict('{"verdict":"official","reason":"我觉得是"}');
     return local.status !== 'official' && grok.verdict === 'official';
   });
+
+  /* ---- v1.2.0：全量清单的安全边界 ---- */
+  A('未索引的 tapekit.org 容器子域不给绿标', () =>
+    T.matchOfficial('https://999-999.tapekit.org/').status === 'unknown' &&
+    T.matchOfficial('https://evil.tapekit.org/').status === 'unknown');
+  A('网关主域命中，但不会通配放行任意子域', () =>
+    T.matchOfficial('https://tapekit.org/').status === 'official' &&
+    T.matchOfficial('https://anything.tapekit.org/').status === 'unknown');
+  A('同一链上容器走第三方网关仍算已索引，并提示官方网关', () => {
+    const r = T.matchOfficial('https://1-2-210.tapeout.site/');
+    return r.status === 'official' && r.tier === 'deweb' &&
+      r.viaGateway === 'https://1-2-210.tapekit.org/' &&
+      r.risks.some((x) => /官方网关/.test(x));
+  });
+  A('通用平台按路径隔离：x.com / t.me / github.io', () =>
+    T.matchOfficial('https://x.com/blonskr').status === 'official' &&
+    T.matchOfficial('https://x.com/otheraccount').status === 'unknown' &&
+    T.matchOfficial('https://t.me/TapeOutnet').status === 'official' &&
+    T.matchOfficial('https://t.me/otherchannel').status === 'unknown' &&
+    T.matchOfficial('https://jogjohgoeg.github.io/other/').status === 'unknown');
+  A('导航站内页命中导航站本体而不是站内子应用', () => {
+    const r = T.matchOfficial('https://tapeout.link/news/2119093042187784512');
+    return r.status === 'official' && /生态导航/.test(r.site.name);
+  });
+  A('独立官网子页面/官方子域仍算官方', () =>
+    T.matchOfficial('https://tapeout.net/linux.html').status === 'official' &&
+    T.matchOfficial('https://app.tapehub.ai/').status === 'official');
+  A('三档等级文案可区分', () =>
+    /项目方官方/.test(T.tierLabel('official')) && /导航/.test(T.tierLabel('listed')) &&
+    /容器/.test(T.tierLabel('deweb')));
+  A('清单摘要始终包含 5 条项目方官方地址', () => {
+    const s = T.officialContextText('https://whatever.example/', null);
+    return T.OFFICIAL_SITES.filter((x) => x.tier === 'official').every((x) => s.includes(x.url));
+  });
+  A('只有少数独立官网放宽同域，其余条目全部精确比对', () => {
+    const domains = T.ALL_SITES.filter((s) => s.scope === 'domain').map((s) => new URL(s.url).hostname);
+    return domains.length <= 8 && new Set(domains).size <= 4 &&
+      T.ALL_SITES.filter((s) => s.tier === 'deweb').every((s) => s.scope === 'exact');
+  });
+  A('参考清单里的地址确实未收录，不给绿标', () =>
+    T.REFERENCE_SITES.every((s) => !T.ALL_SITES.some((x) => x.url === s.url)) &&
+    T.REFERENCE_SITES.every((s) => T.matchOfficial(s.url).status === 'community'));
   return checks;
 }
 
