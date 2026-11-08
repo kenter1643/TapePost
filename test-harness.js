@@ -800,6 +800,11 @@ function runTapeAIChecks() {
   A('三档等级文案可区分', () =>
     /项目方官方/.test(T.tierLabel('official')) && /导航/.test(T.tierLabel('listed')) &&
     /容器/.test(T.tierLabel('deweb')));
+  A('面板排序：项目方官方排最前（official → listed → deweb）', () => {
+    const s = T.sortByTier([{ tier: 'deweb' }, { tier: 'listed' }, { tier: 'official' }]);
+    return s[0].tier === 'official' && s[1].tier === 'listed' && s[2].tier === 'deweb' &&
+      T.sortByTier(T.ALL_SITES)[0].tier === 'official' && T.TIER_ORDER.official > 0;
+  });
   A('清单摘要始终包含 5 条项目方官方地址', () => {
     const s = T.officialContextText('https://whatever.example/', null);
     return T.OFFICIAL_SITES.filter((x) => x.tier === 'official').every((x) => s.includes(x.url));

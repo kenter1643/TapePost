@@ -601,6 +601,16 @@ var TapeAI = (function () {
     return ({ official: '项目方官方（OFFICIAL）', listed: '生态导航收录认可', deweb: '链上容器 · 已索引' })[tier] || '生态导航收录认可';
   }
 
+  /* 面板展示顺序：项目方官方 → 导航站收录 → 链上容器。权重从 1 开始，避免 0 被 || 兜底吞掉。 */
+  var TIER_ORDER = { official: 1, listed: 2, deweb: 3 };
+  function sortByTier(list) {
+    return (list || []).slice().sort(function (a, b) {
+      var oa = TIER_ORDER[(a && a.tier) || 'listed'] || 9;
+      var ob = TIER_ORDER[(b && b.tier) || 'listed'] || 9;
+      return oa - ob;
+    });
+  }
+
   function officialListText(list) {
     var arr = list || OFFICIAL_SITES;
     var rows = arr.map(function (s, i) {
@@ -784,6 +794,8 @@ var TapeAI = (function () {
     matchOfficial: matchOfficial,
     spoofSignals: spoofSignals,
     tierLabel: tierLabel,
+    TIER_ORDER: TIER_ORDER,
+    sortByTier: sortByTier,
     officialListText: officialListText,
     officialContextText: officialContextText,
     localResultText: localResultText,

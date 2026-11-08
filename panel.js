@@ -157,9 +157,8 @@ function renderCards() {
     return [s.name, s.url, s.category, s.desc, s.tape, (s.badges || []).join(' ')]
       .join(' ').toLowerCase().indexOf(kw) !== -1;
   });
-  // 项目方官方 → 导航站收录 → 链上容器
-  var order = { official: 0, listed: 1, deweb: 2 };
-  matched.sort(function (a, b) { return (order[siteTier(a)] || 9) - (order[siteTier(b)] || 9); });
+  // 项目方官方 → 导航站收录 → 链上容器（排序口径放在 grok.js，回归测试可直接验证）
+  matched = AI.sortByTier(matched);
 
   var shown = matched.slice(0, MAX_CARDS);
   shown.forEach(function (s) { box.appendChild(makeCard(s)); });

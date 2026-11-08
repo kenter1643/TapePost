@@ -121,7 +121,7 @@ zip -q store/TapePost_1.2.0_store.zip \
 ## 开发与测试
 
 ```bash
-node test-harness.js                  # 83 个场景：转发链路 + 全量清单防伪 + 分级判定 + X 评论按钮
+node test-harness.js                  # 84 个场景：转发链路 + 全量清单防伪 + 分级判定 + X 评论按钮
 WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 ```
 
