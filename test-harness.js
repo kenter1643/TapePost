@@ -156,6 +156,7 @@ function makeChrome(name) {
     tabs: {
       // 页面模式：复用/新建 x.com 的 Grok 标签；sendMessage 同时支持 callback 与 Promise 两种写法
       query: (q) => Promise.resolve((scenario.pageTabs || []).slice()),
+      get: (id) => Promise.resolve((scenario.pageTabs || []).find((t) => t.id === id) || { id }),
       create: (o) => {
         const t = { id: 88, url: o && o.url };
         scenario.pageTabs = (scenario.pageTabs || []).concat([t]);
@@ -194,6 +195,7 @@ function makeChrome(name) {
           scenario.inpaintImages === false ? { inpaintImages: false } : {},
           scenario.inpaintVideo === false ? { inpaintVideo: false } : {},
           scenario.grokMode ? { grokMode: scenario.grokMode } : {},
+          scenario.grokPreferNative === false ? { grokPreferNative: false } : {},
           scenario.grokPageAutoSubmit === false ? { grokPageAutoSubmit: false } : {},
           scenario.grokPageNewChat === false ? { grokPageNewChat: false } : {},
           scenario.pagePromptExtra ? { pagePromptExtra: scenario.pagePromptExtra } : {}))
@@ -303,8 +305,29 @@ async function tabsSend(from, tabId, msg) {
       (scenario.tabNoInput || []).indexOf(tabId) !== -1) {
     return Promise.resolve({ ok: true, url: 'https://x.com/i/grok', hasInput: false, hasSend: false });
   }
+  // 1.4.0 站内直连：模拟 X 页面 MAIN world 里 grok-native.js 的回包
+  if (msg.type === 'GROK_NATIVE_PING' || msg.type === 'GROK_NATIVE_CHECK' || msg.type === 'GROK_NATIVE_CALL') {
+    scenario.nativeCalls = (scenario.nativeCalls || 0) + 1;
+    if ((scenario.nativeUnreachable || []).indexOf(tabId) !== -1) {
+      return Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'));
+    }
+    if (msg.type === 'GROK_NATIVE_PING') {
+      return Promise.resolve({ ok: true, status: { ready: true, hasSession: true, hasWebpack: true } });
+    }
+    if (msg.type === 'GROK_NATIVE_CHECK') {
+      return Promise.resolve({ ok: true, check: { ok: true, via: 'x-ondemand', txLen: 48 } });
+    }
+    if (typeof scenario.nativeHandler === 'function') return Promise.resolve(serialize(scenario.nativeHandler(msg)));
+    return Promise.resolve({
+      ok: true,
+      comments: ['角度一：认同并补充', '角度二：提个问题', '角度三：独立观点'],
+      raw: '```\n角度一：认同并补充\n```\n```\n角度二：提个问题\n```\n```\n角度三：独立观点\n```',
+      via: 'x-ondemand'
+    });
+  }
   // 页面模式：模拟 x.com 里 grok-page.js 的回包（含思考过程 / 模板 JSON 等噪声）
   if (msg.type === 'GROK_PAGE_BRIDGE') {
+    scenario.pageBridgeCalls = (scenario.pageBridgeCalls || 0) + 1;
     if (typeof scenario.grokPageHandler === 'function') {
       return Promise.resolve(serialize(scenario.grokPageHandler(msg)));
     }
@@ -1137,7 +1160,8 @@ async function runPageModeEndToEnd() {
     delete scenario.grokPageHandler;
     scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: pageTabs.slice() };
     r = await runtimeSend('popup', { type: 'GROK_TEST' });
-    A('auto 且没填 Key 自动走 X 站内 Grok', r && r.ok && r.mode === 'page');
+    A('auto 且没填 Key 不调用 xAI API', r && r.ok && r.mode !== 'api');
+    A('1.4.0 auto 自检优先汇报站内直连通道', r && r.mode === 'native');
 
     scenario = { grokMode: 'page', grokApiKey: 'xai-test', pageTabs: pageTabs.slice() };
     r = await runtimeSend('popup', { type: 'GROK_TEST' });
@@ -1211,6 +1235,197 @@ async function runStaleTabRecoveryChecks() {
 }
 
 /* ---------- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ---------- */
+/* ---------- 1.4.0：站内直连 Grok（直接调 X 自带接口） ---------- */
+function makeNativeCtx() {
+  const g = {
+    window: {
+      addEventListener: () => {},
+      postMessage: () => {},
+      fetch: () => Promise.resolve({ ok: true }),
+      webpackChunk_twitter_responsive_web: []
+    },
+    document: { cookie: 'ct0=fake-ct0-token; other=1' },
+    navigator: { language: 'zh-CN' },
+    crypto: { randomUUID: () => '11111111-2222-4333-8444-555555555555' },
+    AbortController: function () { this.abort = () => {}; this.signal = {}; },
+    TextDecoder,
+    DOMParser: function () {},
+    setTimeout, clearTimeout,
+    console: { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
+  };
+  const ctx = vm.createContext(g);
+  vm.runInContext(read('grok-native.js'), ctx, { filename: 'grok-native.js' });
+  return ctx;
+}
+
+async function runNativePureChecks() {
+  const checks = [];
+  const A = (name, ok) => checks.push({ name, ok: !!ok });
+  let nctx;
+  try { nctx = makeNativeCtx(); }
+  catch (e) { A('grok-native.js 可在页面上下文加载', false); return checks; }
+  const N = (expr) => vm.runInContext(expr, nctx, { timeout: 3000 });
+  const J = (fn, val) => N('window.__tapeGrokNative.' + fn + '(' + JSON.stringify(val) + ')');
+  const P = (expr) => vm.runInContext(expr, bgCtx, { timeout: 3000 });
+
+  A('grok-native.js 暴露站内直连接口', N('typeof window.__tapeGrokNative.generate') === 'function');
+  A('接口指向 X 自带 Grok 流式端点',
+    N('window.__tapeGrokNative.ENDPOINT') === 'https://grok.x.com/2/grok/add_response.json');
+
+  // --- NDJSON：只认 ASSISTANT / final，思考过程与用户气泡一律不算回答 ---
+  const ndjson = [
+    JSON.stringify({ result: { sender: 'USER', message: '我的提示词', messageTag: 'final' } }),
+    JSON.stringify({ result: { sender: 'ASSISTANT', message: '让我想想…', messageTag: 'thinking' } }),
+    JSON.stringify({ result: { sender: 'ASSISTANT', message: '```\n第一条中文评论\n```\n', messageTag: 'final' } }),
+    JSON.stringify({ result: { sender: 'ASSISTANT', message: '```\n第二条中文评论\n```\n```\n第三条中文评论\n```', messageTag: 'final' } }),
+    'not-json'
+  ].join('\n');
+  const finalText = J('extractFinalText', ndjson);
+  A('只拼接最终回答块', /第一条中文评论/.test(finalText) && /第三条中文评论/.test(finalText));
+  A('思考过程不进入最终答案', !/让我想想/.test(finalText));
+  A('用户提示词不进入最终答案', !/我的提示词/.test(finalText));
+  A('非 JSON 行被忽略', !/not-json/.test(finalText));
+  A('NDJSON 直接解析出 3 条候选', (J('extractComments', ndjson) || []).length === 3);
+
+  // --- 候选解析：代码块 > JSON > 列表，噪声与空回答绝不凑数 ---
+  const blocks = '```\n角度一：认同并补充\n```\n```\n角度二：提个问题\n```\n```\n角度三：独立观点\n```';
+  const c1 = J('extractComments', blocks);
+  A('3 个代码块解析成 3 条候选', c1.length === 3 && /认同/.test(c1[0]) && /独立观点/.test(c1[2]));
+  A('单个代码块内 3 行也能拆开', (J('extractComments', '```\n第一条中文评论\n第二条中文评论\n第三条中文评论\n```') || []).length === 3);
+  A('JSON 数组解析', (J('extractComments', '["甲评论内容","乙评论内容","丙评论内容"]') || []).length === 3);
+  A('编号列表解析', (J('extractComments', '1. 第一条中文评论内容\n2. 第二条中文评论内容\n3. 第三条中文评论内容') || []).length === 3);
+  A('侧栏 UI 词不再变成假候选', (J('extractComments', 'History\nUsage\nShare') || []).length === 0);
+  A('代码块里的 UI 词同样被过滤',
+    (J('extractComments', '```\nHistory\n```\n```\nUsage\n```\n```\nShare\n```') || []).length === 0);
+  A('空回答返回空数组', (J('extractComments', '') || []).length === 0);
+  A('任务标记不当候选', (J('extractComments', '【TapePost 任务开始】\n【TapePost 任务结束】') || []).length === 0);
+
+  // --- 请求体 / 请求头 ---
+  let body;
+  try { body = JSON.parse(J('buildBody', '测试提示词')); } catch (e) { body = {}; }
+  A('请求体带上完整提示词', body.responses && body.responses[0] && body.responses[0].message === '测试提示词');
+  A('临时对话不污染 Grok 历史', body.isTemporaryChat === true && body.requestFeatures && body.requestFeatures.serverHistory === false);
+  A('关闭搜索 / 引用 / 配图以缩短等待',
+    body.returnSearchResults === false && body.returnCitations === false && body.imageGenerationCount === 0);
+  A('会话 ID 是雪花数字串', /^\d{10,}$/.test(String(body.conversationId || '')));
+
+  let h = {};
+  try { h = await N('window.__tapeGrokNative.buildHeaders("tx-fake-1234567890")'); } catch (e) {}
+  A('请求头带签名', h['x-client-transaction-id'] === 'tx-fake-1234567890');
+  A('请求头带 X 会话 ct0', h['x-csrf-token'] === 'fake-ct0-token');
+  A('请求头带 OAuth2 会话标记', h['x-twitter-auth-type'] === 'OAuth2Session' && /^Bearer /.test(h.authorization || ''));
+  N('document.cookie = ""');
+  let noSession = false;
+  try { await N('window.__tapeGrokNative.buildHeaders("tx")'); }
+  catch (e) { noSession = /ct0|登录/.test(String(e && e.message || e)); }
+  A('没有 X 会话时明确报错而不是盲目发请求', noSession);
+  N('document.cookie = "ct0=fake-ct0-token"');
+
+  N('window.__tapeGrokNative._remember("https://grok.x.com/2/grok/add_response.json", ' +
+    '{headers:{"authorization":"Bearer LIVE","x-client-transaction-id":"captured-tx-1234567890","x-csrf-token":"live-ct0"}})');
+  A('能捕获 X 自己发出的实时签名', N('window.__tapeGrokNative.status().capturedTx') === true);
+  A('能捕获 X 自己发出的实时 bearer', N('window.__tapeGrokNative.status().capturedBearer') === true);
+  A('状态报告反映登录会话', N('window.__tapeGrokNative.status().hasSession') === true);
+
+  // --- 模式路由与直连提示词（grok.js） ---
+  A('显式 native 模式', P("TapeAI.pickGrokMode({grokMode:'native'})") === 'native');
+  A('auto 在 X 标签优先站内直连',
+    P("TapeAI.pickGrokMode({grokMode:'auto',grokApiKey:''},{inXTab:true})") === 'native');
+  A('auto 在 X 标签但填了 Key 仍走 API',
+    P("TapeAI.pickGrokMode({grokMode:'auto',grokApiKey:'xai-x'},{inXTab:true})") === 'api');
+  A('关掉「优先直连」后 auto 恢复页面模式',
+    P("TapeAI.pickGrokMode({grokMode:'auto',grokPreferNative:false},{inXTab:true})") === 'page');
+  A('不在 X 标签时 auto 保持旧行为',
+    P("TapeAI.pickGrokMode({grokMode:'auto',grokApiKey:''})") === 'page');
+  A('非法模式值回落 auto',
+    P("TapeAI.pickGrokMode({grokMode:'wat'},{inXTab:true})") === 'native');
+  A('强制页面模式不受直连影响',
+    P("TapeAI.pickGrokMode({grokMode:'page',grokApiKey:'x'},{inXTab:true})") === 'page');
+
+  const prompt = P("TapeAI.buildNativePrompt(TapeAI.buildCommentMessages('给自己放了一个小假 东京之旅结束',''),'comments','')");
+  A('直连提示词含真实推文正文', /东京之旅结束/.test(prompt));
+  A('直连提示词要求 3 个代码块', /3 个 Markdown 代码块/.test(prompt));
+  A('直连提示词带唯一任务标记', prompt.indexOf('【TapePost 任务开始】') === 0);
+  A('直连提示词不再要求单一 JSON', !/只输出上面要求的那一个 JSON/.test(prompt));
+  const custom = P("TapeAI.buildNativePrompt(TapeAI.buildCommentMessages('推文A','请用粤语写 {POST} 的三条回复'),'comments','请全程中文')");
+  A('自定义评论提示词与附加要求都生效', /粤语/.test(custom) && /推文A/.test(custom) && /请全程中文/.test(custom));
+  const vp = P("TapeAI.buildNativePrompt(TapeAI.buildVerifyMessages('https://tapeout.net/',''),'verify','')");
+  A('核验提示词要求 JSON verdict', /verdict/.test(vp) && !/3 个 Markdown 代码块/.test(vp));
+  return checks;
+}
+
+async function runNativeEndToEnd() {
+  const checks = [];
+  const A = (name, ok) => checks.push({ name, ok: !!ok });
+  const prev = scenario;
+  const tabs = () => [{ id: 42, url: 'https://x.com/home' }, { id: 43, url: 'https://x.com/i/grok' }];
+  const okComments = ['角度一：认同并补充', '角度二：提个问题', '角度三：独立观点'];
+  const msg = () => ({ type: 'GROK_COMMENTS', payload: { text: '给自己放了一个小假 东京之旅结束' } });
+  try {
+    // A：auto + X 标签 → 直连，页面链路完全不触发
+    scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: tabs(), nativeCalls: 0, pageBridgeCalls: 0 };
+    let r = await runtimeSend('content', msg());
+    A('auto 在 X 标签走站内直连并返回 3 条候选',
+      r && r.ok === true && r.mode === 'native' && r.comments && r.comments.length === 3);
+    A('直连成功时完全不触发旧的页面模式链路', scenario.pageBridgeCalls === 0);
+    A('直连确实与页面内脚本通信', scenario.nativeCalls >= 2);
+    A('直连结果带传输诊断', !!(r && r.diagnostics && /站内直连/.test(r.diagnostics.transport)));
+
+    // B：提示词送达检查（正文不串 UI 词）
+    let sentPrompt = '';
+    scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: tabs(),
+      nativeHandler: (m) => { sentPrompt = m.prompt; return { ok: true, comments: okComments, raw: 'raw', via: 'x-ondemand' }; } };
+    r = await runtimeSend('content', msg());
+    A('提示词里带真实推文正文', /东京之旅结束/.test(sentPrompt));
+    A('提示词要求代码块输出', /代码块/.test(sentPrompt));
+    A('提示词不含插件按钮文字', !/一键转发|AI 评论/.test(sentPrompt));
+
+    // C：直连失败 → 自动降级页面模式仍出候选
+    scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: tabs(),
+      nativeHandler: () => ({ ok: false, error: 'X 拒绝了本次 Grok 签名（404）' }) };
+    r = await runtimeSend('content', msg());
+    A('直连失败自动降级页面模式仍能出候选',
+      r && r.ok === true && r.mode === 'page' && r.comments && r.comments.length === 3);
+    A('降级时把直连失败原因带进诊断',
+      !!(r && r.diagnostics && /404/.test(r.diagnostics.nativeFallback || '')));
+
+    // D：强制 native 失败 → 明确中文错误，不静默换链路
+    scenario = { grokMode: 'native', pageTabs: tabs(),
+      nativeHandler: () => ({ ok: false, error: 'X 签名生成失败' }) };
+    r = await runtimeSend('content', msg());
+    A('强制直连失败给明确中文错误',
+      r && r.ok === false && /站内直连 Grok 生成失败/.test(r.error) && /签名/.test(r.error));
+
+    // E：关掉「优先直连」→ auto 完全不调用 native
+    scenario = { grokMode: 'auto', grokApiKey: '', grokPreferNative: false, pageTabs: tabs(), nativeCalls: 0 };
+    r = await runtimeSend('content', msg());
+    A('关掉优先直连后 auto 不调用 native',
+      r && r.ok === true && r.mode === 'page' && scenario.nativeCalls === 0);
+
+    // F：页面内脚本失效（旧标签孤儿）→ 安静降级而不是死等
+    scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: tabs(), nativeUnreachable: [42, 43] };
+    r = await runtimeSend('content', msg());
+    A('旧标签脚本失联时安静降级页面模式', r && r.ok === true && r.mode === 'page');
+
+    // G：设置面板自检验证直连通道
+    scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: tabs() };
+    r = await runtimeSend('popup', { type: 'GROK_TEST' });
+    A('auto 自检验证站内直连通道', r && r.ok === true && r.mode === 'native' && /签名/.test(r.sample || ''));
+
+    // H：native 模式下点「重建标签」不再误刷新用户 X 页面
+    scenario = { grokMode: 'native', pageTabs: tabs(), reloadedTabs: [] };
+    r = await runtimeSend('popup', { type: 'GROK_PAGE_RESET' });
+    A('native 模式下重建标签不误刷新用户页面',
+      r && r.ok === true && r.mode === 'native' && (scenario.reloadedTabs || []).length === 0);
+  } catch (e) {
+    A('站内直连端到端无异常抛出', false);
+    note('ERROR', 'native 端到端异常: ' + (e && e.message));
+  } finally {
+    scenario = prev;
+  }
+  return checks;
+}
+
 function runTapeAIChecks() {
   const T = require('./grok.js');
   const checks = [];
@@ -2168,7 +2383,9 @@ async function runScenario(name, cfg, expect) {
     .concat(runPageBridgeDomChecks())
     .concat(runPromptWriteChecks())
     .concat(await runPageModeEndToEnd())
-    .concat(await runStaleTabRecoveryChecks());
+    .concat(await runStaleTabRecoveryChecks())
+    .concat(await runNativePureChecks())
+    .concat(await runNativeEndToEnd());
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

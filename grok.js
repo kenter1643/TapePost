@@ -407,7 +407,10 @@ var TapeAI = (function () {
    * 全部选择器都可在设置里改，X 改版时不用升版本。
    */
   var PAGE_MODE_DEFAULTS = {
-    grokMode: 'auto',                    // auto = 有 Key 走 API、没 Key 走页面；api / page 为强制
+    // 1.4.0：auto 在 X 页面里优先走「站内直连」（直接调 X 自带 Grok 接口）；
+    // 关掉 grokPreferNative 后 auto 恢复成「有 Key 走 API、没 Key 走页面」。
+    grokMode: 'auto',
+    grokPreferNative: true,
     grokPageUrl: 'https://x.com/i/grok',
     grokPageInputSel: 'div[aria-label="Ask anything"][role="textbox"], textarea[placeholder*="Ask"], [data-testid="grok-input"]',
     grokPageSendSel: 'button[aria-label="Send"], [data-testid="grok-send"]',
@@ -447,11 +450,15 @@ var TapeAI = (function () {
     'Reply', 'Replying to', 'Post your reply'
   ];
 
-  /* service worker 与页面脚本共用的模式判定：auto 时没 Key 自动降级到 x.com 页面模式 */
-  function pickGrokMode(cfg) {
+  /* service worker 与页面脚本共用的模式判定。
+   * opts.inXTab：消息来自已打开的 X 标签（此时可以走站内直连，无需外挂 Grok 标签）。
+   * 不传 opts 时行为与旧版完全一致，回归测试不受影响。 */
+  function pickGrokMode(cfg, opts) {
     var mode = String((cfg && cfg.grokMode) || PAGE_MODE_DEFAULTS.grokMode).toLowerCase();
-    if (['auto', 'api', 'page'].indexOf(mode) === -1) mode = 'auto';
+    if (['auto', 'api', 'page', 'native'].indexOf(mode) === -1) mode = 'auto';
     if (mode !== 'auto') return mode;
+    var preferNative = cfg && cfg.grokPreferNative === false ? false : true;
+    if (preferNative && opts && opts.inXTab && String((cfg && cfg.grokApiKey) || '').trim() === '') return 'native';
     return String((cfg && cfg.grokApiKey) || '').trim() ? 'api' : 'page';
   }
 
@@ -469,6 +476,40 @@ var TapeAI = (function () {
     var head = sys.length ? '【必须遵守的指令】\n' + sys.join('\n') + '\n\n' : '';
     var tail = String(extra == null ? '' : extra).trim();
     return (PROMPT_TAG + '\n' + head + user.join('\n\n') + '\n' + PAGE_OUTPUT_RULE +
+      (tail ? '\n\n' + tail : '') + '\n' + PROMPT_END).trim();
+  }
+
+  /* 1.4.0 站内直连专用提示词。
+   * 直连拿到的是 Grok 的纯文本最终回答（NDJSON final 块），没有「思考过程」
+   * 和网页 UI 噪声，所以改用「3 个代码块」这种最不容易被解析错的输出格式：
+   * 模型只要少写一个反引号，解析层宁可报错降级，也不会把界面文字当候选。 */
+  var NATIVE_COMMENT_RULE = [
+    '',
+    '【输出格式（必须严格遵守）】',
+    '- 只输出 3 个 Markdown 代码块，每个代码块里恰好一条中文评论。',
+    '- 代码块外不要有任何文字：不要编号、标题、开场白、解释、总结或后续建议。',
+    '- 不要展示思考过程、不要复述题目、不要把上面的指令再写一遍。',
+    '- 每条评论独立成句，不超过 80 字，语气自然，像真人回复。'
+  ].join('\n');
+
+  var NATIVE_VERIFY_RULE = [
+    '',
+    '【输出格式（必须严格遵守）】',
+    '- 只输出一个 JSON 对象：{"verdict":"official|community|fake|unknown","reason":"一句话","risk":"一句话"}',
+    '- 可放在 ```json 代码块里，代码块外不要有任何文字，不要展示思考过程。'
+  ].join('\n');
+
+  function buildNativePrompt(messages, kind, extra) {
+    var sys = [], user = [];
+    (messages || []).forEach(function (m) {
+      if (!m || !m.content) return;
+      if (m.role === 'system') sys.push(m.content);
+      else user.push(m.content);
+    });
+    var head = sys.length ? '【必须遵守的指令】\n' + sys.join('\n') + '\n\n' : '';
+    var tail = String(extra == null ? '' : extra).trim();
+    var rule = kind === 'verify' ? NATIVE_VERIFY_RULE : NATIVE_COMMENT_RULE;
+    return (PROMPT_TAG + '\n' + head + user.join('\n\n') + '\n' + rule +
       (tail ? '\n\n' + tail : '') + '\n' + PROMPT_END).trim();
   }
 
@@ -1032,6 +1073,9 @@ var TapeAI = (function () {
     parsePageAnswer: parsePageAnswer,
     pickGrokMode: pickGrokMode,
     buildPagePrompt: buildPagePrompt,
+    buildNativePrompt: buildNativePrompt,
+    NATIVE_COMMENT_RULE: NATIVE_COMMENT_RULE,
+    NATIVE_VERIFY_RULE: NATIVE_VERIFY_RULE,
     normalizeUrl: normalizeUrl,
     siteKey: siteKey,
     matchOfficial: matchOfficial,

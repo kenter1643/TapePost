@@ -7,6 +7,7 @@
  *      图床强制校验 Referer，否则 403。
  *   2. 管理离屏文档(offscreen)，负责消息路由 requestId → tabId。
  *   3. 把处理后的图片写入下载（作为剪贴板失败时的备份）。
+ *   4. 1.4.0：把 Grok 请求路由到当前 X 标签的站内直连通道，失败自动降级页面模式。
  */
 'use strict';
 
@@ -119,10 +120,11 @@ async function ensureOffscreen() {
 
 // ---- 3. Grok 客户端 ----
 /*
- * 两个 AI 功能共用这一段，支持两种运行模式：
- *   api  — Service Worker 直连 api.x.ai（需 Key，按量计费）
- *   page — 把提示词送进用户已登录的 x.com 站内 Grok 页面/浮窗，读回回答（免 Key、免费）
- *   auto — 有 Key 走 api，没 Key 自动降级 page
+ * 两个 AI 功能共用这一段，支持三种运行模式：
+ *   native — 1.4.0 默认：在当前 X 标签里直接调 X 自带 Grok 接口（免 Key、最稳定）
+ *   api    — Service Worker 直连 api.x.ai（需 Key，按量计费）
+ *   page   — 把提示词送进用户已登录的 x.com 站内 Grok 页面/浮窗，读回回答（旧链路兜底）
+ *   auto   — X 页面里优先 native，失败降级 page；显式填了 Key 则走 api
  * 消息类型：
  *   GROK_COMMENTS      — X 一键评论，按设定提示词生成 3 条回复候选
  *   GROK_VERIFY        — TapeOut 生态面板的链接真伪查询
@@ -130,8 +132,9 @@ async function ensureOffscreen() {
  *   GROK_PAGE_PREPARE  — 手动兜底①：只填提示词，不发送
  *   GROK_PAGE_READ     — 手动兜底②：读回 Grok 页面上已生成的回答
  *
- * 页面模式里扩展自己不向任何 AI 服务发请求，也不接触 X 的登录态；
- * 对话完全发生在 X 页面里，由 grok-page.js 做 DOM 操作。
+ * 页面模式里扩展自己不向任何 AI 服务发请求，对话完全发生在 X 页面里。
+ * 1.4.0 站内直连里，请求由 grok-native.js 以用户已登录的 X 会话发给 X 自有的
+ * grok.x.com 接口（接收方只有 X/Grok），后台只回收 3 条评论文本，不接触登录态。
  * API Key 只存在 chrome.storage.local（本机、不同步、不入库、不上报），
  * 页面 content script 永远拿不到密钥。
  * 错误写进独立的 lastGrokError，绝不污染 DIAG 用的 lastError（自检回归依赖它为空）。
@@ -412,6 +415,52 @@ async function callGrokPage(prompt, cfg, action) {
   return Object.assign({ tabId: t.tabId, createdTab: t.created, healed: !!t.healed }, r);
 }
 
+/* ------------------------------------------------------------------
+ * 1.4.0 站内直连（native）
+ * 与 X 网页客户端一样，直接向 X 自带的 Grok 流式接口发请求。请求发生在
+ * 用户当前这个 X 标签里（MAIN world 脚本 grok-native.js），后台只负责
+ * 转发提示词和回收 3 条评论文本，不开标签、不碰 DOM、不等页面文本稳定。
+ * 找不到可用标签 / 脚本未注入时返回 null，由上层安静降级到页面模式。
+ * ------------------------------------------------------------------ */
+function isXTabUrl(url) {
+  return /^https:\/\/(?:[a-z0-9-]+\.)?(?:x|twitter)\.com\//i.test(String(url || ''));
+}
+
+async function findXTabId(preferredId) {
+  if (preferredId != null) {
+    try {
+      // 消息本来就来自这个标签，没有 tabs 权限时 url 可能读不到，别因此丢掉它
+      const t = await chrome.tabs.get(preferredId);
+      if (t) return t.id;
+    } catch (e) { /* 标签可能已关闭 */ }
+  }
+  try {
+    const tabs = (await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] })) || [];
+    const active = tabs.find((t) => t.active) || tabs[0];
+    if (active) return active.id;
+  } catch (e) { /* 没有 tabs 权限时跳过 */ }
+  return null;
+}
+
+async function nativeTab(preferredId) {
+  const tabId = await findXTabId(preferredId);
+  if (tabId == null) return null;
+  try {
+    const p = await sendToTab(tabId, { type: 'GROK_NATIVE_PING' });
+    if (p && p.ok) return tabId;
+  } catch (e) { /* 旧标签的孤儿脚本会直接失联 */ }
+  return null;
+}
+
+async function callGrokNative(preferredId, message) {
+  const tabId = await nativeTab(preferredId);
+  if (tabId == null) return null;
+  const r = await sendToTab(tabId, message);
+  if (!r) throw new Error('X 站内 Grok 没有响应，请刷新该 X 标签后重试。');
+  if (!r.ok) throw new Error(r.error || 'X 站内 Grok 调用失败');
+  return Object.assign({ tabId }, r);
+}
+
 /* 网页 Grok 会把思考过程 / 用户气泡 / 侧栏按钮一起渲染。
  * 1.3.2：整页 innerText 必须先 cleanPageAnswer 去掉噪声，才允许进入解析；
  * 按行兜底也换成 parsePageAnswer（只认清洗后的回答，不接受 UI 词）。 */
@@ -496,15 +545,32 @@ function localOut(local) {
   };
 }
 
-async function handleGrokMessage(msg) {
+async function handleGrokMessage(msg, sender) {
   const payload = msg.payload || {};
   if (typeof TapeAI === 'undefined') throw new Error('grok.js 未加载，请重新加载扩展。');
   const cfg = await getGrokConfig();
-  const mode = TapeAI.pickGrokMode(cfg);
+  // 1.4.0：消息来自已打开的 X 标签时，auto 优先走站内直连（无需外挂 Grok 标签）。
+  // 只有 X 页面会发 GROK_COMMENTS / GROK_VERIFY，所以 URL 因权限读不到时仍按 X 标签处理。
+  const senderUrl = (sender && (sender.url || (sender.tab && (sender.tab.url || sender.tab.pendingUrl)))) || '';
+  const fromXTab = !!(sender && sender.tab && sender.tab.id != null &&
+    (isXTabUrl(senderUrl) || !senderUrl));
+  const tabId = sender && sender.tab ? sender.tab.id : null;
+  const mode = TapeAI.pickGrokMode(cfg, { inXTab: fromXTab });
+  const forceNative = String(cfg.grokMode || '').toLowerCase() === 'native';
+  let actualMode = mode;
 
   // 1.3.3：一键修复「重新加载扩展后旧 X 标签脚本失效」。
   // 只刷新已打开的 /i/grok 页面（不关闭用户标签），再强制新开一个干净标签。
   if (msg.type === 'GROK_PAGE_RESET') {
+    if (mode === 'native') {
+      const t = await nativeTab(tabId);
+      return {
+        ok: t != null, mode: 'native', reloaded: 0,
+        note: t != null
+          ? '站内直连通道正常：当前 X 标签已就绪，不需要重建 Grok 标签。'
+          : '没检测到可用的站内直连脚本。请刷新 X 页面（重载扩展后必须刷新），或在设置里切到「页面模式」再重建标签。'
+      };
+    }
     let tabs = [];
     try { tabs = (await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] })) || []; }
     catch (e) { /* 无 tabs 权限时跳过刷新，直接走新建分支 */ }
@@ -526,7 +592,28 @@ async function handleGrokMessage(msg) {
 
   if (msg.type === 'GROK_TEST') {
     const started = Date.now();
-    if (mode === 'page') {
+    // auto + 默认优先直连时，自检也要验证直连通道（弹窗没有 sender.tab，会去找已开的 X 标签）
+    const wantNative = mode === 'native' ||
+      (String(cfg.grokMode || 'auto').toLowerCase() === 'auto' &&
+        cfg.grokPreferNative !== false && !String(cfg.grokApiKey || '').trim());
+    let effectiveMode = mode;   // mode 已由 pickGrokMode 解析成 native / page / api
+    if (wantNative) {
+      // 检测但不发起真实提问：确认 X 会话 + 站内签名可用
+      let r = null;
+      try { r = await callGrokNative(tabId, { type: 'GROK_NATIVE_CHECK' }); } catch (e) {
+        if (forceNative) throw new Error('站内直连自检失败：' + String(e && e.message || e));
+      }
+      if (r && r.ok) {
+        return {
+          ok: true, model: 'X 站内 Grok（直连）', protocol: 'native', mode: 'native',
+          latencyMs: Date.now() - started,
+          sample: (r.check && r.check.note) || '站内直连通道已就绪（会话与签名均可用）'
+        };
+      }
+      if (!forceNative) effectiveMode = String(cfg.grokApiKey || '').trim() ? 'api' : 'page';
+      else throw new Error('站内直连脚本没有响应：请刷新 X 页面（重载扩展后必须刷新），或在设置里切回「页面模式」。');
+    }
+    if (effectiveMode === 'page') {
       // 页面模式不做真实提问，只验证能不能连上 x.com 里那个 Grok 页面
       const r = await callGrokPage('', cfg, 'ping');
       return {
@@ -546,7 +633,47 @@ async function handleGrokMessage(msg) {
 
   if (msg.type === 'GROK_COMMENTS') {
     const messages = TapeAI.buildCommentMessages(payload.text || '', cfg.commentPrompt);
-    const r = await runGrok(messages, 700, cfg);
+    let nativeFailure = null;
+
+    // 1.4.0 主路径：直接调 X 自带 Grok 接口，不依赖 /i/grok 标签与 DOM 文本读取
+    if (mode === 'native') {
+      try {
+        const prompt = TapeAI.buildNativePrompt(messages, 'comments', cfg.pagePromptExtra);
+        const r = await callGrokNative(tabId, {
+          type: 'GROK_NATIVE_CALL', prompt, kind: 'comments', timeoutMs: 90000
+        });
+        if (r && r.comments && r.comments.length) {
+          return {
+            ok: true, comments: r.comments, model: 'X 站内 Grok（直连）', mode: 'native', strict: true,
+            raw: String(r.raw || '').slice(0, 1200),
+            diagnostics: {
+              transport: '站内直连 · X 自带 Grok 接口',
+              signature: r.via || '',
+              endpoint: 'grok.x.com/2/grok/add_response.json',
+              tabId: r.tabId || null
+            }
+          };
+        }
+        if (r) nativeFailure = '直连已返回但没解析出候选';
+      } catch (e) {
+        nativeFailure = String(e && e.message || e);
+        if (forceNative) {
+          throw new Error('站内直连 Grok 生成失败：' + nativeFailure +
+            '。请刷新 X 页面后重试；也可在设置里把运行模式切到「页面模式」。');
+        }
+        console.warn('[bg][grok] 站内直连失败，降级页面模式：' + nativeFailure);
+      }
+      actualMode = 'page';
+    }
+
+    let r;
+    try { r = await runGrok(messages, 700, cfg); }
+    catch (e) {
+      if (nativeFailure) {
+        throw new Error(String(e && e.message || e) + '（此前站内直连也失败：' + nativeFailure.slice(0, 180) + '）');
+      }
+      throw e;
+    }
     if (r.prepared) {
       return { ok: false, prepared: true, mode: 'page', prompt: r.prompt,
         error: '已把提示词填进 X 的 Grok 输入框（当前设为「不自动发送」）。请到 Grok 里按发送，回答出来后点「读取 Grok 回答」。' };
@@ -558,12 +685,14 @@ async function handleGrokMessage(msg) {
     if (!comments.length) {
       throw new Error('没从 Grok 的回答里解析出 3 条评论（网页版 Grok 可能没按 JSON 输出，或回答被截断）。' +
         '请点「重新生成」；仍失败就用候选面板的「复制提示词（手动）」到 Grok 里发送，再点「读取 Grok 回答」。' +
+        (nativeFailure ? '（站内直连失败原因：' + nativeFailure.slice(0, 180) + '）' : '') +
         '读到的原文：' + String(p.text || r.text || '').slice(0, 200));
     }
     return {
       ok: true, comments, model: r.model, mode: r.mode, strict: p.strict,
       raw: String(p.text || r.text || '').slice(0, 1200),
-      diagnostics: pageDiagnostics(r)
+      diagnostics: Object.assign(pageDiagnostics(r),
+        nativeFailure ? { nativeFallback: nativeFailure } : {})
     };
   }
 
@@ -574,17 +703,32 @@ async function handleGrokMessage(msg) {
     let aiError = null;
     try {
       const messages = TapeAI.buildVerifyMessages(payload.url || '', cfg.verifyPrompt);
-      const r = await runGrok(messages, 600, cfg);
-      if (r.prepared) throw new Error('当前设为「不自动发送」：请到 Grok 里手动发送，再点面板上的「读取 Grok 回答」。');
-      const p = r.mode === 'page'
-        ? parsePageText(r, 'verdict')
-        : { out: TapeAI.parseVerdict(r.text), strict: true };
-      grok = p.out;
-      if (grok) { grok.model = r.model; grok.strict = p.strict; }
+      if (mode === 'native') {
+        try {
+          const prompt = TapeAI.buildNativePrompt(messages, 'verify', cfg.pagePromptExtra);
+          const nr = await callGrokNative(tabId, {
+            type: 'GROK_NATIVE_CALL', prompt, kind: 'verify', timeoutMs: 90000
+          });
+          if (nr) {
+            const v = TapeAI.parseVerdict(nr.raw || (nr.comments || []).join('\n'));
+            if (v) { grok = v; grok.model = 'X 站内 Grok（直连）'; grok.strict = true; }
+          }
+        } catch (e) { aiError = String(e && e.message || e); }
+        if (!grok) actualMode = 'page';
+      }
+      if (!grok) {
+        const r = await runGrok(messages, 600, cfg);
+        if (r.prepared) throw new Error('当前设为「不自动发送」：请到 Grok 里手动发送，再点面板上的「读取 Grok 回答」。');
+        const p = r.mode === 'page'
+          ? parsePageText(r, 'verdict')
+          : { out: TapeAI.parseVerdict(r.text), strict: true };
+        grok = p.out;
+        if (grok) { grok.model = r.model; grok.strict = p.strict; aiError = null; }
+      }
     } catch (e) {
       aiError = String(e && e.message || e);
     }
-    return { ok: local.status !== 'invalid', local: localOut(local), grok, aiError, mode, source: TapeAI.SOURCE };
+    return { ok: local.status !== 'invalid', local: localOut(local), grok, aiError, mode: actualMode, source: TapeAI.SOURCE };
   }
 
   // 手动兜底：只把完整提示词填进 Grok（并回传给页面去复制），不发送
@@ -724,7 +868,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // 避免 content script / 面板那边一直转圈等不到结果。
   if (msg.type === 'GROK_COMMENTS' || msg.type === 'GROK_VERIFY' || msg.type === 'GROK_TEST' ||
       msg.type === 'GROK_PAGE_PREPARE' || msg.type === 'GROK_PAGE_READ' || msg.type === 'GROK_PAGE_RESET') {
-    handleGrokMessage(msg).then((out) => {
+    handleGrokMessage(msg, sender).then((out) => {
       lastGrokError = null;
       try { sendResponse(Object.assign({ type: 'GROK_RESULT' }, out)); } catch (e) {}
     }).catch((e) => {

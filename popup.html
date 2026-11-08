@@ -145,6 +145,7 @@
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
+      <b>1.4.0 站内直连（重要）</b>：AI 评论改为<b>直接调用 X 自带的 Grok 接口</b>，不再往 Grok 输入框填字、不再等页面文本稳定、不再外挂 Grok 标签。签名由 X 页面自己的模块生成，回答只从最终回答块解析；失败会自动降级到旧的页面模式。<b>重载扩展后请刷新 X 页面一次</b>。<br>
       <b>1.3.1 位置变化</b>：先点 X 推文的「回复」展开输入框，紫色「AI 评论」会出现在<b>填写区右侧</b>；选一条候选后<b>直接写进当前回复框</b>，不再另开预填页。<br>
       <b>1.3.2 稳定性</b>：点击后弹出等待浮层直到结果回来；页面模式会校验「提示词真的发给 Grok、回答真的读回来了」，候选面板顶部显示诊断结果。解析不出 3 条候选会明确报错，不会拿页面文字冒充评论。<br>
       <b>1.3.4 正文防污染</b>：修复回复框里重复堆出几十个「AI 评论」按钮、按钮文字被当成推文正文发给 Grok 的问题；现在正文优先读 X 官方节点，且所有取正文路径都会剥掉插件界面文字。若只读到界面文字会明确取消，不再生成错误的评论。<br>
@@ -158,14 +159,20 @@
 
     <label for="grokMode">运行模式</label>
     <select id="grokMode">
-      <option value="auto">自动：填了 Key 走 API，没填走 X 站内 Grok（推荐）</option>
-      <option value="page">X 站内 Grok（免 API Key / 免费）</option>
+      <option value="auto">自动：X 页面里优先站内直连，填了 Key 走 API（推荐）</option>
+      <option value="native">站内直连 X 自带 Grok（免 Key / 最稳定）</option>
+      <option value="page">页面模式：填 Grok 输入框再读回答（旧链路，仅兜底）</option>
       <option value="api">xAI API（需 Key，按量计费）</option>
     </select>
     <div class="mode-hint">
-      <b>免 Key 模式</b>：插件按下面的提示词，把内容填进你已登录的 <b>x.com/i/grok</b>（或 X 上的 Grok 浮窗），等回答稳定后读回结果。
-      扩展不调用任何 AI 接口、不产生费用；对话本身由 X 提供并受 X 条款约束。需要登录 X 且账号可用 Grok。
-      <b>不放心自动发送</b>可关掉「自动发送」，改用「复制提示词 → 自己粘贴 → 读取回答」的手动流程。
+      <b>站内直连</b>：与 X 网页客户端一样，用你已登录的 X 会话直接向 <code>grok.x.com</code> 发提示词，
+      只读取 Grok 的最终回答块；<b>不开标签、不模拟点击、不读整页文字</b>，因此不会出现「没读到回答块 / 连接失效」。
+      请求只发给 X/Grok（提示词与推文正文），不经 TapePost 或第三方服务器；签名在你本机页面内生成。
+      <b>页面模式</b>是旧链路：把提示词填进 <code>x.com/i/grok</code> 再读回答，仅在直连不可用或你手动选择时启用。
+    </div>
+    <div class="row" style="margin:8px 0 10px">
+      <input type="checkbox" id="grokPreferNative" />
+      <label for="grokPreferNative" style="margin:0;font-weight:400">自动模式下优先站内直连（关掉＝恢复旧的「有 Key 走 API、没 Key 走页面」）</label>
     </div>
 
     <div class="promptbox">

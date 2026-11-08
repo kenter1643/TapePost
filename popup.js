@@ -152,7 +152,7 @@ function load() {
       const v = s[id];
       el.value = (v == null || v === '') ? (PAGE_DEFAULTS[id] == null ? '' : PAGE_DEFAULTS[id]) : v;
     });
-    ['grokPageAutoSubmit', 'grokPageNewChat'].forEach((id) => {
+    ['grokPageAutoSubmit', 'grokPageNewChat', 'grokPreferNative'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.checked = s[id] !== false && s[id] !== 'false';
     });
@@ -202,7 +202,7 @@ function save() {
     const v = String(el.value || '').trim();
     data[id] = v === '' ? PAGE_DEFAULTS[id] : (/Ms$|MaxChars$/.test(id) ? (Number(v) || PAGE_DEFAULTS[id]) : v);
   });
-  ['grokPageAutoSubmit', 'grokPageNewChat'].forEach((id) => {
+  ['grokPageAutoSubmit', 'grokPageNewChat', 'grokPreferNative'].forEach((id) => {
     const el = document.getElementById(id);
     data[id] = !!(el && el.checked);
   });
@@ -232,22 +232,28 @@ function testGrok() {
   });
 }
 
-/* 预览：把「设置里的提示词 + 页面模式专属约束」拼成真正会填进 Grok 输入框的完整文本 */
+/* 预览：按当前运行模式，把「设置里的提示词 + 该模式的输出约束」拼成真正会发给 Grok 的完整文本 */
 function previewPrompt() {
   const box = document.getElementById('promptPreview');
   if (!box) return;
   if (typeof TapeAI === 'undefined') { grokStatus('提示词模块未加载，请重新加载扩展。', false); return; }
   const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
   const extra = val('pagePromptExtra');
-  const comment = TapeAI.buildPagePrompt(
-    TapeAI.buildCommentMessages('（示例推文）TapeOut 生态又多了一个链上应用，DeWeb 容器索引突破 200 个。', val('commentPrompt')), extra);
-  const verify = TapeAI.buildPagePrompt(
-    TapeAI.buildVerifyMessages('https://tapeout.net/', val('verifyPrompt')), extra);
+  const mode = (document.getElementById('grokMode') || {}).value || 'auto';
+  const native = mode === 'native' || (mode === 'auto' && (document.getElementById('grokPreferNative') || {}).checked !== false);
+  const build = (messages, kind) => native
+    ? TapeAI.buildNativePrompt(messages, kind, extra)
+    : TapeAI.buildPagePrompt(messages, extra);
+  const comment = build(
+    TapeAI.buildCommentMessages('（示例推文）TapeOut 生态又多了一个链上应用，DeWeb 容器索引突破 200 个。', val('commentPrompt')), 'comments');
+  const verify = build(
+    TapeAI.buildVerifyMessages('https://tapeout.net/', val('verifyPrompt')), 'verify');
   box.style.display = 'block';
   box.textContent = '【AI 评论 · 实际发送内容】\n' + comment +
     '\n\n────────────────────\n\n【链接核验 · 实际发送内容】\n' +
     verify.slice(0, 1600) + (verify.length > 1600 ? '\n…（清单摘要较长，此处省略）' : '');
-  grokStatus('已生成预览：这就是页面模式下会填进 Grok 输入框的完整文本（用示例内容拼装，不会真的发送）。', true);
+  grokStatus('已生成预览：这就是' + (native ? '站内直连' : '页面模式') +
+    '下实际发给 Grok 的完整文本（用示例内容拼装，不会真的发送）。', true);
 }
 
 /* 1.3.3：扩展重载后旧 X 标签的 content script 是孤儿，页面模式会报
