@@ -456,10 +456,16 @@ var TapeAI = (function () {
   function pickGrokMode(cfg, opts) {
     var mode = String((cfg && cfg.grokMode) || PAGE_MODE_DEFAULTS.grokMode).toLowerCase();
     if (['auto', 'api', 'page', 'native'].indexOf(mode) === -1) mode = 'auto';
-    if (mode !== 'auto') return mode;
+    if (mode === 'api' || mode === 'native') return mode;
     var preferNative = cfg && cfg.grokPreferNative === false ? false : true;
-    if (preferNative && opts && opts.inXTab && String((cfg && cfg.grokApiKey) || '').trim() === '') return 'native';
-    return String((cfg && cfg.grokApiKey) || '').trim() ? 'api' : 'page';
+    var noKey = String((cfg && cfg.grokApiKey) || '').trim() === '';
+    /* 1.4.1：显式 page 多半是 1.3.x 存下来的旧设置。用户选它的本意是
+     * 「免 API Key 用 X 站内 Grok」，但页面模式在 X 改版后写入校验经常失败；
+     * 只要没关掉「优先站内直连」、没填 Key、且当前在 X 标签里，一律优先直连。
+     * page 退为直连失败后的兜底 / 手动调试选项；非 X 标签仍保持页面模式。 */
+    if (preferNative && noKey && opts && opts.inXTab) return 'native';
+    if (mode === 'auto') return noKey ? 'page' : 'api';
+    return mode;
   }
 
   /*

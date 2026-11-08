@@ -21,7 +21,8 @@ const DEFAULTS = Object.assign({
   replyInputSelector: '',  // 空 = 用 sites.js 内置的 X 回复框选择器
   commentPrompt: '',       // 空 = 用 grok.js 内置默认提示词
   verifyPrompt: '',
-  enabledSites: {}
+  enabledSites: {},
+  grokModeMigrated141: false  // 1.4.1：旧 page 设置只自动升级一次
 }, PAGE_DEFAULTS);
 
 // 页面模式的文本配置项；选择器全部可改，X 改版时不用升版本
@@ -143,7 +144,20 @@ function load() {
     renderPrompt('commentPrompt', s.commentPrompt);
     renderPrompt('verifyPrompt', s.verifyPrompt);
     const mode = document.getElementById('grokMode');
-    if (mode) mode.value = s.grokMode || 'auto';
+    /* 1.4.1：旧版把「X 站内 Grok」存成显式 page，导致 1.4.0 的直连链路
+     * 一次都没被走到。只要用户没主动关掉「优先站内直连」，就在打开设置时
+     * 自动纠正为 auto（只写必要的键，不覆盖其它设置）；用户之后手动改回
+     * page 会被 save() 打标记，不再被自动改。 */
+    const legacyPage = String(s.grokMode || '').toLowerCase() === 'page' &&
+      s.grokPreferNative !== false && s.grokModeMigrated141 !== true;
+    if (mode) mode.value = legacyPage ? 'auto' : (s.grokMode || 'auto');
+    const fixNote = document.getElementById('modeFixNote');
+    if (fixNote) fixNote.hidden = !legacyPage;
+    if (legacyPage) {
+      try {
+        chrome.storage.sync.set({ grokMode: 'auto', grokModeMigrated141: true });
+      } catch (e) {}
+    }
     const extra = document.getElementById('pagePromptExtra');
     if (extra) extra.value = s.pagePromptExtra || '';
     PAGE_TEXT_IDS.forEach((id) => {
@@ -194,6 +208,8 @@ function save() {
   };
   const mode = document.getElementById('grokMode');
   data.grokMode = mode ? mode.value : 'auto';
+  // 用户主动保存过设置后，不再把它当「旧版遗留值」自动改掉（尊重显式选页面模式）
+  data.grokModeMigrated141 = true;
   const extra = document.getElementById('pagePromptExtra');
   data.pagePromptExtra = extra ? extra.value : '';
   PAGE_TEXT_IDS.forEach((id) => {

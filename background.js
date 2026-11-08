@@ -177,6 +177,16 @@ async function getGrokConfig() {
     const v = pref[k];
     page[k] = (v == null || v === '') ? TapeAI.PAGE_MODE_DEFAULTS[k] : v;
   });
+  /* 1.4.1 双保险：老版本把「X 站内 Grok」存成显式 grokMode="page"，
+   * 1.4.0 的 pickGrokMode 遇到非 auto 直接返回，新增的直连链路一次都没走过，
+   * 用户一直卡在会报「提示词写入校验失败」的旧 DOM 页面模式上。
+   * 只要用户没关掉「优先站内直连」且没填 API Key，就把 page 按 auto 的
+   * 免 Key 语义处理（auto 在 X 标签里走直连、其它情况仍回退页面模式）。
+   * 这是运行时归一化，不依赖 storage 迁移是否成功，重载后必定生效。 */
+  if (String(page.grokMode || '').toLowerCase() === 'page' &&
+      page.grokPreferNative !== false && !String(secret.grokApiKey || '').trim()) {
+    page.grokMode = 'auto';
+  }
   return Object.assign({}, GROK_DEFAULTS, page, secret, {
     commentPrompt: pref.commentPrompt || '',
     verifyPrompt: pref.verifyPrompt || ''
@@ -670,7 +680,10 @@ async function handleGrokMessage(msg, sender) {
     try { r = await runGrok(messages, 700, cfg); }
     catch (e) {
       if (nativeFailure) {
-        throw new Error(String(e && e.message || e) + '（此前站内直连也失败：' + nativeFailure.slice(0, 180) + '）');
+        // 1.4.1：把直连的真实失败原因放在最前面，避免被页面模式的
+        // 「提示词写入校验失败」盖住，导致每次都误判成 DOM 问题。
+        throw new Error('站内直连失败：' + nativeFailure.slice(0, 220) +
+          '；已自动降级到页面模式，但页面模式也失败：' + String(e && e.message || e));
       }
       throw e;
     }

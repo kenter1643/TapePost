@@ -49,6 +49,27 @@ function loadSettings() {
   });
 }
 
+/* 1.4.1 一次性设置迁移 —— 让「站内直连」真正生效，且不需要重载扩展。
+ * 老版本(1.3.x)把用户选的「X 站内 Grok」存成了显式 grokMode="page"。
+ * 1.4.0 的 pickGrokMode 遇到非 auto 会直接返回 page，于是新增的直连链路
+ * 一次都没走过，用户仍卡在会报「提示词写入校验失败」的旧 DOM 页面上。
+ * 用户选 page 的本意就是「免 API Key 用 X 站内 Grok」，auto 在 X 标签里优先
+ * 直连、失败仍回退页面模式，语义完全兼容。这里只写 storage（后台每次请求都
+ * 重新读），所以当前已加载的实例只要刷新页面就立刻切到直连。 */
+function migrateGrokMode141() {
+  try {
+    chrome.storage.sync.get(
+      ['grokMode', 'grokPreferNative', 'grokModeMigrated141'], (m) => {
+        try {
+          if (!m || String(m.grokMode || '').toLowerCase() !== 'page') return;
+          if (m.grokPreferNative === false) return;      // 用户显式关掉直连，尊重
+          if (m.grokModeMigrated141 === true) return;    // 只迁移一次，不覆盖之后的选择
+          chrome.storage.sync.set({ grokMode: 'auto', grokModeMigrated141: true });
+        } catch (e) {}
+      });
+  } catch (e) {}
+}
+
 // ---------- 样式注入 ----------
 function injectStyle() {
   if (document.getElementById('wbx-style')) return;
@@ -925,7 +946,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.4.0';
+  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.4.1';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1922,6 +1943,7 @@ function showToast(msg, ms = 3000) {
 function init() {
   // 未适配的站点不注入任何按钮；已适配但在设置里被关掉也不注入
   if (!SITE) return;
+  migrateGrokMode141();   // 一次性把老设置 grokMode="page" 升级为 auto（刷新页面即生效）
   injectStyle();
   loadSettings().then(() => {
     if (settings.enabledSites && settings.enabledSites[SITE.id] === false) return;

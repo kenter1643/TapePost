@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.0　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.1　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -18,6 +18,32 @@
 3. **本地去水印**：Canvas 先检测底部白色水印，只在命中时用包围盒插值 / BFS 重建；没检测到的图原样保留，不会强行抹图。
 4. **多图托盘**：右下角弹出「干净图 N 张」，可逐张复制、拼长图、全部下载；托盘就绪后再点按钮打开 X，避免 X 抢焦点。
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
+
+### 1.4.1 修复：旧「页面模式」设置让 1.4.0 的直连从未生效
+
+**真机排查**：用户点「AI 评论」仍报「提示词写入校验失败：Grok 输入框里混入了页面文字或没写进去」。浏览器插件真机确认按钮 title 已是 `v1.4.0`（用户确实重载过），但报错来自 `grok-page.js` 的 `setPrompt()`，且**没有**「此前站内直连也失败」前缀 —— 说明后台从一开始就把模式定成了 `page`，直连分支根本没进。
+
+**根因**：直接读取 Chrome 的扩展同步存储（`~/Library/Application Support/Google/Chrome/Default/Sync Extension Settings/ophhheglggbkkmjdaemogfdekgmiobji/`）发现，用户设置里存的是显式 `grokMode="page"`（1.3.x 时代选的「X 站内 Grok」），另有 `grokPreferNative=true`。而 1.4.0 的 `pickGrokMode()` 是：
+
+```js
+if (mode !== 'auto') return mode;   // page 直接返回，后面的直连判断全被跳过
+```
+
+所以 1.4.0 新增的站内直连对这位用户**一次都没走过**，所有改进等于没上线。测试全都用 `auto` 场景，因此 224 个回归全过却没抓到。
+
+**对照参考实现**：把本机 X Viral Monitor v1.18.17 的 `lib/grok-reply.js` / `lib/x-client-transaction.js` 逐项核对，端点、`generateTxId('POST', path)`、请求头（`authorization` / `x-csrf-token` / `x-client-transaction-id`）、请求体（`isTemporaryChat` / `MODEL_MODE_FAST`）与 TapePost 的 `grok-native.js` 完全一致，且 XVM 确实在 X 页面暴露 `window.__xvmXct` —— 直连实现本身没问题，问题只在模式路由。
+
+**修复（三层保险，任意一层生效即可）**：
+
+- `grok.js` / `pickGrokMode()`：显式 `page` 只要没关「优先站内直连」、没填 API Key、且消息来自 X 标签，就升级为 `native`；非 X 标签或用户关掉开关时仍是 `page`。
+- `background.js` / `getGrokConfig()`：**运行时归一化** —— 每次读配置都把遗留 `page` 视作 `auto` 的免 Key 语义。不依赖 storage 迁移是否成功，**重载扩展后必定生效**。
+- `content.js` / `popup.js`：**一次性设置迁移** —— 把 `grokMode:"page"` 写成 `"auto"` 并打标记；用户之后手动改回页面模式会被 `save()` 标记，不再被覆盖。popup 打开时会显示「✅ 已自动修复运行模式」。
+
+另外把降级报错改成「站内直连失败：真实原因…；已降级到页面模式，但页面模式也失败：…」，避免页面模式的 `setPrompt` 报错盖住真正的失败原因；`setPrompt` 的错误文案也改成引导切到「自动 / 站内直连」，不再让用户刷新 Grok 页面做无用功。
+
+- 回归测试扩到 **237 个场景**（新增 13 个：旧 `page` 模式路由、运行时归一化、真机事故回放端到端、设置迁移只写一次、用户主动选回 `page` 不被覆盖）。
+
+> 升级后请在 `chrome://extensions` 点 TapePost「重新加载」，再**刷新一次 X 页面**；之后「一键转发」title 应是 `v1.4.1`。也可以只点开插件设置面板（popup 会自动纠正设置），然后刷新 X 页面。
 
 ### 1.4.0 重构：AI 评论改为直连 X 自带 Grok 接口
 
@@ -81,7 +107,7 @@
 - 自动发送后校验 `promptSent / hasAnswer / changed`，任一不满足就带诊断信息报错；候选面板顶部显示「✅ 已确认读到 Grok 回答」。
 - **点击即弹出等待浮层**：spinner、随耗时推进的阶段文案、「关闭等待提示」按钮；结果回来或报错才自动关闭。手动「复制提示词 / 读取 Grok 回答」同样有等待反馈。
 
-该版本回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM（1.3.3 扩到 163 个、1.3.4 扩到 170 个、1.4.0 扩到 224 个）。
+该版本回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM（1.3.3 扩到 163 个、1.3.4 扩到 170 个、1.4.0 扩到 224 个、1.4.1 扩到 237 个）。
 
 ### 1.3.1 新增：AI 评论按钮移到 X 回复填写区右侧
 
@@ -158,7 +184,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 
 ## 安装
 
-**Chrome 网上应用店**：1.4.0 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
+**Chrome 网上应用店**：1.4.1 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
 
 **本地加载（开发者模式）**
 
@@ -168,10 +194,10 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 4. 打开任一支持的站点，内容右上角出现「一键转发」即可使用
 5. 要用 AI 评论 / 链接核验：默认「自动」模式，在 X 页面里直连 X 自带 Grok（免费、免 Key、最稳定），失败才降级旧的页面模式；想走官方 API 才在「Grok 设置 → API 模式专属设置」填 Key 并点「测试当前模式」
 
-商店提交包 `store/TapePost_1.4.0_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.4.0_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
+商店提交包 `store/TapePost_1.4.1_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.4.1_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
 
 ```bash
-zip -q store/TapePost_1.4.0_store.zip \
+zip -q store/TapePost_1.4.1_store.zip \
   manifest.json account.js sites.js grok.js grok-page.js grok-native.js grok-native-bridge.js \
   background.js content.js inpaint.js \
   offscreen.html offscreen.js popup.html popup.js panel.html panel.js \

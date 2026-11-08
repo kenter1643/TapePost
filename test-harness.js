@@ -188,17 +188,35 @@ function makeChrome(name) {
     },
     storage: {
       sync: {
-        get: (defaults, cb) => cb(Object.assign({}, defaults,
-          scenario.hashMode ? { hashMode: scenario.hashMode } : {},
-          scenario.appendSignature ? { appendSignature: true } : {},
-          scenario.appendSource ? { appendSource: true } : {},
-          scenario.inpaintImages === false ? { inpaintImages: false } : {},
-          scenario.inpaintVideo === false ? { inpaintVideo: false } : {},
-          scenario.grokMode ? { grokMode: scenario.grokMode } : {},
-          scenario.grokPreferNative === false ? { grokPreferNative: false } : {},
-          scenario.grokPageAutoSubmit === false ? { grokPageAutoSubmit: false } : {},
-          scenario.grokPageNewChat === false ? { grokPageNewChat: false } : {},
-          scenario.pagePromptExtra ? { pagePromptExtra: scenario.pagePromptExtra } : {}))
+        get: (keys, cb) => {
+          const extra = Object.assign({},
+            scenario.hashMode ? { hashMode: scenario.hashMode } : {},
+            scenario.appendSignature ? { appendSignature: true } : {},
+            scenario.appendSource ? { appendSource: true } : {},
+            scenario.inpaintImages === false ? { inpaintImages: false } : {},
+            scenario.inpaintVideo === false ? { inpaintVideo: false } : {},
+            scenario.grokMode ? { grokMode: scenario.grokMode } : {},
+            scenario.grokPreferNative === false ? { grokPreferNative: false } : {},
+            scenario.grokPageAutoSubmit === false ? { grokPageAutoSubmit: false } : {},
+            scenario.grokPageNewChat === false ? { grokPageNewChat: false } : {},
+            scenario.pagePromptExtra ? { pagePromptExtra: scenario.pagePromptExtra } : {});
+          // 1.4.1 迁移用数组键读取；其余场景保持原来的「默认值 + 覆盖值」语义
+          if (Array.isArray(keys)) {
+            const store = scenario.storageSync || {};
+            const out = {};
+            keys.forEach((k) => {
+              if (k in store) out[k] = store[k];
+              else if (k in extra) out[k] = extra[k];
+            });
+            return cb(out);
+          }
+          return cb(Object.assign({}, keys, extra));
+        },
+        set: (obj, cb) => {
+          scenario.storageSync = Object.assign({}, scenario.storageSync || {}, obj);
+          scenario.storageSets = (scenario.storageSets || 0) + 1;
+          if (typeof cb === 'function') cb();
+        }
       },
       local: {
         get: (defaults, cb) => cb(Object.assign({}, defaults,
@@ -1058,7 +1076,7 @@ async function runPageModeEndToEnd() {
   const prev = scenario;
   const pageTabs = [{ id: 77, url: 'https://x.com/i/grok' }];
   try {
-    scenario = { grokMode: 'page', pageTabs: pageTabs.slice() };
+    scenario = { grokMode: 'page', grokPreferNative: false, pageTabs: pageTabs.slice() };
 
     let r = await runtimeSend('popup', { type: 'GROK_TEST' });
     A('页面模式「测试当前模式」返回 mode=page 且不发起真实提问',
@@ -1163,7 +1181,7 @@ async function runPageModeEndToEnd() {
     A('auto 且没填 Key 不调用 xAI API', r && r.ok && r.mode !== 'api');
     A('1.4.0 auto 自检优先汇报站内直连通道', r && r.mode === 'native');
 
-    scenario = { grokMode: 'page', grokApiKey: 'xai-test', pageTabs: pageTabs.slice() };
+    scenario = { grokMode: 'page', grokApiKey: 'xai-test', grokPreferNative: false, pageTabs: pageTabs.slice() };
     r = await runtimeSend('popup', { type: 'GROK_TEST' });
     A('强制页面模式即使填了 Key 也不调用 API', r && r.ok && r.mode === 'page');
   } catch (e) {
@@ -1185,7 +1203,7 @@ async function runStaleTabRecoveryChecks() {
   const english = /Receiving end does not exist|Could not establish connection/;
   try {
     // A：1.3.2 事故回放 —— 旧标签 ping 不通，旧版会把这个坏标签返回并抛英文错误
-    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77] };
+    scenario = { grokMode: 'page', grokPreferNative: false, pageTabs: grokTab(), tabUnreachable: [77] };
     let r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '一条测试推文' } });
     A('1.3.3 旧 Grok 标签失效时自动刷新并成功生成 3 条候选',
       r && r.ok === true && r.comments && r.comments.length === 3);
@@ -1193,7 +1211,7 @@ async function runStaleTabRecoveryChecks() {
     A('1.3.3 不再把 Chrome 原生英文错误抛给用户', !english.test(String((r && r.error) || '')));
 
     // B：刷新也救不回来 → 强制新建一个干净标签（新标签必定注入当前实例脚本）
-    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77], reloadHeals: false };
+    scenario = { grokMode: 'page', grokPreferNative: false, pageTabs: grokTab(), tabUnreachable: [77], reloadHeals: false };
     r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
     A('1.3.3 刷新无效时新建标签兜底并返回候选',
       r && r.ok === true && r.comments && r.comments.length === 3);
@@ -1214,7 +1232,7 @@ async function runStaleTabRecoveryChecks() {
     A('1.3.3 发送阶段失效触发了刷新', (scenario.reloadedTabs || []).indexOf(77) !== -1);
 
     // E：设置面板「重建 Grok 标签」一键修复
-    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77] };
+    scenario = { grokMode: 'page', grokPreferNative: false, pageTabs: grokTab(), tabUnreachable: [77] };
     r = await runtimeSend('popup', { type: 'GROK_PAGE_RESET' });
     A('1.3.3「重建 Grok 标签」返回可用输入框',
       r && r.ok === true && r.hasInput === true && r.reloaded >= 1);
@@ -1222,7 +1240,7 @@ async function runStaleTabRecoveryChecks() {
       (scenario.reloadedTabs || []).indexOf(77) !== -1);
 
     // F：连接测试同样能自愈
-    scenario = { grokMode: 'page', pageTabs: grokTab(), tabUnreachable: [77] };
+    scenario = { grokMode: 'page', grokPreferNative: false, pageTabs: grokTab(), tabUnreachable: [77] };
     r = await runtimeSend('popup', { type: 'GROK_TEST' });
     A('1.3.3「测试当前模式」在失效标签下也能自愈', r && r.ok === true && r.mode === 'page');
   } catch (e) {
@@ -1341,6 +1359,15 @@ async function runNativePureChecks() {
     P("TapeAI.pickGrokMode({grokMode:'wat'},{inXTab:true})") === 'native');
   A('强制页面模式不受直连影响',
     P("TapeAI.pickGrokMode({grokMode:'page',grokApiKey:'x'},{inXTab:true})") === 'page');
+  // 1.4.1 真机事故回放：老设置 grokMode="page" 让 1.4.0 的直连一次都没走过
+  A('1.4.1 旧 page 设置在 X 标签里升级为直连',
+    P("TapeAI.pickGrokMode({grokMode:'page',grokApiKey:''},{inXTab:true})") === 'native');
+  A('1.4.1 旧 page 设置在非 X 标签仍是页面兜底',
+    P("TapeAI.pickGrokMode({grokMode:'page',grokApiKey:''})") === 'page');
+  A('1.4.1 用户关掉优先直连时旧 page 保持 page',
+    P("TapeAI.pickGrokMode({grokMode:'page',grokPreferNative:false},{inXTab:true})") === 'page');
+  A('1.4.1 显式 api 不被直连升级',
+    P("TapeAI.pickGrokMode({grokMode:'api',grokApiKey:'xai-x'},{inXTab:true})") === 'api');
 
   const prompt = P("TapeAI.buildNativePrompt(TapeAI.buildCommentMessages('给自己放了一个小假 东京之旅结束',''),'comments','')");
   A('直连提示词含真实推文正文', /东京之旅结束/.test(prompt));
@@ -1362,6 +1389,16 @@ async function runNativeEndToEnd() {
   const okComments = ['角度一：认同并补充', '角度二：提个问题', '角度三：独立观点'];
   const msg = () => ({ type: 'GROK_COMMENTS', payload: { text: '给自己放了一个小假 东京之旅结束' } });
   try {
+    // A0：1.4.1 真机事故回放 —— 用户设置存的是旧版 grokMode="page"，
+    // 且「优先站内直连」保持默认开启。后台归一化后必须走直连，
+    // 绝不能再落到会报「提示词写入校验失败」的旧 DOM 页面链路。
+    scenario = { grokMode: 'page', grokApiKey: '', pageTabs: tabs(), nativeCalls: 0, pageBridgeCalls: 0 };
+    let r0 = await runtimeSend('content', msg());
+    A('1.4.1 旧 page 设置的 AI 评论走站内直连',
+      r0 && r0.ok === true && r0.mode === 'native' && r0.comments && r0.comments.length === 3);
+    A('1.4.1 旧 page 设置不再触发 Grok 输入框写入', scenario.pageBridgeCalls === 0);
+    A('1.4.1 旧 page 设置确实调用了页面内直连脚本', scenario.nativeCalls >= 2);
+
     // A：auto + X 标签 → 直连，页面链路完全不触发
     scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: tabs(), nativeCalls: 0, pageBridgeCalls: 0 };
     let r = await runtimeSend('content', msg());
@@ -1424,6 +1461,53 @@ async function runNativeEndToEnd() {
     scenario = prev;
   }
   return checks;
+}
+
+/* 1.4.1：真机排查发现用户设置里存的是显式 grokMode="page"，
+ * 导致 1.4.0 新增的站内直连永远走不到。这里回放 storage 迁移逻辑，
+ * 确保「刷新页面即生效、且绝不覆盖用户之后的选择」。 */
+async function runModeMigrationChecks() {
+  const out = [];
+  const A = (name, ok) => out.push({ name, ok: !!ok });
+  const saved = scenario;
+  const setup = (store) => {
+    scenario = Object.assign({}, saved, {
+      hostname: 'x.com', path: '/home', grokMode: undefined,
+      storageSync: Object.assign({}, store), storageSets: 0
+    });
+    loadContent();
+    scenario.storageSets = 0;   // 忽略 content.js 初始化时自动触发的那次
+  };
+  try {
+    setup({ grokMode: 'page' });
+    vm.runInContext('migrateGrokMode141()', contentCtx);
+    A('1.4.1 迁移把旧 page 设置升级为 auto',
+      scenario.storageSync.grokMode === 'auto');
+    A('1.4.1 迁移写入一次性标记',
+      scenario.storageSync.grokModeMigrated141 === true);
+    A('1.4.1 迁移只写一次', (() => {
+      const n = scenario.storageSets;
+      vm.runInContext('migrateGrokMode141()', contentCtx);
+      return scenario.storageSets === n;
+    })());
+
+    setup({ grokMode: 'page', grokPreferNative: false });
+    vm.runInContext('migrateGrokMode141()', contentCtx);
+    A('1.4.1 关掉优先直连时不擅自改设置', scenario.storageSets === 0);
+
+    setup({ grokMode: 'auto' });
+    vm.runInContext('migrateGrokMode141()', contentCtx);
+    A('1.4.1 已是 auto 时不动设置', scenario.storageSets === 0);
+
+    setup({ grokMode: 'page', grokModeMigrated141: true });
+    vm.runInContext('migrateGrokMode141()', contentCtx);
+    A('1.4.1 用户后续主动选回 page 不被覆盖', scenario.storageSets === 0);
+  } catch (e) {
+    A('1.4.1 迁移测试无异常（' + String(e && e.message || e) + '）', false);
+  } finally {
+    scenario = saved;
+  }
+  return out;
 }
 
 function runTapeAIChecks() {
@@ -2385,7 +2469,8 @@ async function runScenario(name, cfg, expect) {
     .concat(await runPageModeEndToEnd())
     .concat(await runStaleTabRecoveryChecks())
     .concat(await runNativePureChecks())
-    .concat(await runNativeEndToEnd());
+    .concat(await runNativeEndToEnd())
+    .concat(await runModeMigrationChecks());
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);
