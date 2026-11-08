@@ -170,6 +170,9 @@
       <option value="page">页面模式：填 Grok 输入框再读回答（旧链路，仅兜底）</option>
       <option value="api">xAI API（需 Key，按量计费）</option>
     </select>
+    <div id="modeFixNote" hidden style="margin:6px 0 10px;padding:8px 10px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0;color:#14532d;font-size:12px;line-height:1.5">
+      ✅ 已自动修复运行模式：检测到旧版保存的「页面模式」，已把运行模式改为「自动 · 优先站内直连」并写回设置。之后你在 X 页面点「AI 评论」会走直连链路；刷新一次 X 页面即可生效。你之后手动改回「页面模式」不会被再次覆盖。
+    </div>
     <div class="mode-hint">
       <b>站内直连</b>：与 X 网页客户端一样，用你已登录的 X 会话直接向 <code>grok.x.com</code> 发提示词，
       只读取 Grok 的最终回答块；<b>不开标签、不模拟点击、不读整页文字</b>，因此不会出现「没读到回答块 / 连接失效」。
