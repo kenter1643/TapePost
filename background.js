@@ -119,13 +119,21 @@ async function ensureOffscreen() {
 
 // ---- 3. Grok 客户端 ----
 /*
- * 两个 AI 功能共用这一段：
- *   GROK_COMMENTS — X 一键评论，按设定提示词生成 3 条回复候选
- *   GROK_VERIFY   — TapeOut 生态面板的链接真伪查询
- *   GROK_TEST     — 设置面板「测试连接」
+ * 两个 AI 功能共用这一段，支持两种运行模式：
+ *   api  — Service Worker 直连 api.x.ai（需 Key，按量计费）
+ *   page — 把提示词送进用户已登录的 x.com 站内 Grok 页面/浮窗，读回回答（免 Key、免费）
+ *   auto — 有 Key 走 api，没 Key 自动降级 page
+ * 消息类型：
+ *   GROK_COMMENTS      — X 一键评论，按设定提示词生成 3 条回复候选
+ *   GROK_VERIFY        — TapeOut 生态面板的链接真伪查询
+ *   GROK_TEST          — 设置面板「测试当前模式」
+ *   GROK_PAGE_PREPARE  — 手动兜底①：只填提示词，不发送
+ *   GROK_PAGE_READ     — 手动兜底②：读回 Grok 页面上已生成的回答
  *
+ * 页面模式里扩展自己不向任何 AI 服务发请求，也不接触 X 的登录态；
+ * 对话完全发生在 X 页面里，由 grok-page.js 做 DOM 操作。
  * API Key 只存在 chrome.storage.local（本机、不同步、不入库、不上报），
- * 由 Service Worker 直接请求 api.x.ai；页面 content script 不接触密钥。
+ * 页面 content script 永远拿不到密钥。
  * 错误写进独立的 lastGrokError，绝不污染 DIAG 用的 lastError（自检回归依赖它为空）。
  */
 try {
@@ -153,12 +161,20 @@ function storageGet(area, keys) {
   });
 }
 
+const PAGE_CFG_KEYS = (typeof TapeAI !== 'undefined' && TapeAI.PAGE_MODE_DEFAULTS)
+  ? Object.keys(TapeAI.PAGE_MODE_DEFAULTS) : [];
+
 async function getGrokConfig() {
   const [secret, pref] = await Promise.all([
     storageGet('local', ['grokApiKey', 'grokBaseUrl', 'grokModel', 'grokProtocol', 'grokTemperature']),
-    storageGet('sync', ['commentPrompt', 'verifyPrompt'])
+    storageGet('sync', ['commentPrompt', 'verifyPrompt'].concat(PAGE_CFG_KEYS))
   ]);
-  return Object.assign({}, GROK_DEFAULTS, secret, {
+  const page = {};
+  PAGE_CFG_KEYS.forEach((k) => {
+    const v = pref[k];
+    page[k] = (v == null || v === '') ? TapeAI.PAGE_MODE_DEFAULTS[k] : v;
+  });
+  return Object.assign({}, GROK_DEFAULTS, page, secret, {
     commentPrompt: pref.commentPrompt || '',
     verifyPrompt: pref.verifyPrompt || ''
   });
@@ -212,8 +228,8 @@ function grokFriendlyError(status, bodyText) {
   return '请求失败（HTTP ' + status + '）' + (detail ? '：' + detail : '');
 }
 
-async function callGrok(messages, maxTokens) {
-  const cfg = await getGrokConfig();
+async function callGrok(messages, maxTokens, cfgIn) {
+  const cfg = cfgIn || await getGrokConfig();
   const key = String(cfg.grokApiKey || '').trim();
   if (!key) throw new Error('还没有填 xAI API Key。请点插件图标 →「Grok 设置」填入 Key（只存在本机，不会上传）。');
   if (typeof TapeAI === 'undefined') throw new Error('共享逻辑未加载，请在 chrome://extensions 重新加载扩展。');
@@ -241,59 +257,230 @@ async function callGrok(messages, maxTokens) {
   return { text, model: cfg.grokModel, protocol: cfg.grokProtocol, endpoint };
 }
 
+// ---- 3b. 非 API 模式：把提示词送进 x.com 站内 Grok，再读回回答文本 ----
+/*
+ * 扩展自己不向 xAI 发任何请求；对话完全发生在用户已登录的 X 页面里。
+ * 优先复用「已经有 Grok 输入框」的标签（含时间线上的 Grok 浮窗），
+ * 没有才在后台新建 x.com/i/grok 标签，避免打断用户当前操作。
+ */
+let pageTabPromise = null;
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+function sendToTab(tabId, message) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.tabs.sendMessage(tabId, message, (r) => {
+        const err = chrome.runtime && chrome.runtime.lastError;
+        if (err) return reject(new Error(err.message));
+        resolve(r);
+      });
+    } catch (e) { reject(e); }
+  });
+}
+
+async function pagePing(tabId, cfg) {
+  try { return await sendToTab(tabId, { type: 'GROK_PAGE_BRIDGE', action: 'ping', config: cfg }); }
+  catch (e) { return null; }
+}
+
+async function ensurePageTab(cfg) {
+  if (pageTabPromise) return pageTabPromise;
+  const job = (async () => {
+    let tabs = [];
+    try {
+      tabs = (await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] })) || [];
+    } catch (e) { /* 没有 tabs 权限时可能拿不到，直接走新建分支 */ }
+
+    // 1) 已经能对话的标签：时间线浮窗 / 用户自己开着的 Grok 页
+    for (const t of tabs) {
+      const p = await pagePing(t.id, cfg);
+      if (p && p.ok && p.hasInput) return { tabId: t.id, ping: p, created: false };
+    }
+    // 2) 已打开但还在加载的 /i/grok
+    const grok = tabs.find((t) => /\/i\/grok(?:\/|\?|$)/.test(String(t.url || '')));
+    if (grok) {
+      for (let i = 0; i < 12; i++) {
+        const p = await pagePing(grok.id, cfg);
+        if (p && p.ok && p.hasInput) return { tabId: grok.id, ping: p, created: false };
+        await sleep(500);
+      }
+      return { tabId: grok.id, ping: null, created: false };
+    }
+    // 3) 后台新开一个 Grok 页面（active:false，不抢焦点）
+    let url = String(cfg.grokPageUrl || 'https://x.com/i/grok').trim();
+    if (!/^https:\/\/(?:x\.com|twitter\.com)\//i.test(url)) url = 'https://x.com/i/grok'; // 只允许 X 站内
+    const created = await chrome.tabs.create({ url, active: false });
+    for (let i = 0; i < 24; i++) {
+      await sleep(500);
+      const p = await pagePing(created.id, cfg);
+      if (p && p.ok && p.hasInput) return { tabId: created.id, ping: p, created: true };
+    }
+    return { tabId: created.id, ping: null, created: true, notReady: true };
+  })();
+  pageTabPromise = job.then(
+    (v) => { pageTabPromise = null; return v; },
+    (e) => { pageTabPromise = null; throw e; }
+  );
+  return pageTabPromise;
+}
+
+async function callGrokPage(prompt, cfg, action) {
+  const t = await ensurePageTab(cfg);
+  if (t.notReady) {
+    throw new Error('已打开 X 的 Grok 页面，但一直没读到输入框。请确认 Chrome 已登录 x.com、账号可用 Grok；' +
+      '若是后台标签被浏览器节流，点设置里的「打开 Grok 页面」激活它再重试。也可改用手动模式。');
+  }
+  const r = await sendToTab(t.tabId, { type: 'GROK_PAGE_BRIDGE', action, prompt, config: cfg });
+  if (!r) throw new Error('Grok 页面没有响应（content script 可能失效），请刷新该 X 标签后重试。');
+  if (!r.ok) throw new Error(r.error || 'Grok 页面操作失败');
+  return Object.assign({ tabId: t.tabId, createdTab: t.created }, r);
+}
+
+/* 网页 Grok 会把思考过程 / 用户气泡一起渲染；按 answer → 候选 → 全文顺序找严格 JSON */
+function parsePageText(r, kind) {
+  const tries = [r && r.text].concat((r && r.candidates) || [], [r && r.allText])
+    .filter((x) => typeof x === 'string' && x.trim());
+  for (const t of tries) {
+    const hit = TapeAI.extractJsonLoose(t, kind);
+    if (!hit) continue;
+    const out = kind === 'verdict' ? TapeAI.parseVerdict(hit.text) : TapeAI.parseThreeComments(hit.text);
+    const good = kind === 'verdict' ? !!out.parsed : out.length > 0;
+    if (good) return { out, strict: true, text: t };
+  }
+  const raw = (r && (r.allText || r.text)) || '';
+  const out = TapeAI.parsePageResult(raw, kind);
+  return { out, strict: false, text: raw };
+}
+
+function messagesFor(kind, payload, cfg) {
+  return kind === 'verify'
+    ? TapeAI.buildVerifyMessages(payload.url || '', cfg.verifyPrompt)
+    : TapeAI.buildCommentMessages(payload.text || '', cfg.commentPrompt);
+}
+
+/* 统一的 Grok 调用入口：API 模式 / 页面模式对上层透明 */
+async function runGrok(messages, maxTokens, cfg) {
+  const c = cfg || await getGrokConfig();
+  const mode = TapeAI.pickGrokMode(c);
+  if (mode === 'api') {
+    const r = await callGrok(messages, maxTokens, c);
+    return Object.assign({}, r, { mode: 'api' });
+  }
+  const prompt = TapeAI.buildPagePrompt(messages, c.pagePromptExtra);
+  const r = await callGrokPage(prompt, c, 'auto');
+  if (r.prepared) return { prepared: true, mode: 'page', prompt, endpoint: r.url, note: r.note || '' };
+  return {
+    text: r.text || '',
+    allText: r.allText || '',
+    candidates: r.candidates || [],
+    model: 'x.com Grok（页面模式）',
+    protocol: 'page',
+    mode: 'page',
+    endpoint: r.url,
+    submitBy: r.submitBy,
+    stable: r.stable,
+    changed: r.changed
+  };
+}
+
+function localOut(local) {
+  return {
+    status: local.status,
+    tier: local.tier || null,
+    viaGateway: local.viaGateway || null,
+    normalized: local.normalized || null,
+    site: local.site || null,
+    risks: local.risks || [],
+    error: local.error || null
+  };
+}
+
 async function handleGrokMessage(msg) {
   const payload = msg.payload || {};
   if (typeof TapeAI === 'undefined') throw new Error('grok.js 未加载，请重新加载扩展。');
+  const cfg = await getGrokConfig();
+  const mode = TapeAI.pickGrokMode(cfg);
 
   if (msg.type === 'GROK_TEST') {
     const started = Date.now();
+    if (mode === 'page') {
+      // 页面模式不做真实提问，只验证能不能连上 x.com 里那个 Grok 页面
+      const r = await callGrokPage('', cfg, 'ping');
+      return {
+        ok: true, model: 'x.com Grok（页面模式）', protocol: 'page', mode: 'page',
+        latencyMs: Date.now() - started,
+        sample: '已连接 ' + (r.url || 'X') + '｜输入框 ' + (r.hasInput ? '✅' : '❌') +
+          '｜发送按钮 ' + (r.hasSend ? '✅' : '（输入内容后出现）') +
+          (r.createdTab ? '｜本次新开了 Grok 标签' : '｜复用了现有标签')
+      };
+    }
     const r = await callGrok([
       { role: 'system', content: 'You are a test endpoint. Reply with exactly OK.' },
       { role: 'user', content: 'Reply with exactly: OK' }
-    ], 16);
-    return { ok: true, model: r.model, protocol: r.protocol, latencyMs: Date.now() - started, sample: r.text.slice(0, 60) };
+    ], 16, cfg);
+    return { ok: true, model: r.model, protocol: r.protocol, mode: 'api', latencyMs: Date.now() - started, sample: r.text.slice(0, 60) };
   }
 
   if (msg.type === 'GROK_COMMENTS') {
-    const cfg = await getGrokConfig();
     const messages = TapeAI.buildCommentMessages(payload.text || '', cfg.commentPrompt);
-    const r = await callGrok(messages, 700);
-    const comments = TapeAI.parseThreeComments(r.text);
-    if (!comments.length) {
-      throw new Error('Grok 返回的内容解析不出评论文本，可点「重新生成」，或在设置里把提示词改得更明确。原文：' + r.text.slice(0, 160));
+    const r = await runGrok(messages, 700, cfg);
+    if (r.prepared) {
+      return { ok: false, prepared: true, mode: 'page', prompt: r.prompt,
+        error: '已把提示词填进 X 的 Grok 输入框（当前设为「不自动发送」）。请到 Grok 里按发送，回答出来后点「读取 Grok 回答」。' };
     }
-    return { ok: true, comments, model: r.model, raw: r.text.slice(0, 1200) };
+    const p = r.mode === 'page'
+      ? parsePageText(r, 'comments')
+      : { out: TapeAI.parseThreeComments(r.text), strict: true, text: r.text };
+    const comments = p.out || [];
+    if (!comments.length) {
+      throw new Error('Grok 返回的内容解析不出评论文本，可点「重新生成」，或在设置里把提示词改得更明确。原文：' + String(r.text || '').slice(0, 160));
+    }
+    return { ok: true, comments, model: r.model, mode: r.mode, strict: p.strict, raw: String(p.text || r.text || '').slice(0, 1200) };
   }
 
   if (msg.type === 'GROK_VERIFY') {
-    // 本地白名单结论永远先算出来；即使 Grok 不可用，面板也能给出可靠判定
+    // 本地清单结论永远先算出来；即使 Grok 不可用，面板也能给出可靠判定
     const local = TapeAI.matchOfficial(payload.url || '');
-    const cfg = await getGrokConfig();
     let grok = null;
     let aiError = null;
     try {
       const messages = TapeAI.buildVerifyMessages(payload.url || '', cfg.verifyPrompt);
-      const r = await callGrok(messages, 600);
-      grok = TapeAI.parseVerdict(r.text);
-      grok.model = r.model;
+      const r = await runGrok(messages, 600, cfg);
+      if (r.prepared) throw new Error('当前设为「不自动发送」：请到 Grok 里手动发送，再点面板上的「读取 Grok 回答」。');
+      const p = r.mode === 'page'
+        ? parsePageText(r, 'verdict')
+        : { out: TapeAI.parseVerdict(r.text), strict: true };
+      grok = p.out;
+      if (grok) { grok.model = r.model; grok.strict = p.strict; }
     } catch (e) {
       aiError = String(e && e.message || e);
     }
-    return {
-      ok: local.status !== 'invalid',
-      local: {
-        status: local.status,
-        tier: local.tier || null,
-        viaGateway: local.viaGateway || null,
-        normalized: local.normalized || null,
-        site: local.site || null,
-        risks: local.risks || [],
-        error: local.error || null
-      },
-      grok,
-      aiError,
-      source: TapeAI.SOURCE
-    };
+    return { ok: local.status !== 'invalid', local: localOut(local), grok, aiError, mode, source: TapeAI.SOURCE };
+  }
+
+  // 手动兜底：只把完整提示词填进 Grok（并回传给页面去复制），不发送
+  if (msg.type === 'GROK_PAGE_PREPARE') {
+    const kind = payload.kind === 'verify' ? 'verify' : 'comments';
+    const prompt = TapeAI.buildPagePrompt(messagesFor(kind, payload, cfg), cfg.pagePromptExtra);
+    const r = await callGrokPage(prompt, cfg, 'prepare');
+    return { ok: true, mode: 'page', prompt, page: { url: r.url, hasSend: r.hasSend }, createdTab: r.createdTab };
+  }
+
+  // 手动兜底：用户已在 Grok 里发送并等回答出来，这里读回最后一条回答并解析
+  if (msg.type === 'GROK_PAGE_READ') {
+    const kind = payload.kind === 'verify' ? 'verify' : 'comments';
+    const r = await callGrokPage('', cfg, 'read');
+    const p = parsePageText(r, kind);
+    if (kind === 'verify') {
+      const local = TapeAI.matchOfficial(payload.url || '');
+      const grok = p.out;
+      if (grok) { grok.model = 'x.com Grok（手动读取）'; grok.strict = p.strict; }
+      return { ok: local.status !== 'invalid', local: localOut(local), grok, aiError: null,
+        mode: 'page', strict: p.strict, raw: String(p.text || '').slice(0, 1200), source: TapeAI.SOURCE };
+    }
+    return { ok: true, comments: p.out || [], mode: 'page', strict: p.strict,
+      raw: String(p.text || '').slice(0, 1200) };
   }
 
   throw new Error('未知的 Grok 消息类型：' + msg.type);
@@ -407,7 +594,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Grok：AI 评论候选 / 链接真伪查询 / 连接测试。
   // 单次 await + sendResponse，与其它消息一样保持通道打开；失败也一定回包，
   // 避免 content script / 面板那边一直转圈等不到结果。
-  if (msg.type === 'GROK_COMMENTS' || msg.type === 'GROK_VERIFY' || msg.type === 'GROK_TEST') {
+  if (msg.type === 'GROK_COMMENTS' || msg.type === 'GROK_VERIFY' || msg.type === 'GROK_TEST' ||
+      msg.type === 'GROK_PAGE_PREPARE' || msg.type === 'GROK_PAGE_READ') {
     handleGrokMessage(msg).then((out) => {
       lastGrokError = null;
       try { sendResponse(Object.assign({ type: 'GROK_RESULT' }, out)); } catch (e) {}

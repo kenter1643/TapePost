@@ -34,6 +34,12 @@ const FakeURL = {
   createObjectURL: () => 'blob:fake/' + Math.random().toString(36).slice(2),
   revokeObjectURL: () => {}
 };
+// 真实 SW 里 URL 既能 new URL(...) 解析网址，也有 createObjectURL 静态方法。
+// 早期沙箱只给了后者，导致后台 TapeAI.normalizeUrl 在页面模式测试里误判 invalid。
+const NativeURL = URL;
+function FakeURLWithCtor(u, base) { return new NativeURL(u, base); }
+FakeURLWithCtor.createObjectURL = FakeURL.createObjectURL;
+FakeURLWithCtor.revokeObjectURL = FakeURL.revokeObjectURL;
 class ClipboardItem { constructor(o) { this.items = o; } }
 
 // ---------- 精简 DOM 模拟 ----------
@@ -139,7 +145,26 @@ function makeChrome(name) {
       sendMessage: (msg, cb) => runtimeSend(name, msg, cb),
       lastError: undefined
     },
-    tabs: { sendMessage: (tabId, msg) => tabsSend(name, tabId, msg) },
+    tabs: {
+      // 页面模式：复用/新建 x.com 的 Grok 标签；sendMessage 同时支持 callback 与 Promise 两种写法
+      query: (q) => Promise.resolve((scenario.pageTabs || []).slice()),
+      create: (o) => {
+        const t = { id: 88, url: o && o.url };
+        scenario.pageTabs = (scenario.pageTabs || []).concat([t]);
+        note('tabs', 'create ' + t.url);
+        return Promise.resolve(t);
+      },
+      sendMessage: (tabId, msg, cb) => {
+        if (!cb) return tabsSend(name, tabId, msg);
+        return tabsSend(name, tabId, msg).then((v) => {
+          try { cb(v); } catch (e) { note('ERROR', 'tabs.sendMessage cb threw: ' + e.message); }
+        }, (e) => {
+          contexts[name].chrome.runtime.lastError = { message: String(e && e.message || e) };
+          try { cb(undefined); } catch (e2) {}
+          delete contexts[name].chrome.runtime.lastError;
+        });
+      }
+    },
     storage: {
       sync: {
         get: (defaults, cb) => cb(Object.assign({}, defaults,
@@ -147,9 +172,16 @@ function makeChrome(name) {
           scenario.appendSignature ? { appendSignature: true } : {},
           scenario.appendSource ? { appendSource: true } : {},
           scenario.inpaintImages === false ? { inpaintImages: false } : {},
-          scenario.inpaintVideo === false ? { inpaintVideo: false } : {}))
+          scenario.inpaintVideo === false ? { inpaintVideo: false } : {},
+          scenario.grokMode ? { grokMode: scenario.grokMode } : {},
+          scenario.grokPageAutoSubmit === false ? { grokPageAutoSubmit: false } : {},
+          scenario.grokPageNewChat === false ? { grokPageNewChat: false } : {},
+          scenario.pagePromptExtra ? { pagePromptExtra: scenario.pagePromptExtra } : {}))
       },
-      local: { get: (defaults, cb) => cb(Object.assign({}, defaults)) }
+      local: {
+        get: (defaults, cb) => cb(Object.assign({}, defaults,
+          scenario.grokApiKey ? { grokApiKey: scenario.grokApiKey } : {}))
+      }
     },
     downloads: {
       download: (o) => {
@@ -221,7 +253,8 @@ async function runtimeSend(from, msg, cb) {
     }
   }
   if (keepAlive.length && !responded) {
-    await Promise.race([responsePromise, new Promise((r) => setTimeout(r, 300))]);
+    // 页面模式会跨标签走一轮消息，给异步回包留足时间（正常场景会立即 resolve）
+    await Promise.race([responsePromise, new Promise((r) => setTimeout(r, 1500))]);
   }
   const noResponse = !responded;
   const errMsg = 'The message port closed before a response was received.';
@@ -237,6 +270,21 @@ async function runtimeSend(from, msg, cb) {
 
 async function tabsSend(from, tabId, msg) {
   note('bus', `${from} --tabs.sendMessage(tab=${tabId}, ${msg.type})--> content`);
+  // 页面模式：模拟 x.com 里 grok-page.js 的回包（含思考过程 / 模板 JSON 等噪声）
+  if (msg.type === 'GROK_PAGE_BRIDGE') {
+    if (typeof scenario.grokPageHandler === 'function') {
+      return Promise.resolve(serialize(scenario.grokPageHandler(msg)));
+    }
+    const url = 'https://x.com/i/grok';
+    if (msg.action === 'ping') return Promise.resolve({ ok: true, url, hasInput: true, hasSend: true, hasRoot: true });
+    if (msg.action === 'prepare') return Promise.resolve({ ok: true, prepared: true, prompt: msg.prompt, url, hasSend: true });
+    const answer = scenario.grokPageAnswer != null ? scenario.grokPageAnswer :
+      '```json\n["角度一：认同并补充","角度二：提个问题","角度三：独立观点"]\n```';
+    return Promise.resolve({
+      ok: true, text: answer, allText: scenario.grokPageAllText != null ? scenario.grokPageAllText : answer,
+      candidates: scenario.grokPageCandidates || [], url, submitBy: 'button', stable: 'quiet', changed: true
+    });
+  }
   const sender = { id: 'fake-ext' };
   let responded = false;
   let responseVal;
@@ -261,7 +309,7 @@ function baseGlobals(name) {
     },
     chrome,
     Blob: FakeBlob,
-    URL: FakeURL,
+    URL: FakeURLWithCtor,
     ClipboardItem,
     setTimeout,
     clearTimeout,
@@ -428,6 +476,8 @@ function loadContent() {
 
 function loadBackground() {
   bgCtx = vm.createContext(baseGlobals('background'));
+  // 真实 SW 用 importScripts('grok.js')；vm 里直接预加载同一份共享层，保证 TapeAI 可用
+  vm.runInContext(read('grok.js'), bgCtx, { filename: 'grok.js' });
   vm.runInContext(read('background.js'), bgCtx, { filename: 'background.js' });
 }
 
@@ -663,6 +713,218 @@ async function runXGuards() {
   console.log('  ' + Object.entries(checks).map(([k, v]) => `${k}=${v ? '✅' : '❌'}`).join('  '));
   if (!ok || process.env.WBX_VERBOSE) console.log(log.join('\n') + '\n');
   return ok;
+}
+
+/* ---------- v1.3.0：非 API 模式（X 站内 Grok）共享逻辑 ---------- */
+function runPageModeChecks() {
+  const T = require('./grok.js');
+  const checks = [];
+  const A = (name, fn) => {
+    let ok = false;
+    try { ok = !!fn(); } catch (e) { note('ERROR', name + ': ' + (e && e.message)); }
+    checks.push({ name, ok });
+  };
+
+  A('页面模式默认选择器与 x.com/i/grok 实测结构一致', () => {
+    const d = T.PAGE_MODE_DEFAULTS;
+    return d.grokPageUrl === 'https://x.com/i/grok' &&
+      d.grokPageInputSel.includes('div[aria-label="Ask anything"][role="textbox"]') &&
+      d.grokPageSendSel.includes('button[aria-label="Send"]') &&
+      d.grokPageRootSel.includes('div[aria-label="Grok"]') &&
+      d.grokPageAnswerSel.includes('button[aria-label="Copy"]') &&
+      d.grokPageAutoSubmit === true && d.grokPageQuietMs >= 400 && d.grokPageTimeoutMs >= 5000;
+  });
+  A('auto 模式：没填 Key 自动降级页面模式，填了 Key 走 API', () =>
+    T.pickGrokMode({ grokMode: 'auto', grokApiKey: '' }) === 'page' &&
+    T.pickGrokMode({ grokMode: 'auto', grokApiKey: 'xai-test' }) === 'api');
+  A('强制 page / 非法模式回退 auto', () =>
+    T.pickGrokMode({ grokMode: 'page', grokApiKey: 'xai-test' }) === 'page' &&
+    T.pickGrokMode({ grokMode: 'wat', grokApiKey: '' }) === 'page' &&
+    T.pickGrokMode({}) === 'page');
+  A('页面提示词把 system 合并进单条消息并追加 JSON 约束', () => {
+    const p = T.buildPagePrompt(T.buildCommentMessages('推文正文测试', null), '');
+    return p.includes('【必须遵守的指令】') && p.includes(T.SYSTEM_HINT) &&
+      p.includes('推文正文测试') && p.includes('不要展示思考过程') &&
+      p.indexOf('{POST}') === -1;
+  });
+  A('页面模式附加要求可自定义并拼到末尾', () => {
+    const p = T.buildPagePrompt(T.buildCommentMessages('正文', null), '请全程用中文');
+    return p.trim().endsWith('请全程用中文');
+  });
+  A('自定义提示词在页面模式下依然生效', () => {
+    const p = T.buildPagePrompt(T.buildCommentMessages('正文XYZ', '写三条短评：{POST}'), '');
+    return p.includes('写三条短评：正文XYZ');
+  });
+  A('宽松解析跳过提示词里的评论模板 JSON', () => {
+    const noisy = '提示词样例 ["第一条","第二条","第三条"]，最终答案：["甲","乙","丙"]';
+    const hit = T.extractJsonLoose(noisy, 'comments');
+    return !!hit && hit.value[0] === '甲';
+  });
+  A('宽松解析跳过 verdict 枚举模板 JSON', () => {
+    const noisy = '模板 {"verdict":"official|community|fake|unknown"}，结论 {"verdict":"fake","reason":"形近域名"}';
+    const hit = T.extractJsonLoose(noisy, 'verdict');
+    return !!hit && hit.value.verdict === 'fake';
+  });
+  A('宽松解析从「思考过程 + Markdown 代码块」里取最终答案', () => {
+    const noisy = '让我想想……\n```json\n["观点一","问题二","补充三"]\n```\n以上。';
+    const c = T.parsePageResult(noisy, 'comments');
+    return c.length === 3 && c[0] === '观点一';
+  });
+  A('宽松解析跳过字符串内部的括号', () => {
+    const noisy = '说明：数组里可以有 { 和 } 符号。\n["带 {括号} 的回复","第二条","第三条"]';
+    const hit = T.extractJsonLoose(noisy, 'comments');
+    return !!hit && hit.value[0] === '带 {括号} 的回复';
+  });
+  A('宽松解析核验结论并保留 reason / risk', () => {
+    const noisy = '思考中……\n{"verdict":"fake","reason":"不在清单","risk":"别连钱包","matched":""}';
+    const v = T.parsePageResult(noisy, 'verdict');
+    return v.parsed === true && v.verdict === 'fake' && v.risk === '别连钱包';
+  });
+  A('没有 JSON 时按原文兜底且标记解析失败', () => {
+    const v = T.parsePageResult('模型只说了一段话', 'verdict');
+    return v.parsed === false && v.verdict === 'unknown';
+  });
+  A('核验提示词中的本地结论在页面模式下仍然注入', () => {
+    const p = T.buildPagePrompt(T.buildVerifyMessages('https://tapeout-net.com/', null), '');
+    return p.includes('未命中本地白名单') && p.includes('tapeout-net.com') &&
+      p.includes('【输出格式') && p.indexOf('{LOCAL_RESULT}') === -1;
+  });
+  return checks;
+}
+
+/* ---------- v1.3.0：grok-page.js 的 DOM 定位与回答回溯 ---------- */
+function runPageBridgeDomChecks() {
+  const checks = [];
+  const A = (name, fn) => {
+    let ok = false;
+    try { ok = !!fn(); } catch (e) { note('ERROR', name + ': ' + (e && e.message)); }
+    checks.push({ name, ok });
+  };
+  const bridge = require('./grok-page.js');
+  const fakeEl = (o) => Object.assign({
+    innerText: '', textContent: '', tagName: 'DIV', disabled: false,
+    getBoundingClientRect: () => ({ width: 10, height: 10 }),
+    parentElement: null, previousElementSibling: null,
+    getAttribute: () => null, isContentEditable: false
+  }, o || {});
+
+  A('桥接脚本默认选择器与实测 x.com/i/grok 一致', () =>
+    bridge.DEFAULT_CFG.grokPageInputSel.includes('div[aria-label="Ask anything"][role="textbox"]') &&
+    bridge.DEFAULT_CFG.grokPageSendSel.includes('button[aria-label="Send"]') &&
+    bridge.DEFAULT_CFG.grokPageAnswerSel.includes('button[aria-label="Copy"]'));
+  A('cfgOf 处理字符串 false 与数值上下限', () => {
+    const c = bridge.cfgOf({ grokPageAutoSubmit: 'false', grokPageTimeoutMs: 10, grokPageQuietMs: 999999 });
+    return c.grokPageAutoSubmit === false && c.grokPageTimeoutMs === 5000 &&
+      c.grokPageQuietMs === 10000 && c.grokPageMaxChars === 8000;
+  });
+
+  // 模拟实测结构：回答 div 与「复制回答」按钮是相邻兄弟
+  const answerDiv = fakeEl({ innerText: '["回答一","回答二","回答三"]' });
+  const msgWrap = fakeEl({ innerText: '用户提问\n["回答一","回答二","回答三"]\n复制' });
+  const bar = fakeEl({ innerText: '', previousElementSibling: answerDiv, parentElement: msgWrap });
+  const copyBtn = fakeEl({ parentElement: bar });
+  const root = fakeEl({ innerText: msgWrap.innerText });
+  msgWrap.parentElement = root;
+  const input = fakeEl({ innerText: '', attrs: { role: 'textbox' } });
+
+  const prevDoc = global.document;
+  global.document = {
+    querySelectorAll(sel) {
+      if (/Copy|grok-answer/.test(sel)) return [copyBtn];
+      if (/Grok|conversation/.test(sel)) return [root];
+      if (/Ask anything|grok-input/.test(sel)) return [input];
+      if (/Send|grok-send/.test(sel)) return [fakeEl({ tagName: 'BUTTON' })];
+      return [];
+    },
+    querySelector(sel) { const a = this.querySelectorAll(sel); return a[0] || null; }
+  };
+  try {
+    const cfg = bridge.cfgOf({});
+    A('回答锚点（Copy 按钮）能回溯到真正的回答文本', () => {
+      const r = bridge.answerText(cfg);
+      return r.answer.includes('回答一') && r.allText.includes('用户提问');
+    });
+    A('多候选选择器里某个片段非法时不影响其它片段', () => {
+      const c = bridge.cfgOf({ grokPageInputSel: '[[[bad, div[aria-label="Ask anything"][role="textbox"]' });
+      return bridge.find(c.grokPageInputSel) === input;
+    });
+    A('输入框 / 发送按钮 / 对话根都能按候选选择器定位', () =>
+      !!bridge.find(cfg.grokPageInputSel) && !!bridge.find(cfg.grokPageSendSel) &&
+      !!bridge.find(cfg.grokPageRootSel) && bridge.findAll(cfg.grokPageAnswerSel).length === 1);
+  } finally {
+    if (prevDoc === undefined) delete global.document;
+    else global.document = prevDoc;
+  }
+  return checks;
+}
+
+/* ---------- v1.3.0：页面模式端到端消息链路（mock x.com Grok 回包） ---------- */
+async function runPageModeEndToEnd() {
+  const checks = [];
+  const A = (name, ok) => checks.push({ name, ok: !!ok });
+  const prev = scenario;
+  const pageTabs = [{ id: 77, url: 'https://x.com/i/grok' }];
+  try {
+    scenario = { grokMode: 'page', pageTabs: pageTabs.slice() };
+
+    let r = await runtimeSend('popup', { type: 'GROK_TEST' });
+    A('页面模式「测试当前模式」返回 mode=page 且不发起真实提问',
+      r && r.ok && r.mode === 'page' && /已连接/.test(r.sample || ''));
+
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '一条测试推文', statusId: '123' } });
+    A('页面模式 AI 评论返回 3 条候选并带 strict 标记',
+      r && r.ok && r.mode === 'page' && r.comments && r.comments.length === 3 && r.strict === true);
+
+    scenario.grokPageAnswer = '（回答块为空）';
+    scenario.grokPageAllText = '思考过程……模板 ["第一条","第二条","第三条"]\n最终答案：\n```json\n["甲观点","乙问题","丙补充"]\n```';
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
+    A('网页 Grok 混入思考过程与模板时仍能提取最终 3 条',
+      r && r.ok && r.comments && r.comments.length === 3 && r.comments[0] === '甲观点');
+
+    r = await runtimeSend('popup', { type: 'GROK_PAGE_PREPARE', payload: { kind: 'comments', text: '示例推文' } });
+    A('手动兜底①：准备提示词含 system 约束、正文与格式要求',
+      r && r.ok && r.prompt && r.prompt.includes('【必须遵守的指令】') &&
+      r.prompt.includes('示例推文') && r.prompt.includes('只输出上面要求的那一个 JSON'));
+
+    scenario.grokPageAnswer = '["读回一","读回二","读回三"]';
+    scenario.grokPageAllText = scenario.grokPageAnswer;
+    r = await runtimeSend('popup', { type: 'GROK_PAGE_READ', payload: { kind: 'comments' } });
+    A('手动兜底②：读取 Grok 回答解析出 3 条候选',
+      r && r.ok && r.comments && r.comments.length === 3 && r.comments[0] === '读回一' && r.mode === 'page');
+
+    scenario.grokPageAnswer = '{"verdict":"official","reason":"我觉得是官方","risk":"","matched":""}';
+    scenario.grokPageAllText = scenario.grokPageAnswer;
+    r = await runtimeSend('popup', { type: 'GROK_VERIFY', payload: { url: 'https://tapeout-net.com/' } });
+    A('页面模式核验：本地未命中，模型判 official 也不能给绿标',
+      r && r.mode === 'page' && r.local && r.local.status !== 'official' &&
+      r.grok && r.grok.verdict === 'official' && r.ok === true);
+
+    r = await runtimeSend('popup', { type: 'GROK_VERIFY', payload: { url: 'https://tapeout.net/' } });
+    A('页面模式核验：官网命中仍按本地清单给 official',
+      r && r.local && r.local.status === 'official' && r.local.tier === 'official');
+
+    scenario.grokPageHandler = (msg) => msg.action === 'ping'
+      ? { ok: true, hasInput: true, url: 'https://x.com/i/grok' }
+      : { ok: true, prepared: true, prompt: msg.prompt, url: 'https://x.com/i/grok', note: '只填词' };
+    r = await runtimeSend('popup', { type: 'GROK_COMMENTS', payload: { text: '推文' } });
+    A('设为「不自动发送」时返回 prepared 指引而不是静默失败',
+      r && r.ok === false && r.prepared === true && /读取 Grok 回答/.test(r.error || ''));
+
+    delete scenario.grokPageHandler;
+    scenario = { grokMode: 'auto', grokApiKey: '', pageTabs: pageTabs.slice() };
+    r = await runtimeSend('popup', { type: 'GROK_TEST' });
+    A('auto 且没填 Key 自动走 X 站内 Grok', r && r.ok && r.mode === 'page');
+
+    scenario = { grokMode: 'page', grokApiKey: 'xai-test', pageTabs: pageTabs.slice() };
+    r = await runtimeSend('popup', { type: 'GROK_TEST' });
+    A('强制页面模式即使填了 Key 也不调用 API', r && r.ok && r.mode === 'page');
+  } catch (e) {
+    note('ERROR', '页面模式端到端异常: ' + (e && e.message));
+    A('页面模式端到端无异常抛出', false);
+  } finally {
+    scenario = prev;
+  }
+  return checks;
 }
 
 /* ---------- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ---------- */
@@ -1405,7 +1667,11 @@ async function runScenario(name, cfg, expect) {
   results.push(diagOk);
 
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
-  const aiChecks = runTapeAIChecks().concat(await runCommentButtonChecks());
+  const aiChecks = runTapeAIChecks()
+    .concat(await runCommentButtonChecks())
+    .concat(runPageModeChecks())
+    .concat(runPageBridgeDomChecks())
+    .concat(await runPageModeEndToEnd());
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

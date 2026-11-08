@@ -395,6 +395,64 @@ var TapeAI = (function () {
 
   var SYSTEM_HINT = '你是严格按格式输出的助手。只返回用户要求的 JSON，不要解释、不要前后缀、不要 Markdown 代码块。';
 
+  // ---------- 2.5 非 API 模式（X 站内 Grok 页面 / 浮窗） ----------
+  /*
+   * 实测（2026-11-08，x.com/i/grok）：
+   *   输入框 div[aria-label="Ask anything"][role="textbox"]（contenteditable）
+   *   发送   button[aria-label="Send"]（输入前是 Voice mode，有内容后才变 Send）
+   *   对话根 div[aria-label="Grok"]
+   *   回答旁 button[aria-label="Copy"] —— 每条回答一个，用它回溯回答块最稳
+   * 网页版 Grok 会额外输出「思考过程」和用户提问气泡，所以不能整段丢给 JSON.parse；
+   * 这里统一用 extractJsonLoose 从混杂文本里捞最后一个语义合格的 JSON。
+   * 全部选择器都可在设置里改，X 改版时不用升版本。
+   */
+  var PAGE_MODE_DEFAULTS = {
+    grokMode: 'auto',                    // auto = 有 Key 走 API、没 Key 走页面；api / page 为强制
+    grokPageUrl: 'https://x.com/i/grok',
+    grokPageInputSel: 'div[aria-label="Ask anything"][role="textbox"], textarea[placeholder*="Ask"], [data-testid="grok-input"]',
+    grokPageSendSel: 'button[aria-label="Send"], [data-testid="grok-send"]',
+    grokPageRootSel: 'div[aria-label="Grok"], [data-testid="grok-conversation"]',
+    grokPageAnswerSel: 'button[aria-label="Copy"]',
+    grokPageQuietMs: 1500,               // 文本静止多久算回答完成
+    grokPageTimeoutMs: 60000,            // 单次最长等待
+    grokPageAutoSubmit: true,            // 关掉 = 只填词，由用户自己按发送
+    grokPageNewChat: true,               // 每次新开对话，避免上一轮上下文污染
+    grokPageMaxChars: 8000,              // 回传文本上限，防止把整页 HTML 塞给后台
+    pagePromptExtra: ''                  // 追加到页面模式提示词末尾的自定义要求
+  };
+
+  var PAGE_OUTPUT_RULE = [
+    '',
+    '【输出格式（必须严格遵守）】',
+    '- 直接给最终答案，不要展示思考过程、不要复述题目、不要写「好的」「以下是」这类开场白。',
+    '- 只输出上面要求的那一个 JSON（数组或对象）；可放在 ```json 代码块里，但代码块外不要有任何文字。',
+    '- 不要输出多个版本、解释、总结或后续建议。'
+  ].join('\n');
+
+  /* service worker 与页面脚本共用的模式判定：auto 时没 Key 自动降级到 x.com 页面模式 */
+  function pickGrokMode(cfg) {
+    var mode = String((cfg && cfg.grokMode) || PAGE_MODE_DEFAULTS.grokMode).toLowerCase();
+    if (['auto', 'api', 'page'].indexOf(mode) === -1) mode = 'auto';
+    if (mode !== 'auto') return mode;
+    return String((cfg && cfg.grokApiKey) || '').trim() ? 'api' : 'page';
+  }
+
+  /*
+   * 网页版 Grok 没有 system 通道，必须把 system 指令并进同一条消息；
+   * 并追加「只出最终 JSON」约束（实测它会先吐一段思考过程）。
+   */
+  function buildPagePrompt(messages, extra) {
+    var sys = [], user = [];
+    (messages || []).forEach(function (m) {
+      if (!m || !m.content) return;
+      if (m.role === 'system') sys.push(m.content);
+      else user.push(m.content);
+    });
+    var head = sys.length ? '【必须遵守的指令】\n' + sys.join('\n') + '\n\n' : '';
+    var tail = String(extra == null ? '' : extra).trim();
+    return (head + user.join('\n\n') + '\n' + PAGE_OUTPUT_RULE + (tail ? '\n\n' + tail : '')).trim();
+  }
+
   // ---------- 3. URL 规范化与本地白名单判定 ----------
   var SHORTENER_HOSTS = /(?:^|\.)(?:bit\.ly|t\.cn|tinyurl\.com|s\.id|goo\.gl|is\.gd|ow\.ly|buff\.ly|cutt\.ly|shorturl\.at|rebrand\.ly|tiny\.cc)$/i;
 
@@ -779,6 +837,83 @@ var TapeAI = (function () {
     }
   }
 
+  /*
+   * 从「Grok 网页回答 + 思考过程 + 用户提问气泡」的混杂文本里，捞出最后一个
+   * 语义合格的 JSON。括号配对扫描会跳过字符串内的括号，避免被正文里的
+   * [] {} 干扰；模板样例（["第一条"…] / verdict 枚举串）会被语义校验挡掉。
+   */
+  function jsonCandidates(s) {
+    var out = [];
+    var text = String(s || '');
+    for (var i = 0; i < text.length && out.length < 24; i++) {
+      var c = text[i];
+      if (c !== '[' && c !== '{') continue;
+      var stack = [], inStr = false, esc = false, end = -1;
+      for (var j = i; j < text.length; j++) {
+        var d = text[j];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (d === '\\') esc = true;
+          else if (d === '"') inStr = false;
+          continue;
+        }
+        if (d === '"') { inStr = true; continue; }
+        if (d === '[' || d === '{') stack.push(d === '[' ? ']' : '}');
+        else if (d === ']' || d === '}') {
+          if (!stack.length || stack.pop() !== d) break;
+          if (!stack.length) { end = j; break; }
+        }
+      }
+      if (end <= i) continue;
+      var frag = text.slice(i, end + 1);
+      try {
+        var v = JSON.parse(frag);
+        out.push({ value: v, text: frag, start: i, end: end + 1 });
+        i = end; // 只有解析成功才跳过内部，避免正文里的 { } 把后面的真数组吃掉
+      } catch (e) { /* 不是完整 JSON：不跳过，继续从下一个字符找 */ }
+    }
+    return out;
+  }
+
+  function looksLikeComments(v) {
+    if (!Array.isArray(v)) return false;
+    var arr = v.filter(function (x) { return typeof x === 'string' && x.trim(); });
+    if (!arr.length) return false;
+    var joined = arr.join('');
+    // 只排除「整组都是占位样例」的情况；真实评论里偶尔出现「第二条」不该被误杀
+    var isPlaceholderArray = arr.length === 3 &&
+      /第一条/.test(joined) && /第二条/.test(joined) && /第三条/.test(joined) &&
+      arr.every(function (x) { return x.length < 12; });
+    return !isPlaceholderArray && !/\{POST\}|placeholder|示例评论/i.test(joined);
+  }
+
+  function looksLikeVerdict(v) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+    var vd = String(v.verdict || '').toLowerCase();
+    return ['official', 'community', 'fake', 'unknown'].indexOf(vd) !== -1;
+  }
+
+  function extractJsonLoose(raw, kind) {
+    var s = stripCodeFence(raw);
+    var list = jsonCandidates(s);
+    var want = kind === 'verdict' ? looksLikeVerdict : looksLikeComments;
+    // 从后往前取：Grok 常把最终答案放在最后；思考过程里一般没有合格 JSON
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (want(list[i].value)) return list[i];
+    }
+    return null;
+  }
+
+  /* 页面模式解析入口：先宽松提取，失败再退回原有按行兜底 */
+  function parsePageResult(raw, kind) {
+    var hit = extractJsonLoose(raw, kind);
+    if (hit) {
+      if (kind === 'verdict') return parseVerdict(hit.text);
+      return parseThreeComments(hit.text);
+    }
+    return kind === 'verdict' ? parseVerdict(raw) : parseThreeComments(raw);
+  }
+
   return {
     SOURCE: SOURCE,
     OFFICIAL_SITES: OFFICIAL_SITES,
@@ -789,6 +924,10 @@ var TapeAI = (function () {
     DEFAULT_COMMENT_PROMPT: DEFAULT_COMMENT_PROMPT,
     DEFAULT_VERIFY_PROMPT: DEFAULT_VERIFY_PROMPT,
     SYSTEM_HINT: SYSTEM_HINT,
+    PAGE_MODE_DEFAULTS: PAGE_MODE_DEFAULTS,
+    PAGE_OUTPUT_RULE: PAGE_OUTPUT_RULE,
+    pickGrokMode: pickGrokMode,
+    buildPagePrompt: buildPagePrompt,
     normalizeUrl: normalizeUrl,
     siteKey: siteKey,
     matchOfficial: matchOfficial,
@@ -803,7 +942,10 @@ var TapeAI = (function () {
     buildVerifyMessages: buildVerifyMessages,
     parseThreeComments: parseThreeComments,
     parseVerdict: parseVerdict,
-    stripCodeFence: stripCodeFence
+    stripCodeFence: stripCodeFence,
+    jsonCandidates: jsonCandidates,
+    extractJsonLoose: extractJsonLoose,
+    parsePageResult: parsePageResult
   };
 })();
 

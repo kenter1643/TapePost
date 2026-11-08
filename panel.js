@@ -31,9 +31,10 @@ function el(tag, cls, text) {
 function sendToBackground(msg) {
   return new Promise(function (resolve, reject) {
     var settled = false;
+    // 页面模式要等 X 站内 Grok 生成完毕（默认 60s + 标签加载），超时放宽到 90s
     var timer = setTimeout(function () {
-      if (!settled) { settled = true; reject(new Error('后台 20 秒内没有响应，请到 chrome://extensions 重新加载扩展。')); }
-    }, 20000);
+      if (!settled) { settled = true; reject(new Error('后台 90 秒内没有响应，请到 chrome://extensions 重新加载扩展，或改用手动流程。')); }
+    }, 90000);
     try {
       chrome.runtime.sendMessage(msg, function (r) {
         if (settled) return;
@@ -260,10 +261,107 @@ function renderResult(local, grok, aiError) {
 
   if (aiError) {
     box.appendChild(el('div', 'aiwarn',
-      'ℹ️ Grok 解释未生成：' + aiError + ' —— 上面的绿标 / 风险结论来自本地清单，依然有效。点插件图标可在「Grok 设置」里填 Key。'));
+      'ℹ️ Grok 解释未生成：' + aiError + ' —— 上面的绿标 / 风险结论来自本地清单，依然有效。' +
+      '点插件图标可在「Grok 设置」里切换运行模式 / 填 xAI Key，或用上方的手动流程。'));
+  }
+  if (grok && grok.strict === false) {
+    box.appendChild(el('div', 'aiwarn',
+      'ℹ️ 网页版 Grok 没有严格按 JSON 输出，本次结果是按原文兜底解析的，仅供参考；' +
+      '可在设置里的「页面模式附加要求」强调「只输出最终 JSON」，或改用手动流程。'));
   }
   if (grok && grok.rawText) {
     box.appendChild(el('div', 'raw', 'Grok 原始返回：\n' + grok.rawText));
+  }
+}
+
+function showManualHint(text, isError) {
+  var h = document.getElementById('manualHint');
+  if (!h) return;
+  h.style.display = 'block';
+  h.textContent = text;
+  h.style.background = isError ? '#fef2f2' : '#fffbeb';
+  h.style.borderColor = isError ? '#fecaca' : '#fde68a';
+  h.style.color = isError ? '#7f1d1d' : '#78350f';
+}
+
+function showMode() {
+  var tag = document.getElementById('modeTag');
+  if (!tag) return;
+  try {
+    chrome.storage.sync.get({ grokMode: 'auto' }, function (s) {
+      chrome.storage.local.get({ grokApiKey: '' }, function (g) {
+        var mode = (AI && AI.pickGrokMode)
+          ? AI.pickGrokMode({ grokMode: s.grokMode, grokApiKey: g.grokApiKey }) : 'api';
+        tag.textContent = mode === 'page'
+          ? '模式：X 站内 Grok（免 API Key · 不调用 AI 接口）'
+          : '模式：xAI API（已填 Key · 由后台直连）';
+      });
+    });
+  } catch (e) { tag.textContent = '模式：自动'; }
+}
+
+async function copyPromptText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) { /* 扩展页偶发焦点限制，走 execCommand 兜底 */ }
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = !!(document.execCommand && document.execCommand('copy'));
+    if (ta.remove) ta.remove();
+    return ok;
+  } catch (e2) { return false; }
+}
+
+/* 手动兜底 ①：把完整核验提示词填进 Grok 输入框并复制到剪贴板，不自动发送 */
+async function preparePrompt() {
+  var input = document.getElementById('urlInput').value.trim();
+  if (!input) { showManualHint('请先在上方输入要核验的链接。', true); return; }
+  var btn = document.getElementById('copyPromptBtn');
+  btn.disabled = true;
+  btn.textContent = '准备中…';
+  try {
+    var r = await sendToBackground({ type: 'GROK_PAGE_PREPARE', payload: { kind: 'verify', url: input } });
+    if (!r || !r.ok) throw new Error((r && r.error) || '后台没有返回提示词');
+    var copied = await copyPromptText(r.prompt || '');
+    showManualHint('已把核验提示词' + (copied ? '复制到剪贴板，并' : '') + '填进 Grok 输入框。' +
+      '请到 X 的 Grok 页面按发送，等回答出来后点「读取 Grok 回答」。' +
+      (r.page && r.page.url ? '（页面：' + r.page.url + '）' : '') +
+      (copied ? '' : ' 剪贴板复制被拒绝，提示词已在 Grok 输入框里，可直接发送。'), !copied);
+  } catch (e) {
+    showManualHint('准备提示词失败：' + String(e && e.message || e) +
+      '。请确认已登录 x.com 且 Grok 可用，或在设置里点「打开 Grok 页面」。', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📋 复制核验提示词（手动模式）';
+  }
+}
+
+/* 手动兜底 ②：用户在 Grok 里发送并等回答出来后，读回最后一条回答解析 */
+async function readAnswer() {
+  var input = document.getElementById('urlInput').value.trim();
+  var btn = document.getElementById('readAnswerBtn');
+  btn.disabled = true;
+  btn.textContent = '读取中…';
+  try {
+    var r = await sendToBackground({ type: 'GROK_PAGE_READ', payload: { kind: 'verify', url: input } });
+    if (!r || r.ok === false) throw new Error((r && r.error) || '后台没有返回');
+    var snap = localSnapshot(AI.matchOfficial(input));
+    renderResult(r.local || snap, r.grok || null, r.aiError || null);
+    showManualHint(r.strict === false
+      ? '已从 Grok 页面读回回答，但它没有严格按 JSON 输出，结果是按原文兜底解析的，仅供参考。'
+      : '已从 X 站内 Grok 页面读回回答并解析完成；本地清单结论仍为最终依据。', r.strict === false);
+  } catch (e) {
+    showManualHint('读取失败：' + String(e && e.message || e) +
+      '。请确认 Grok 回答已经生成完毕，且该 X 标签仍处于打开状态。', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📥 读取 Grok 回答';
   }
 }
 
@@ -288,6 +386,12 @@ async function runVerify() {
       return;
     }
     renderResult(r.local || snap, r.grok || null, r.aiError || null);
+    if (r.mode === 'page') {
+      var loose = !!(r.grok && r.grok.strict === false);
+      showManualHint(loose
+        ? '页面模式：已读回 Grok 回答，但它没严格按 JSON 输出，结果是按原文兜底解析的；可在设置的「页面模式附加要求」里强调只输出最终 JSON，或改走手动流程。'
+        : '页面模式：提示词已送进 X 站内 Grok 并读回回答，全程未调用 xAI API、无需 API Key。', loose);
+    }
   } catch (e) {
     renderResult(snap, null, String(e && e.message || e));
   } finally {
@@ -316,7 +420,10 @@ function initPanel() {
     });
   });
 
+  showMode();
   document.getElementById('verifyBtn').addEventListener('click', runVerify);
+  document.getElementById('copyPromptBtn').addEventListener('click', preparePrompt);
+  document.getElementById('readAnswerBtn').addEventListener('click', readAnswer);
   document.getElementById('urlInput').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') runVerify();
   });

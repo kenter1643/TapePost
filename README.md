@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.2.0　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.3.0　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -28,7 +28,23 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 - 选中后打开 `x.com/intent/tweet?in_reply_to=<id>&text=...` 预填回复框，文字同时进剪贴板兜底；
 - **最后一步「发送」仍由你手动点**，插件不调用任何发布接口。
 
-提示词、模型（默认 `grok-4.3`）、接口协议（Chat Completions / Responses）、接口地址都可在设置里改。没有 API Key 时按钮会明确报错，不会静默失败。
+提示词、模型（默认 `grok-4.3`）、接口协议（Chat Completions / Responses）、接口地址都可在设置里改。**1.3.0 起没有 API Key 也能用**：自动切到「X 站内 Grok」模式，把提示词填进 x.com 的 Grok 页面并读回结果，详见下一节。
+
+### 1.3.0 新增：非 API 模式（X 站内 Grok）
+
+**不填 xAI API Key 也能用 Grok。** 点插件图标 →「Grok 设置」→ 运行模式：
+
+| 模式 | 行为 | 是否需要 Key / 费用 |
+| --- | --- | --- |
+| 自动（默认） | 填了 Key 走官方 API，没填就用 X 站内 Grok | 无需 Key / 免费 |
+| X 站内 Grok | 把提示词填进你已登录的 `x.com/i/grok`（或 X 上的 Grok 浮窗），等回答稳定后读回解析 | 无需 Key / 免费 |
+| xAI API | 后台直连 `api.x.ai`，原有链路 | 需要 Key / 按量计费 |
+
+- 扩展**不调用任何 AI 接口、不产生费用、不接触 X 登录态**；对话完全发生在 X 自己的页面里。后台优先复用「已经有 Grok 输入框」的 X 标签，没有才在后台新开一个 `/i/grok` 标签（不抢焦点）。
+- 两套提示词在两种模式下共用；页面模式会把 system 指令合并进同一条消息，并额外追加「只输出最终 JSON、不要展示思考过程」的约束（实测网页版 Grok 会先吐一段思考过程）。还可写「页面模式附加要求」，并用「预览实际发送内容」查看完整文本。
+- 实测选择器（2026-11-08）：输入框 `div[aria-label="Ask anything"][role="textbox"]`、发送 `button[aria-label="Send"]`、对话区 `div[aria-label="Grok"]`、回答锚点 `button[aria-label="Copy"]`。全部可在设置里改，X 改版不用升级扩展。
+- **手动兜底**：关掉「自动点发送」，或直接用面板 / 评论浮层里的「复制提示词 → 自己粘贴发送 → 读取 Grok 回答」，选择器失效时照样能用。
+- 需要 Chrome 已登录 `x.com` 且账号可用 Grok；X 的 Grok 有使用额度与权限限制，插件无法绕过。页面模式生成速度取决于 X，比 API 慢（默认最多等 60 秒）。
 
 ### TapeOut 生态面板（1.2.0：生态导航全量收录）
 
@@ -67,7 +83,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 
 ## 安装
 
-**Chrome 网上应用店**：1.2.0 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
+**Chrome 网上应用店**：1.3.0 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
 
 **本地加载（开发者模式）**
 
@@ -75,12 +91,12 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 2. 打开 `chrome://extensions`，打开右上角「开发者模式」
 3. 点「加载已解压的扩展程序」，选择**仓库根目录**（`manifest.json` 所在目录）
 4. 打开任一支持的站点，内容右上角出现「一键转发」即可使用
-5. 要用 AI 评论 / 链接核验，点插件图标 →「Grok 设置」填入自己的 xAI API Key，再点「测试连接」
+5. 要用 AI 评论 / 链接核验：默认「自动」模式，没填 API Key 就用已登录的 X 站内 Grok（免费）；想走官方 API 才在「Grok 设置 → API 模式专属设置」填 Key 并点「测试当前模式」
 
-商店提交包 `store/TapePost_1.2.0_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.2.0_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
+商店提交包 `store/TapePost_1.3.0_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.3.0_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
 
 ```bash
-zip -q store/TapePost_1.2.0_store.zip \
+zip -q store/TapePost_1.3.0_store.zip \
   manifest.json account.js sites.js grok.js background.js content.js inpaint.js \
   offscreen.html offscreen.js popup.html popup.js panel.html panel.js \
   icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png
@@ -91,10 +107,10 @@ zip -q store/TapePost_1.2.0_store.zip \
 点工具栏图标打开设置面板：
 
 - **转发**：图片去水印（默认开）、视频取原片、正文 `#` 话题的三种处理方式、附原推链接、附个人署名、X 域名、7 个站点开关；
-- **Grok**：X 上是否显示「AI 评论」、xAI API Key、接口协议、模型 ID、接口地址、测试连接、允许自定义网关域名、两套可编辑提示词；
+- **Grok**：运行模式（自动 / X 站内 Grok / xAI API）、两套可编辑提示词 + 页面模式附加要求 + 「预览实际发送内容」、页面选择器与自动发送/新建对话开关、打开 Grok 页面；API 模式专属：xAI API Key、接口协议、模型 ID、接口地址、测试连接、允许自定义网关域名；
 - **工具**：「🔍 运行环境自检」（Service Worker / DNR 规则 / 离屏文档状态）、「打开 TapeOut 生态面板」。
 
-密钥与接口配置只存 `chrome.storage.local`（本机、不同步、不入库）；偏好与提示词存 `chrome.storage.sync`。提示词留空＝用 `grok.js` 内置默认；删掉 `{POST}` / `{LOCAL_RESULT}` / `{OFFICIAL_LIST}` / `{URL}` 占位符时，插件会自动把对应内容补到提示词末尾。
+密钥与接口配置只存 `chrome.storage.local`（本机、不同步、不入库）；模式、页面选择器、偏好与提示词存 `chrome.storage.sync`。提示词留空＝用 `grok.js` 内置默认；删掉 `{POST}` / `{LOCAL_RESULT}` / `{OFFICIAL_LIST}` / `{URL}` 占位符时，插件会自动把对应内容补到提示词末尾。
 
 插件内置的 X 账号与社区身份在 `account.js`；改名或换号只改这一处。
 
@@ -105,9 +121,10 @@ zip -q store/TapePost_1.2.0_store.zip \
 ├── manifest.json          # MV3 清单（权限 / 主机权限 / content scripts）
 ├── account.js             # 内置账号与社区身份（单一来源）
 ├── sites.js               # 7 个站点的配置表与 detectSite()
-├── grok.js                # 295 条收录清单、URL 防伪判定、提示词与结果解析（共享层）
+├── grok.js                # 295 条收录清单、URL 防伪判定、提示词、模式路由与结果解析（共享层）
+├── grok-page.js           # 注入 x.com 的页面模式桥接：填提示词 / 点发送 / 读回答
 ├── content.js             # 按钮注入、正文/配图提取、多图托盘、X 评论候选浮层
-├── background.js          # Service Worker：DNR 规则、消息路由、Grok 客户端、下载
+├── background.js          # Service Worker：DNR 规则、消息路由、Grok 双模式客户端、下载
 ├── offscreen.html/js      # 离屏文档：Canvas 去水印、剪贴板写入、视频地址解析
 ├── inpaint.js             # 纯 JS 水印检测与重建
 ├── popup.html/js          # 设置面板（转发 / Grok / 面板入口）
@@ -121,7 +138,7 @@ zip -q store/TapePost_1.2.0_store.zip \
 ## 开发与测试
 
 ```bash
-node test-harness.js                  # 84 个场景：转发链路 + 全量清单防伪 + 分级判定 + X 评论按钮
+node test-harness.js                  # 112 个场景：转发链路 + 全量清单防伪 + 分级判定 + X 评论按钮 + 非 API 页面模式端到端
 WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 ```
 
@@ -131,13 +148,13 @@ WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 
 `store/listing.json` 里已备好名称、摘要、详细描述、分类、单一用途、逐项权限理由、数据使用披露、审核员验证步骤与提交清单；`store/upload.mjs` 用官方 API v2 做后续版本的上传 / 查状态 / 发布（凭证只从环境变量读取，不落盘）。
 
-注意：Chrome Web Store API v2 **没有新建条目接口**，首个版本必须由开发者本人在 Dashboard 点「Add new item」上传 zip 创建条目，拿到 `ITEM_ID` / `PUBLISHER_ID` 并配置 OAuth 后，脚本才能更新后续版本。1.2.0 的数据使用披露里 `transmits_data_off_device` 已改为 `true`：AI 功能会把用户点选的文字/链接发送给 xAI，提交表单时务必如实勾选。
+注意：Chrome Web Store API v2 **没有新建条目接口**，首个版本必须由开发者本人在 Dashboard 点「Add new item」上传 zip 创建条目，拿到 `ITEM_ID` / `PUBLISHER_ID` 并配置 OAuth 后，脚本才能更新后续版本。1.3.0 的数据使用披露里 `transmits_data_off_device` 已改为 `true`：AI 功能会把用户点选的文字/链接发送给 xAI，提交表单时务必如实勾选。
 
 ## 隐私
 
 **转发链路纯本地**：无自有服务器、无账号、无遥测、无远程代码。所有提取、去水印、剪贴板写入与下载都发生在本机。
 
-**AI 功能按需联网**：只有你主动点「AI 评论」或「核验链接」，并填了自己的 xAI API Key 时，扩展才会把该条推文正文或待核验链接（连同本地判定结论、清单摘要与设定提示词）发给 `api.x.ai` 或你自填的兼容网关。不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容。删除 Key 后 AI 功能立即停用，转发仍完全离线可用。
+**转发全链路纯本地**。**AI 功能分两种模式**：① `api` 模式：只有你主动点「AI 评论」/「核验链接」并填了自己的 Key，扩展才把推文正文或待核验链接（连同本地结论、清单摘要、提示词）发给 `api.x.ai` 或自填网关；② `page` 模式（免 Key）：扩展**不向任何 AI 服务发请求**，只把提示词填进你已登录的 X 站内 Grok 页面、由 X 完成对话，再读取该页回答文本在本机解析 —— 这段对话受 X 的条款与隐私政策约束。两种模式都不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容；插件也不读取或存储 X 的登录凭据。
 
 完整说明见 [隐私政策](https://kenter1643.github.io/TapePost/privacy.html)（源码 `docs/privacy.html`）。
 
@@ -145,7 +162,8 @@ WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 
 - X 视频通常是 HLS / blob 流，暂不能导出干净 mp4；其它站点只能取页面里出现的图片 / 视频直链。
 - 各站水印样式不同，检测不到时一律原图保留，不会强行抹图。
-- AI 功能需要你自备 xAI API Key 与可用网络；国内直连 `api.x.ai` 可能失败，需代理或兼容网关（设置里可申请该域名的可选主机权限）。调用费用由你承担。
+- AI 功能默认不需要 Key：走 X 站内 Grok 页面模式（需登录 X 且账号可用 Grok）；若要走官方 API，才需自备 xAI Key 与可用网络，国内直连 `api.x.ai` 可能失败，需代理或兼容网关。API 调用费用由你承担。
+- 页面模式依赖 X 网页版 Grok 的 DOM 结构（输入框 / 发送按钮 / 回答复制按钮）。X 改版可能导致自动填词或读取失效：设置里所有选择器都可编辑，另有「复制提示词 → 自己粘贴发送 → 读取 Grok 回答」的手动兜底，不会静默失败。网页版 Grok 会输出思考过程且不一定严守 JSON 格式，插件已做宽松 JSON 提取，解析失败会在界面明确提示。
 - 官方清单是 2026-11-08 从 TapeOut.link 抓取的静态快照，官方后续增删条目需手动更新 `grok.js`；Grok 的核验结论仅供参考，访问链上平台前请再次核对地址。
 - 需要你已登录 X；商店截图目前是功能示意图，正式上架建议替换为真机截图。
 

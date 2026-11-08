@@ -7,7 +7,10 @@ const ACCOUNT = (typeof X_ACCOUNT !== 'undefined') ? X_ACCOUNT : {
 
 // 已取消「需去水印作者 UID」列表；图片/视频都改由全局开关控制。
 // 换用新 key，让旧版保存的 alwaysInpaint / watermarkUids 自动失效，避免旧设置盖掉新默认值。
-const DEFAULTS = {
+const PAGE_DEFAULTS = (typeof TapeAI !== 'undefined' && TapeAI.PAGE_MODE_DEFAULTS)
+  ? TapeAI.PAGE_MODE_DEFAULTS : {};
+
+const DEFAULTS = Object.assign({
   inpaintImages: true,
   inpaintVideo: true,
   xDomain: 'x.com',
@@ -18,7 +21,13 @@ const DEFAULTS = {
   commentPrompt: '',       // 空 = 用 grok.js 内置默认提示词
   verifyPrompt: '',
   enabledSites: {}
-};
+}, PAGE_DEFAULTS);
+
+// 页面模式的文本配置项；选择器全部可改，X 改版时不用升版本
+const PAGE_TEXT_IDS = [
+  'grokPageUrl', 'grokPageInputSel', 'grokPageSendSel', 'grokPageRootSel', 'grokPageAnswerSel',
+  'grokPageQuietMs', 'grokPageTimeoutMs', 'grokPageMaxChars'
+];
 
 // 密钥 / 接口配置只放 storage.local：不同步到其它设备，也不随源码分发
 const GROK_SECRET_DEFAULTS = {
@@ -130,6 +139,20 @@ function load() {
     if (ai) ai.checked = s.enableAiComment !== false;
     renderPrompt('commentPrompt', s.commentPrompt);
     renderPrompt('verifyPrompt', s.verifyPrompt);
+    const mode = document.getElementById('grokMode');
+    if (mode) mode.value = s.grokMode || 'auto';
+    const extra = document.getElementById('pagePromptExtra');
+    if (extra) extra.value = s.pagePromptExtra || '';
+    PAGE_TEXT_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const v = s[id];
+      el.value = (v == null || v === '') ? (PAGE_DEFAULTS[id] == null ? '' : PAGE_DEFAULTS[id]) : v;
+    });
+    ['grokPageAutoSubmit', 'grokPageNewChat'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = s[id] !== false && s[id] !== 'false';
+    });
     const enabled = s.enabledSites || {};
     SITE_LIST.forEach((x) => {
       const el = document.getElementById('site_' + x.id);
@@ -165,6 +188,20 @@ function save() {
       return out;
     })()
   };
+  const mode = document.getElementById('grokMode');
+  data.grokMode = mode ? mode.value : 'auto';
+  const extra = document.getElementById('pagePromptExtra');
+  data.pagePromptExtra = extra ? extra.value : '';
+  PAGE_TEXT_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = String(el.value || '').trim();
+    data[id] = v === '' ? PAGE_DEFAULTS[id] : (/Ms$|MaxChars$/.test(id) ? (Number(v) || PAGE_DEFAULTS[id]) : v);
+  });
+  ['grokPageAutoSubmit', 'grokPageNewChat'].forEach((id) => {
+    const el = document.getElementById(id);
+    data[id] = !!(el && el.checked);
+  });
   chrome.storage.sync.set(data, () => {
     const ok = document.getElementById('ok');
     ok.style.display = 'block';
@@ -181,13 +218,44 @@ function testGrok() {
         const err = chrome.runtime && chrome.runtime.lastError;
         if (err) return grokStatus('连不上后台：' + err.message + '（请到 chrome://extensions 重新加载扩展）', false);
         if (!r || !r.ok) return grokStatus('连接失败：' + ((r && r.error) || '后台没有返回结果'), false);
-        grokStatus('✅ 连接成功｜模型 ' + r.model + '｜协议 ' + r.protocol +
-          '｜耗时 ' + r.latencyMs + 'ms｜返回示例：' + (r.sample || '').replace(/\s+/g, ' '), true);
+        const modeText = r.mode === 'page' ? 'X 站内 Grok（免 API Key）' : 'xAI API';
+        grokStatus('✅ ' + modeText + ' 已连通｜' + r.model + '｜' + r.protocol +
+          '｜耗时 ' + r.latencyMs + 'ms｜' + (r.sample || '').replace(/\s+/g, ' '), true);
       });
     } catch (e) {
       grokStatus('测试调用失败：' + String(e && e.message || e), false);
     }
   });
+}
+
+/* 预览：把「设置里的提示词 + 页面模式专属约束」拼成真正会填进 Grok 输入框的完整文本 */
+function previewPrompt() {
+  const box = document.getElementById('promptPreview');
+  if (!box) return;
+  if (typeof TapeAI === 'undefined') { grokStatus('提示词模块未加载，请重新加载扩展。', false); return; }
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const extra = val('pagePromptExtra');
+  const comment = TapeAI.buildPagePrompt(
+    TapeAI.buildCommentMessages('（示例推文）TapeOut 生态又多了一个链上应用，DeWeb 容器索引突破 200 个。', val('commentPrompt')), extra);
+  const verify = TapeAI.buildPagePrompt(
+    TapeAI.buildVerifyMessages('https://tapeout.net/', val('verifyPrompt')), extra);
+  box.style.display = 'block';
+  box.textContent = '【AI 评论 · 实际发送内容】\n' + comment +
+    '\n\n────────────────────\n\n【链接核验 · 实际发送内容】\n' +
+    verify.slice(0, 1600) + (verify.length > 1600 ? '\n…（清单摘要较长，此处省略）' : '');
+  grokStatus('已生成预览：这就是页面模式下会填进 Grok 输入框的完整文本（用示例内容拼装，不会真的发送）。', true);
+}
+
+function openGrokPage() {
+  const el = document.getElementById('grokPageUrl');
+  let url = String((el && el.value) || PAGE_DEFAULTS.grokPageUrl || 'https://x.com/i/grok').trim();
+  if (!/^https:\/\/(?:x\.com|twitter\.com)\//i.test(url)) url = 'https://x.com/i/grok';
+  try {
+    chrome.tabs.create({ url, active: true });
+    grokStatus('已打开 ' + url + '。页面模式会优先复用这个标签；若账号没登录或 Grok 不可用，请先在这里登录。', true);
+  } catch (e) {
+    grokStatus('打开 Grok 页面失败：' + String(e && e.message || e), false);
+  }
 }
 
 /* 自定义网关不是默认 host_permissions，用户主动点一下才申请该域名访问权 */
@@ -285,4 +353,11 @@ bind('showKey', () => {
 });
 bind('resetComment', () => renderPrompt('commentPrompt', ''));
 bind('resetVerify', () => renderPrompt('verifyPrompt', ''));
+bind('resetPageExtra', () => {
+  const el = document.getElementById('pagePromptExtra');
+  if (el) el.value = '';
+  grokStatus('页面模式附加要求已清空（记得点「保存设置」）。', true);
+});
+bind('previewPrompt', previewPrompt);
+bind('openGrok', openGrokPage);
 load();

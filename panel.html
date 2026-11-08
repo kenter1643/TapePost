@@ -125,6 +125,15 @@
     #verifyBtn:hover { background: #ff8c1a; }
     #verifyBtn:disabled { opacity: .6; cursor: default; }
     .hint { font-size: 12px; color: #94a3b8; margin: 9px 0 0; }
+    .manual-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .mbtn { padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #cbd5e1;
+      border-radius: 7px; background: #fff; color: var(--slate); font-family: inherit; }
+    .mbtn:hover { background: #f1f5f9; border-color: #94a3b8; }
+    .mbtn:disabled { opacity: .55; cursor: default; }
+    #modeTag { font-size: 11px; color: #5b21b6; background: #f5f3ff; border: 1px solid #e9d5ff;
+      border-radius: 20px; padding: 4px 10px; font-weight: 600; }
+    #manualHint { display: none; margin-top: 10px; padding: 9px 12px; border-radius: 8px; font-size: 12px;
+      background: var(--amber-bg); border: 1px solid #fde68a; color: #78350f; line-height: 1.6; }
     #result { margin-top: 16px; display: none; }
     .verdict { border-radius: 10px; padding: 14px 16px; border: 1px solid; }
     .verdict .vtitle { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
@@ -161,7 +170,7 @@
       <div class="brandline">
         <div class="logo">T</div>
         <h1>TapeOut 生态面板</h1>
-        <span class="ver">TapePost v1.2.0</span>
+        <span class="ver">TapePost v1.3.0</span>
       </div>
       <p class="sub">TapeOut 生态导航收录的全量平台入口 + 链接真伪核验。绿标由插件本地内置清单精确比对得出，Grok 只负责解释理由和识别仿冒特征，不能把清单外的链接变成认可平台。</p>
       <span class="badge-me" id="meBadge">TapeOut社区成员：昆哥</span>
@@ -207,7 +216,16 @@
                  placeholder="粘贴要核验的链接，例如 https://tapeout.net/ 或 tapeout-net.com" />
           <button id="verifyBtn" type="button">核验链接</button>
         </div>
-        <p class="hint">支持直接粘贴不带 https:// 的域名；短链、跳转参数、形近域名、未索引容器会单独标出风险。查询会把链接与本地结论发给 Grok 做解释，不会上传你的浏览记录或 API Key 之外的任何数据。</p>
+        <div class="manual-row">
+          <span id="modeTag">模式：读取中…</span>
+          <button class="mbtn" id="copyPromptBtn" type="button">📋 复制核验提示词（手动模式）</button>
+          <button class="mbtn" id="readAnswerBtn" type="button">📥 读取 Grok 回答</button>
+        </div>
+        <div id="manualHint"></div>
+        <p class="hint">支持直接粘贴不带 https:// 的域名；短链、跳转参数、形近域名、未索引容器会单独标出风险。
+          使用「X 站内 Grok」模式时，插件把提示词填进你已登录的 Grok 页面并读回回答，不调用任何 AI 接口、不需要 API Key。
+          若自动发送/读取失败，可用上面两个按钮走手动流程：复制提示词 → 粘进 Grok 发送 → 点「读取 Grok 回答」。
+          本地清单结论不依赖 Grok，始终有效。</p>
         <div id="result"></div>
       </div>
     </section>
