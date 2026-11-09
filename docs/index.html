@@ -268,7 +268,7 @@
         <div class="num">09</div>
         <h3>🔑 1.4.2：修好直连的 401 认证失败</h3>
         <p>1.4.1 生效后，直连真的走到了，但 X 接口返回 <code>HTTP 401</code>。逐行对照同页 X Viral Monitor 发现：它用的是<strong>自己维护的最新实时 bearer</strong>与从 X-UI 真实请求捕获的签名，而我们的观察钩子只保存第一个 bearer，与当前 X 会话不匹配就会 401，旧代码还把 X 的错误响应体直接丢掉。</p>
-        <p style="margin-top:12px">1.4.2 会优先复用同页已安装的 X Viral Monitor 稳定通道；自有链路改为实时 bearer 优先、复用捕获签名；401 时<strong>读出 X 的真实错误原因并用公开 bearer 自动重试一次</strong>。降级报错也不再把已弃用页面模式的一长串提示怼给你。回归测试 253 个场景。<strong>重载扩展后请刷新一次 X 页面。</strong></p>
+        <p style="margin-top:12px">1.4.2 会优先复用同页已安装的 X Viral Monitor 稳定通道；自有链路改为实时 bearer 优先、复用捕获签名；401 时<strong>读出 X 的真实错误原因并用公开 bearer 自动重试一次</strong>。降级报错也不再把已弃用页面模式的一长串提示怼给你。设置弹窗与网页提示也已精简为简洁说明弹窗。回归测试 262 个场景。<strong>重载扩展后请刷新一次 X 页面。</strong></p>
       </div>
       <p class="micro" style="text-align:center;margin-top:22px">收录清单是内置静态数据，运行时不联网拉取；API 模式才把文字/链接发给 xAI，页面模式只在 X 站内对话、扩展自身不发 AI 请求。详见<a href="privacy.html">隐私政策</a>。</p>
     </div>

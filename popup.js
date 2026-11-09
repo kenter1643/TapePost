@@ -409,4 +409,79 @@ bind('resetPageExtra', () => {
 });
 bind('previewPrompt', previewPrompt);
 bind('openGrok', openGrokPage);
+
+/* 1.4.2 文案精简：长说明收进一个简洁弹窗，设置页只留一句结论。 */
+const INFO = {
+  versions: {
+    title: '版本说明',
+    lines: [
+      'v1.4.2 修好直连 401 认证，可复用同页 XVM 通道。',
+      'v1.4.1 旧「页面模式」设置自动升级为「自动」。',
+      'v1.4.0 AI 评论改为直连 X 自带 Grok 接口。',
+      'v1.3.x 按钮移到回复框、等待浮层、正文防污染。',
+      '重载扩展后记得刷新一次 X 页面。'
+    ]
+  },
+  modes: {
+    title: '运行模式',
+    lines: [
+      '自动（推荐）：在 X 页面直连 Grok，免 Key、免费。',
+      '站内直连：同自动，但失败时直接报错不降级。',
+      '页面模式：旧 DOM 链路，仅作手动兜底。',
+      'xAI API：填自己的 Key，按量计费。',
+      '请求由 X 页面发给 X/Grok，不经第三方服务器。'
+    ]
+  },
+  usage: {
+    title: '使用说明',
+    lines: [
+      '一键转发：内容右上角点按钮，整理正文与配图成 X 草稿。',
+      'AI 评论：先点推文「回复」，按钮在填写区右侧。',
+      '选中候选会写回回复框，最后一步仍由你手动点「回复」。',
+      '多图弹托盘：逐张复制、拼长图或全部下载。',
+      '去水印只在本机处理，检测不到水印的图片原样保留。',
+      '生态面板：295 条内置清单核验链接，以本地结论为准。',
+      'X 改版导致按钮不出现时，可填「回复框选择器」。'
+    ]
+  },
+  privacy: {
+    title: '隐私说明',
+    lines: [
+      '转发全链路本机完成：不上传正文、图片或浏览记录。',
+      '站内直连只把提示词发给 X/Grok，不新增第三方。',
+      'API Key 存本机 chrome.storage.local，不同步、不入库。',
+      '只有 API 模式才由后台直连 xAI，费用自行承担。',
+      '插件不调用任何发布接口，不替你发推或回复。'
+    ]
+  }
+};
+
+const infoMask = document.getElementById('infoMask');
+const infoTitle = document.getElementById('infoTitle');
+const infoBody = document.getElementById('infoBody');
+function closeInfo() { if (infoMask) infoMask.hidden = true; }
+function openInfo(key) {
+  const d = INFO[key];
+  if (!d || !infoMask || !infoBody || !infoTitle) return;
+  infoTitle.textContent = d.title;
+  infoBody.replaceChildren();
+  d.lines.forEach(function (line) {
+    const p = document.createElement('p');
+    p.textContent = '· ' + line;
+    infoBody.appendChild(p);
+  });
+  infoMask.hidden = false;
+}
+document.querySelectorAll('[data-info]').forEach(function (btn) {
+  btn.addEventListener('click', function () { openInfo(btn.getAttribute('data-info')); });
+});
+bind('infoClose', closeInfo);
+bind('infoOk', closeInfo);
+if (infoMask) infoMask.addEventListener('click', function (e) {
+  if (e.target === infoMask) closeInfo();
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeInfo();
+});
+
 load();

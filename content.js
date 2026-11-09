@@ -182,6 +182,22 @@ function injectStyle() {
     font-size:14px;max-width:80vw;box-shadow:0 4px 16px rgba(0,0,0,.3);line-height:1.5;
     white-space:pre-line;
   }
+  #wbx-notice{
+    position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483647;
+    width:320px;max-width:88vw;box-sizing:border-box;background:#fff;color:#222;
+    border:2px solid #6b46c1;border-radius:14px;padding:16px 16px 14px;
+    box-shadow:0 12px 44px rgba(20,10,45,.34);
+    font:13px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+  }
+  .wbx-n-title{font-size:14px;font-weight:700;color:#4c2a91;margin-bottom:8px;}
+  .wbx-n-msg{color:#333;margin-bottom:10px;}
+  .wbx-n-detail{display:none;max-height:150px;overflow:auto;background:#f6f2ff;color:#5b3b9e;
+    border-radius:8px;padding:9px;font-size:11px;white-space:pre-wrap;word-break:break-word;margin-bottom:10px;}
+  .wbx-n-detail.open{display:block;}
+  .wbx-n-actions{display:flex;gap:8px;}
+  .wbx-n-actions button{flex:1;border:1px solid #d9cff2;background:#fff;color:#6b46c1;
+    border-radius:8px;font-size:12px;padding:7px;cursor:pointer;}
+  .wbx-n-actions button.primary{background:#6b46c1;color:#fff;border-color:#6b46c1;}
   #wbx-copybtn{
     position:fixed;right:24px;bottom:24px;z-index:999999;border:none;border-radius:10px;
     background:#1da1f2;color:#fff;padding:10px 14px;font-size:14px;cursor:pointer;font-weight:600;
@@ -891,7 +907,7 @@ function markNativeRepost(card) {
       if (txt.includes('转发') && !el.dataset.wbxMarked && el.className !== 'wbx-repost-btn') {
         el.dataset.wbxMarked = '1';
         el.classList.add('wbx-repost-mark');
-        el.title = (el.title ? el.title + '；' : '') + '如需去水印并转发到 X，请点内容右上角橙色「一键转发」按钮';
+        el.title = (el.title ? el.title + '；' : '') + '点内容右上角「一键转发」';
         n++;
       }
     });
@@ -946,7 +962,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 提取本条内容正文+全部内容图/视频，清洗后复制并打开 X 让你手动发送 · v1.4.2';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.2';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1109,7 +1125,7 @@ function injectIntoReplyComposers() {
     btn.className = 'wbx-comment-btn wbx-reply-btn';
     btn.type = 'button';
     btn.textContent = 'AI 评论';
-    btn.title = 'TapePost · 用 Grok 按设定提示词生成 3 条回复候选，选一条后直接写入本回复框（由你手动发送）';
+    btn.title = 'TapePost · 生成 3 条回复候选，手动发送';
     btn.__wbxReply = true;
     btn.__wbxScope = c.scope;
     btn.addEventListener('click', (e) => {
@@ -1384,16 +1400,15 @@ function showAiBusy(label) {
   const time = makeCommentEl('div', 'wbx-busy-time', '已等待 0.0 秒');
   box.appendChild(stage);
   box.appendChild(time);
-  box.appendChild(makeCommentEl('div', 'wbx-busy-hint',
-    '网页版 Grok 可能先显示「思考过程」，通常 10~40 秒；最长等待约 60 秒。期间不要关闭 X 的 Grok 标签。'));
+  box.appendChild(makeCommentEl('div', 'wbx-busy-hint', '通常 10~40 秒，最长约 60 秒。'));
   const cancel = makeCommentEl('button', 'wbx-busy-cancel', '关闭等待提示');
   cancel.type = 'button';
-  cancel.title = '只关掉这个提示，不中断后台生成；结果出来后候选卡片仍会自动弹出';
+  cancel.title = '只关提示，不中断后台生成';
   cancel.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     hideAiBusy();
-    showToast('等待提示已关闭，后台仍在生成；结果出来后候选卡片会自动弹出。', 6000);
+    showToast('已关闭提示，后台仍在生成。', 3500);
   });
   box.appendChild(cancel);
   document.body.appendChild(box);
@@ -1402,9 +1417,9 @@ function showAiBusy(label) {
   const stages = [
     [0, '正在连接 X 站内 Grok…'],
     [2500, '提示词已写入，等待 Grok 开始回答…'],
-    [8000, 'Grok 正在生成 3 条回复候选（可能先显示思考过程）…'],
-    [22000, '还在等 Grok 输出，最长约 60 秒，请稍候…'],
-    [45000, '接近超时：若 Grok 一直没回答，可关闭提示并改用手动模式。']
+    [8000, 'Grok 正在生成 3 条候选…'],
+    [22000, '还在等 Grok 输出，请稍候…'],
+    [45000, '接近超时，可关闭提示改用手动模式。']
   ];
   aiBusyTimer = setInterval(() => {
     if (document.getElementById && document.getElementById('wbx-ai-busy') !== box) {
@@ -1423,7 +1438,8 @@ function showAiBusy(label) {
 async function onAiComment(card, btn) {
   if (!SITE || SITE.id !== 'x') return;
   if (isStaleContext()) {
-    showToast('插件刚重新加载过，旧按钮已失效：请刷新 X 页面（Cmd+R）后再点「AI 评论」。', 9000);
+    showNotice('插件刚重载', '请刷新 X 页面后再点「AI 评论」。',
+      '重新加载扩展后，旧 X 标签里的内容脚本已失效。刷新该页面（Cmd+R）即可重新注入。');
     return;
   }
   const scope = (btn && btn.__wbxScope) || null;
@@ -1434,7 +1450,8 @@ async function onAiComment(card, btn) {
   if (!text && scope) text = contextTextFromScope(scope);
   text = sanitizePostText(text);
   if (!text) {
-    showToast('没有读到被回复推文的正文（可能只剩插件按钮文字/纯图推文，或 X 结构改版），已取消生成评论，避免把界面文字发给 Grok。请刷新 X 页面后重试。', 9000);
+    showNotice('没读到推文正文', '已取消生成，请刷新 X 页面重试。',
+      '可能只剩插件按钮文字、纯图推文，或 X 页面结构改版。为避免把界面文字发给 Grok，本次已取消。');
     return;
   }
   const statusId = extractXStatusId(card) || extractXStatusIdFromScope(scope);
@@ -1448,24 +1465,22 @@ async function onAiComment(card, btn) {
       payload: { text, statusId, url: permalink }
     });
     if (resp && resp.prepared) {
-      showToast('提示词已填进 X 的 Grok 输入框（当前设为「不自动发送」）：请到 Grok 里按发送，回答出来后点「读取 Grok 回答」。', 11000);
+      showNotice('提示词已填好', '请到 Grok 里手动发送，再点「读取 Grok 回答」。',
+        '当前设为「不自动发送」。回答出现后，用候选面板的「读取 Grok 回答」收回来。');
       return;
     }
     if (!resp || !resp.ok) {
       const rawErr = String((resp && resp.error) || '后台没有响应');
-      const connErr = /没响应|Receiving end|Could not establish|重新加载过扩展|刷新所有 X/i.test(rawErr);
-      showToast('Grok 生成失败：' + rawErr +
-        (connErr
-          ? '\n👉 先刷新所有 X 页面（Cmd+R），或点插件图标 →「Grok 设置」→「重建 Grok 标签」；刚在 chrome://extensions 重新加载过扩展时最容易遇到。'
-          : '\n请点插件图标，在「Grok 设置」里确认运行模式；页面模式需要已登录 X 且 Grok 可用，也可用「复制提示词 → 读取回答」的手动流程。'), 12000);
+      showNotice('生成失败', briefError(rawErr) + '，点「详情」看原因。',
+        rawErr + '\n\n建议：刷新 X 页面 → 设置里「测试当前模式」看诊断；也可用「复制提示词（手动）」兜底。');
       return;
     }
     showCommentPicker(resp.comments || [], statusId, card, btn, text, resp.mode,
       Object.assign({ strict: resp.strict }, resp.diagnostics || {}));
   } catch (e) {
-    showToast('AI 评论调用失败：' + String(e && e.message || e) +
-      '\n若是刚重新加载过扩展，请刷新所有 X 页面或点「Grok 设置」→「重建 Grok 标签」；' +
-      '若是 X 站内 Grok 超时，可用候选面板里的「复制提示词（手动）→ 读取 Grok 回答」。', 12000);
+    const rawErr = String((e && e.message) || e);
+    showNotice('调用失败', briefError(rawErr) + '，点「详情」看原因。',
+      rawErr + '\n\n建议：刷新 X 页面；刚重载过扩展时尤其需要。超时可用「复制提示词（手动）」兜底。');
   } finally {
     hideAiBusy();
     if (btn) { btn.disabled = false; btn.textContent = 'AI 评论'; }
@@ -1494,8 +1509,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag) 
   close.addEventListener('click', () => { if (panel.remove) panel.remove(); });
   head.appendChild(close);
   panel.appendChild(head);
-  panel.appendChild(makeCommentEl('div', 'wbx-c-tip',
-    '选一条 → 直接写入当前 X 回复框（原本有草稿就追加一行）；文字同时复制。最后一步「回复」始终由你手动点。'));
+  panel.appendChild(makeCommentEl('div', 'wbx-c-tip', '选一条写入回复框，由你手动发送。'));
   // 1.3.2：把「是否真的触发 Grok / 读到回答」明确显示出来，不再静默兜底
   if (diag && mode === 'page') {
     const bits = [diag.hasAnswer === false ? '⚠️ 未确认读到 Grok 回答，请核对' : '✅ 已确认读到 Grok 回答'];
@@ -1519,7 +1533,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag) 
       // 1.3.1 主路径：直接写进按钮旁边那个回复框，不再另开 intent 页面
       const wrote = applyCommentToReply(c, btn);
       if (wrote) {
-        showToast('已写入当前 X 回复框（框里原本有草稿时自动追加一行），文字也已复制；确认无误后手动点「回复」。', 8000);
+        showToast('已写入回复框，手动点「回复」。', 3500);
         copyTextFallback(c);
         if (panel.remove) panel.remove();
         return;
@@ -1533,14 +1547,12 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag) 
       // window.open 必须放在任何 await 之前：否则用户手势丢失，弹窗会被 Chrome 拦掉
       const win = window.open(url, '_blank', 'noopener,noreferrer');
       if (!win) {
-        showToast('X 发布页弹窗被拦截了：请允许本站弹出窗口后重试；评论文字已生成在下方卡片里，可手动复制。', 9000);
+        showNotice('发布页被拦截', '文字可手动复制。', '请允许本站弹出窗口；候选卡片里的文字可直接复制。');
       }
       copyTextFallback(c).then((ok) => {
-        showToast(statusId
-          ? (ok ? '没能写入当前回复框，已改用 X 官方预填页并复制文字；确认后手动点「回复」。'
-                : '没能写入当前回复框，已改用 X 官方预填页；文字在候选卡片里可手动复制。')
-          : (ok ? '没取到本条推文的 ID：已打开新发推框并预填，文字也已复制；如需回复请粘到该推文的回复框。'
-                : '没取到本条推文的 ID：已打开新发推框并预填，请手动复制文字。'), 9000);
+        showNotice('已改用 X 预填页', ok ? '文字已复制，确认后手动发送。' : '请在候选卡片里复制文字。',
+          statusId ? '没能写入当前回复框，已改用 X 官方预填页。'
+                   : '没取到本条推文 ID，已打开新发推框；要回复请粘到该推文的回复框。');
       });
     });
     actions.appendChild(use);
@@ -1937,6 +1949,61 @@ function showToast(msg, ms = 3000) {
   t.style.display = 'block';
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { if (t) t.style.display = 'none'; }, ms);
+}
+
+/* 1.4.2 文案精简：长报错只给一句结论，完整诊断收进简洁弹窗。 */
+function briefError(raw) {
+  const s = String(raw || '');
+  if (/401|403|认证|authenticate/i.test(s)) return 'X 会话认证失败，请刷新 X 页面';
+  if (/没响应|Receiving end|Could not establish|没有响应|连接/i.test(s)) return '连接失效，请刷新 X 页面';
+  if (/没解析|没读到|解析不出|没返回/i.test(s)) return 'Grok 没返回可用候选';
+  if (/超时|timeout/i.test(s)) return '生成超时，请重试';
+  if (/ct0|登录|会话已失效/i.test(s)) return '请先登录 X 并刷新页面';
+  if (/429|限流/i.test(s)) return '触发限流，稍后再试';
+  return 'Grok 生成失败';
+}
+
+function showNotice(title, short, detail) {
+  const old = document.getElementById('wbx-notice');
+  if (old && old.remove) old.remove();
+  const box = document.createElement('div');
+  box.id = 'wbx-notice';
+  const h = document.createElement('div');
+  h.className = 'wbx-n-title';
+  h.textContent = title || '提示';
+  const m = document.createElement('div');
+  m.className = 'wbx-n-msg';
+  m.textContent = short || '';
+  const d = document.createElement('div');
+  d.className = 'wbx-n-detail';
+  d.textContent = detail || short || '';
+  box.appendChild(h);
+  box.appendChild(m);
+  box.appendChild(d);
+  const actions = document.createElement('div');
+  actions.className = 'wbx-n-actions';
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.textContent = '详情';
+  more.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    d.classList.toggle('open');
+    more.textContent = d.classList.contains('open') ? '收起' : '详情';
+  });
+  const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.className = 'primary';
+  ok.textContent = '知道了';
+  ok.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (box.remove) box.remove();
+  });
+  actions.appendChild(more);
+  actions.appendChild(ok);
+  box.appendChild(actions);
+  document.body.appendChild(box);
 }
 
 // ---------- 初始化 ----------

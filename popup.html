@@ -74,11 +74,28 @@
       background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font: 10px/1.5 ui-monospace, Menlo, monospace;
       white-space: pre-wrap; word-break: break-all; color: #334155; }
     .grok .btnrow.two button { flex: 1; }
+    .infobtn { border:1px solid #d9cff2;background:#f7f3ff;color:#6b46c1;border-radius:7px;
+      font-size:11px;padding:3px 8px;cursor:pointer;margin-left:6px;vertical-align:middle; }
+    .infobtn:hover { background:#ece3ff; }
+    .info-mask { position:fixed;inset:0;background:rgba(20,12,40,.42);display:flex;
+      align-items:center;justify-content:center;z-index:9999;padding:14px; }
+    .info-mask[hidden] { display:none; }
+    .info-card { width:100%;max-width:330px;background:#fff;border-radius:14px;overflow:hidden;
+      box-shadow:0 12px 40px rgba(20,10,45,.3);font-size:12px;color:#333; }
+    .info-head { display:flex;align-items:center;justify-content:space-between;
+      padding:11px 14px;background:#6b46c1;color:#fff;font-size:13px; }
+    .info-head button { border:none;background:none;color:#fff;font-size:15px;cursor:pointer;line-height:1; }
+    .info-body { padding:12px 14px;line-height:1.8;max-height:290px;overflow:auto; }
+    .info-body p { margin:0 0 6px; }
+    .info-body b { color:#5b21b6; }
+    .info-foot { padding:0 14px 13px; }
+    .info-foot button { width:100%;border:none;border-radius:8px;background:#6b46c1;color:#fff;
+      font-size:12px;padding:8px;cursor:pointer; }
   </style>
 </head>
 <body>
   <h1>TapePost · 一键转发到 X</h1>
-  <p class="sub">7 站点一键转发到 X；X 回复框右侧的紫色「AI 评论」用 Grok 生成 3 条候选并直接写回回复框；生态面板用 295 条导航收录清单核验链接真伪。所有发送都由你手动完成。</p>
+  <p class="sub">7 站转发 · 免 Key AI 评论 · 295 条链接核验。发送始终由你手动完成。</p>
 
   <div class="me">
     <div class="avatar" id="meAvatar">昆</div>
@@ -146,17 +163,12 @@
 
     <div id="modeFixNote" class="mode-hint" hidden
       style="margin:0 0 10px;background:#ecfdf5;border-color:#a7f3d0;color:#065f46">
-      ✅ <b>已自动修复运行模式</b>：检测到之前存的是旧版「页面模式」（会一直报「提示词写入校验失败」），已改为<b>自动 · 优先站内直连</b>。请刷新一次 X 页面再点「AI 评论」。之后你手动改回页面模式不会被覆盖。<br>
+      <b>已自动修复运行模式</b>：旧「页面模式」已改为「自动」，刷新 X 页面即可。
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
-      <b>1.4.2 认证修复</b>：直连若返回 <code>HTTP 401</code>，现在会读出 X 的真实错误原因、用公开 bearer 自动重试一次；若同页已安装 X Viral Monitor，会<b>直接复用它已验证稳定的站内 Grok 通道</b>（不需任何配置）。降级报错也不再显示已弃用页面模式的误导性提示。<br>
-      <b>1.4.1 修复（重要）</b>：旧版把「X 站内 Grok」存成显式「页面模式」，导致 1.4.0 新增的<b>站内直连一次都没被走到</b>，仍卡在会写入失败的旧 DOM 链路。现在旧设置会自动升级为「自动」，且后台每次读配置都会归一化——<b>即使不改设置、重载扩展后也必定走直连</b>。报错里若出现「站内直连失败」，会显示真实原因而不是误导性的页面模式提示。<br>
-      <b>1.4.0 站内直连</b>：AI 评论<b>直接调用 X 自带的 Grok 接口</b>，不再往 Grok 输入框填字、不再等页面文本稳定、不再外挂 Grok 标签。签名由 X 页面自己的模块生成，回答只从最终回答块解析。<b>改了设置或重载扩展后请刷新 X 页面一次</b>。<br>
-      <b>1.3.1 位置变化</b>：先点 X 推文的「回复」展开输入框，紫色「AI 评论」会出现在<b>填写区右侧</b>；选一条候选后<b>直接写进当前回复框</b>，不再另开预填页。<br>
-      <b>1.3.2 稳定性</b>：点击后弹出等待浮层直到结果回来；页面模式会校验「提示词真的发给 Grok、回答真的读回来了」，候选面板顶部显示诊断结果。解析不出 3 条候选会明确报错，不会拿页面文字冒充评论。<br>
-      <b>1.3.4 正文防污染</b>：修复回复框里重复堆出几十个「AI 评论」按钮、按钮文字被当成推文正文发给 Grok 的问题；现在正文优先读 X 官方节点，且所有取正文路径都会剥掉插件界面文字。若只读到界面文字会明确取消，不再生成错误的评论。<br>
-      <b>1.3.3 连接自愈</b>：在 <code>chrome://extensions</code> 重新加载扩展后，旧的 X 标签里留着失效脚本，会报「Receiving end does not exist」。现在插件会自动刷新旧 Grok 标签、必要时新建标签；也可以直接点最下面的「<b>♻️ 重建 Grok 标签</b>」一键修复。
+      <b>当前 v1.4.2</b>：站内直连 X 自带 Grok，免 Key、无需配置。重载后刷新一次 X 页面。
+      <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 
     <label for="replyInputSelector">X 回复框选择器（留空＝内置，X 改版时再填）</label>
@@ -171,14 +183,9 @@
       <option value="page">页面模式：填 Grok 输入框再读回答（旧链路，仅兜底）</option>
       <option value="api">xAI API（需 Key，按量计费）</option>
     </select>
-    <div id="modeFixNote" hidden style="margin:6px 0 10px;padding:8px 10px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0;color:#14532d;font-size:12px;line-height:1.5">
-      ✅ 已自动修复运行模式：检测到旧版保存的「页面模式」，已把运行模式改为「自动 · 优先站内直连」并写回设置。之后你在 X 页面点「AI 评论」会走直连链路；刷新一次 X 页面即可生效。你之后手动改回「页面模式」不会被再次覆盖。
-    </div>
     <div class="mode-hint">
-      <b>站内直连</b>：与 X 网页客户端一样，用你已登录的 X 会话直接向 <code>grok.x.com</code> 发提示词，
-      只读取 Grok 的最终回答块；<b>不开标签、不模拟点击、不读整页文字</b>，因此不会出现「没读到回答块 / 连接失效」。
-      请求只发给 X/Grok（提示词与推文正文），不经 TapePost 或第三方服务器；签名在你本机页面内生成。
-      <b>页面模式</b>是旧链路：把提示词填进 <code>x.com/i/grok</code> 再读回答，仅在直连不可用或你手动选择时启用。
+      自动模式用你已登录的 X 会话直连 Grok，不开标签、不模拟点击。
+      <button type="button" class="infobtn" data-info="modes">模式说明</button>
     </div>
     <div class="row" style="margin:8px 0 10px">
       <input type="checkbox" id="grokPreferNative" />
@@ -238,7 +245,7 @@
         <input type="checkbox" id="grokPageNewChat" />
         <label for="grokPageNewChat" style="margin:0;font-weight:400">每次新建对话，避免上一轮上下文干扰</label>
       </div>
-      <p class="tiny">选择器按 2026-11-08 实测的 x.com/i/grok 填写。X 改版导致失效时，直接在这里改成新页面的选择器即可，不用升级扩展；也可改用手动模式。</p>
+      <p class="tiny">X 改版导致选择器失效时，在这里改成新页面的即可。</p>
     </details>
 
     <details class="apiset">
@@ -275,10 +282,8 @@
     </div>
     <div id="grokStatus"></div>
 
-    <p class="tiny">
-      API Key 只保存在本机 chrome.storage.local，不同步、不入库、不随扩展分发；只在 API 模式由后台直连 xAI。
-      页面模式下扩展<b>不联网调用 AI</b>，提示词由你在 X 页面内提交，X 的对话数据受 X 自己的隐私政策约束。
-      默认模型 grok-4.3（grok-3 / grok-4-fast-* 已于 2026-05-15 退役）；国内连不上 api.x.ai 时可换兼容网关并点「允许网关域名」。
+    <p class="tiny">API Key 只存本机，仅 API 模式使用。
+      <button type="button" class="infobtn" data-info="privacy">隐私说明</button>
     </p>
   </details>
 
@@ -288,22 +293,20 @@
   <pre id="diag"></pre>
 
   <div class="note">
-    说明：<br>
-    · <b>AI 评论</b>：先点 X 推文的「回复」展开回复框，紫色「AI 评论」在<b>填写区右侧</b>；Grok 按设定的提示词生成 3 条候选，选一条后<b>直接写进当前回复框</b>（框里原本有草稿就追加一行），最后一步「回复」仍由你手动点；插件不会自动发布。默认走 X 站内 Grok、不需要 API Key，只有切到 xAI API 模式才需要 Key。X 改版导致按钮不出现时，可在上面填「回复框选择器」。<br>
-    · <b>生态面板</b>：内置 295 条导航收录清单（5 项目方官方 / 56 导航收录 / 234 链上容器已索引），三档都给绿标但界面分级显示；只有本地清单精确命中的地址才有绿标，Grok 只补充理由与仿冒风险，<b>不能</b>把清单外的链接判成认可平台。清单是内置静态数据、不联网拉取；核验即使 Grok 不可用，本地结论依然有效。<br>
-    · API Key 只存本机、不同步、不入库；调用时后台直连 xAI，页面脚本拿不到密钥。请自行确认 xAI 的调用额度与费用。<br>
-    · 身份卡片上的「TapeOut社区成员：昆哥」为内置社区标注，仅显示在设置面板，不会写进转发正文；需要改称呼只改内置账号配置即可。<br>
-    · 多站点：每个站点的选择器、图床域名、Referer、文字清洗与水印策略都在内置站点配置里。「删 # 后内容」只对微博生效，其他站保留原文；图片自动去水印也只对微博启用（其他站水印压在图上，强行处理会毁图，因此原图保留）。<br>
-    · X 上也能一键转发：在 x.com / twitter.com 的推文上点「一键转发」，会把该条正文与配图带出，预填进<b>新的发推框</b>由你手动发送；这不是原生「转推」，也不会自动发布。X 缩略图会自动换成 name=orig 原图；插件自己打开的 /intent/tweet 发推页不会再出现按钮。转他人内容建议开启上方「附原推链接」标注来源。<br>
-    · 微博之外的站点只能取页面里的图片/视频直链，没有平台 HD 接口；X 视频多为 HLS 流，通常拿不到干净 mp4；小红书图片地址带时效签名，若下载失败请刷新页面后重试。<br>
-    · 署名默认关闭，保证「删掉 # 后内容」的正文保持干净；开启后自动追加「昆哥 + 主页链接」并做长度保护。<br>
-    · 「# 在开头」时截断会把正文删光，插件会自动改为只删话题块，避免空转发。<br>
-    · 文字始终预填进 X（不会丢）；剪贴板只放干净图片，Ctrl+V 贴图不会带出重复文字。<br>
-    · 多图会弹出「图片托盘」：每张都有「复制第 N 张」按钮（逐张切到 X 粘贴，最多 4 张），也能「拼成长图」一次贴完，或「全部下载」。按钮在滚动后会自动校验内容指纹，避免 DOM 复用导致转错条。<br>
-    · 图片去水印改为「先检测再处理」：只在底部条带找白色水印文字，定位到包围盒后用上下方背景插值重建；<b>检测不到水印的图片原样保留</b>，复杂纹理会自动跳过，不会再抹掉右下角一大块画面。已取消按作者 UID 判断，改由上方全局开关控制。<br>
-    · 视频去水印＝跳过页面里的低清/带水印流，优先取公开接口的 HD 原片（平台水印多为播放器叠加，原片通常干净）；接口失败会自动回退页面直链，不影响下载。视频文件请从下载目录拖入 X。<br>
-    · 图床/视频 CDN 强制 Referer，插件已自动注入，无需登录微博。<br>
-    · X(Twitter) 在中国大陆需自备 VPN 才能打开与发送。
+    功能细节与常见问题
+    <button type="button" class="infobtn" data-info="usage">使用说明</button>
+    <button type="button" class="infobtn" data-info="privacy">隐私说明</button>
+  </div>
+
+  <div id="infoMask" class="info-mask" hidden>
+    <div class="info-card" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+      <div class="info-head">
+        <strong id="infoTitle">说明</strong>
+        <button type="button" id="infoClose" aria-label="关闭">✕</button>
+      </div>
+      <div id="infoBody" class="info-body"></div>
+      <div class="info-foot"><button type="button" id="infoOk">知道了</button></div>
+    </div>
   </div>
 
   <script src="account.js"></script>

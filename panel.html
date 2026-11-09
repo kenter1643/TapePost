@@ -172,18 +172,21 @@
         <h1>TapeOut 生态面板</h1>
         <span class="ver">TapePost v1.4.2</span>
       </div>
-      <p class="sub">TapeOut 生态导航收录的全量平台入口 + 链接真伪核验。绿标由插件本地内置清单精确比对得出，Grok 只负责解释理由和识别仿冒特征，不能把清单外的链接变成认可平台。</p>
+      <p class="sub">295 条收录清单 + 链接核验。绿标以本地清单为准，Grok 只补充理由。</p>
       <span class="badge-me" id="meBadge">TapeOut社区成员：昆哥</span>
     </header>
 
     <div class="rule">
-      <b>判定原则：</b>凡是 <b>TapeOut.link 生态导航收录</b>的链接、以及 <b>web.tapeout.link 已索引</b>的链上容器，都算「导航认可」并给绿标（核验于 <span id="checkedAt"></span>）。为避免误读，绿标分三档：
-      <ul>
-        <li><b>项目方官方</b> —— 导航站带 OFFICIAL 标记的 5 条；</li>
-        <li><b>生态导航收录认可</b> —— 导航站编辑收录的其余链接（第三方交易、工具、社区、链游等）；</li>
-        <li><b>链上容器 · 已索引</b> —— DeWeb 扫描索引到的容器，按官方网关精确子域比对，<b>内容由容器所有者部署，不代表项目方背书</b>。</li>
-      </ul>
-      只有少数独立官网允许同域任意路径 / 子域；网关域名按精确地址比对，未索引的容器子域不会拿到绿标。Grok 的结论与本地冲突时一律以本地为准。
+      <b>判定原则：</b>绿标只给本地清单命中的链接（核验于 <span id="checkedAt"></span>），分三档显示。
+      <details>
+        <summary>查看分档说明</summary>
+        <ul>
+          <li><b>项目方官方</b>：导航站 OFFICIAL 标记的 5 条。</li>
+          <li><b>生态导航收录</b>：导航站编辑收录的其余链接。</li>
+          <li><b>链上容器已索引</b>：内容由容器所有者部署，不代表项目方背书。</li>
+        </ul>
+        <p>网关按精确地址比对；与 Grok 结论冲突时一律以本地清单为准。</p>
+      </details>
     </div>
 
     <div class="stats">
@@ -222,10 +225,12 @@
           <button class="mbtn" id="readAnswerBtn" type="button">📥 读取 Grok 回答</button>
         </div>
         <div id="manualHint"></div>
-        <p class="hint">支持直接粘贴不带 https:// 的域名；短链、跳转参数、形近域名、未索引容器会单独标出风险。
-          使用「X 站内 Grok」模式时，插件把提示词填进你已登录的 Grok 页面并读回回答，不调用任何 AI 接口、不需要 API Key。
-          若自动发送/读取失败，可用上面两个按钮走手动流程：复制提示词 → 粘进 Grok 发送 → 点「读取 Grok 回答」。
-          本地清单结论不依赖 Grok，始终有效。</p>
+        <div class="hint">本地清单结论始终有效；Grok 不可用时用上面两个按钮走手动流程。
+          <details>
+            <summary>查看核验说明</summary>
+            <p>可直接粘贴不带 https:// 的域名；短链、跳转参数、形近域名会单独标出风险。手动流程：复制提示词 → 粘进 Grok 发送 → 点「读取 Grok 回答」。</p>
+          </details>
+        </div>
         <div id="result"></div>
       </div>
     </section>
@@ -240,7 +245,7 @@
       的 <a href="https://tapeout.link/data/sites.js" target="_blank" rel="noopener noreferrer">data/sites.js</a> +
       <a href="https://web.tapeout.link/" target="_blank" rel="noopener noreferrer">web.tapeout.link</a> 的
       <a href="https://web.tapeout.link/api/sites" target="_blank" rel="noopener noreferrer">/api/sites</a>，核验日期 <span class="checkedAt"></span>。<br>
-      绿标只说明「导航站已收录 / 已索引」，不构成项目方背书，也不构成投资建议；访问任何链上平台前请再次核对地址、谨慎授权钱包。
+      绿标不等于项目方背书，访问前请核对地址、谨慎授权钱包。
       · 插件设置与 API Key 在工具栏图标里 · <a href="https://github.com/kenter1643/TapePost" target="_blank" rel="noopener noreferrer">源码</a>
     </footer>
   </div>

@@ -2560,6 +2560,37 @@ async function runScenario(name, cfg, expect) {
   console.log(diagOk ? '[CHECK] 运行环境自检 DIAG：PASS ✅' : '[CHECK] 运行环境自检 DIAG：FAIL ❌');
   results.push(diagOk);
 
+  // ---- v1.4.2 文案精简：长说明收进简洁弹窗，防止以后又被加回来 ----
+  const popupHtml = read('popup.html');
+  const popupJs = read('popup.js');
+  const contentJs = read('content.js');
+  const panelHtml = read('panel.html');
+  const infoKeys = Array.from(new Set(
+    Array.from(popupHtml.matchAll(/data-info="([^"]+)"/g), (m) => m[1])
+  ));
+  const briefBody = (contentJs.match(/function briefError\(raw\) \{[\s\S]*?\n\}/) || [''])[0];
+  const briefShorts = (briefBody.match(/return '([^']+)'/g) || []).map((s) => s.slice(8, -1));
+  const conciseChecks = [
+    { name: '1.4.2 设置弹窗不再堆叠版本更新长文',
+      ok: !popupHtml.includes('1.4.1 修复（重要）') && !popupHtml.includes('1.3.4 正文防污染') },
+    { name: '1.4.2 设置弹窗具备简洁说明弹窗容器',
+      ok: popupHtml.includes('id="infoMask"') && popupHtml.includes('id="infoOk"') && popupJs.includes('function openInfo(') },
+    { name: '1.4.2 每个说明按钮都有对应内容',
+      ok: infoKeys.length >= 4 && infoKeys.every((k) => new RegExp('\\b' + k + ':\\s*\\{').test(popupJs)) },
+    { name: '1.4.2 重复的 modeFixNote 元素已清除',
+      ok: (popupHtml.match(/id="modeFixNote"/g) || []).length === 1 },
+    { name: '1.4.2 网页提示改用简洁弹窗',
+      ok: contentJs.includes('function showNotice(') && contentJs.includes('function briefError(') },
+    { name: '1.4.2 超长报错文案已移除',
+      ok: !contentJs.includes('没有读到被回复推文的正文（') && !contentJs.includes('AI 评论调用失败：') },
+    { name: '1.4.2 错误短句保持简短',
+      ok: briefShorts.length >= 6 && briefShorts.every((s) => s.length <= 26) },
+    { name: '1.4.2 生态面板长说明改为折叠',
+      ok: panelHtml.includes('查看分档说明') && !panelHtml.includes('绿标由插件本地内置清单精确比对得出') },
+    { name: '1.4.2 文案改动不变更版本号',
+      ok: read('manifest.json').includes('"version": "1.4.2"') }
+  ];
+
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
   const aiChecks = runTapeAIChecks()
     .concat(await runCommentButtonChecks())
@@ -2572,7 +2603,8 @@ async function runScenario(name, cfg, expect) {
     .concat(await runNativePureChecks())
     .concat(await runNativeEndToEnd())
     .concat(await runAuth401Checks())
-    .concat(await runModeMigrationChecks());
+    .concat(await runModeMigrationChecks())
+    .concat(conciseChecks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);
