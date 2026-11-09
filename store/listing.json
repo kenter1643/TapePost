@@ -72,15 +72,15 @@
     "· 转载他人内容前请确认授权，建议开启「附原推链接」标注来源。TapePost 与 X 及上述任何站点均无官方关联。"
   ],
   "single_purpose": "在用户主动点击时提供内容辅助：①把当前网页一条公开内容的正文与配图整理成可由用户手动发布到 X 的草稿素材（清洗文字、去水印、复制/下载媒体、预填发推框）；②在 X 上按用户设定的提示词，通过用户选择的 Grok 运行模式（免 Key 的 X 站内 Grok，或自备 Key 的 xAI API）生成 3 条回复候选供用户选择后手动回复；③用内置静态清单（TapeOut.link 导航收录 + DeWeb 索引，共 295 条，分三档）与 Grok 核验链接是否被生态导航认可，防范仿冒。所有发布与回复动作均由用户手动完成。",
-  "host_access_justification": "内容脚本仅在清单明确列出的 7 个站点域名上注入按钮；图片/视频 CDN 主机权限仅用于下载当前这条内容的媒体。新增的 api.x.ai 主机权限只用于用户主动点击「AI 评论」/「核验链接」时向 xAI 官方接口发送生成请求，不使用时不发请求。可选主机权限默认未授予，仅在用户填写自定义网关并主动点「允许网关域名」时申请该单一域名。生态面板的收录清单为内置静态数据，运行时不访问 tapeout.link 或 web.tapeout.link；免 Key 模式下 x.com 主机权限仅用于在用户已打开的 X 页面上定位 Grok 输入框、填入提示词并读取回答文本，不读取登录态、不读取对话历史、不向 AI 接口发请求；扩展不读取浏览历史、不访问其它标签页，所有站点均可在设置中单独关闭。",
+  "host_access_justification": "内容脚本仅在 manifest 明确列出的 7 个站点（含其移动端域名）注入按钮；图片/视频 CDN 主机权限仅用于下载当前这一条内容的媒体，并由 declarativeNetRequest 的 9 条静态规则注入 Referer（不拦截、不重定向、不监控其它流量）。api.x.ai 仅在用户主动切到 xAI API 模式并填入自己的 Key 时，由后台发送生成请求。1.4.2 默认免 Key 的「X 站内直连」发生在用户已打开的 X 标签页里：由 X 页面自身向 Grok 流式接口 grok.x.com/2/grok/add_response.json 发送设定提示词与该条推文正文，接收方只有 X/Grok，不经扩展后台、不新增第三方接收方；扩展不读取、不保存、不导出 X 登录态，回答只从 ASSISTANT/final 最终回答块解析，签名由 X 页面自己的模块在本机生成。optional_host_permissions 的 https://*/* 默认不授予，仅用于用户手填自定义网关时按单一域名动态申请（详见 broad_host_permission_justification）。生态面板的 295 条清单是内置静态数据，运行时不访问 tapeout.link 或 web.tapeout.link。扩展不读取浏览历史、不访问其它标签页。",
   "permission_justifications": {
     "storage": "偏好、运行模式、提示词与页面选择器保存在 chrome.storage.sync（随用户自己的 Chrome 同步设置），xAI API Key 与接口配置保存在 chrome.storage.local（仅本机、不同步）。不保存任何网页内容、对话记录或 X 凭据。",
     "downloads": "仅在用户点击转发或点击「全部下载」时，把处理后的图片/视频保存到本机下载目录，文件名前缀 xpost_。",
     "clipboardWrite": "把用户点选的干净图片写入系统剪贴板，供用户在 X 发推框内手动粘贴。",
     "offscreen": "创建 MV3 离屏文档，用于后台 Canvas 解码/去水印以及写入剪贴板；Service Worker 没有 DOM 与 createObjectURL，必须借助离屏文档。",
     "declarativeNetRequest": "为图片/视频 CDN 请求设置对应站点的 Referer 请求头，绕过图床防盗链（否则图片 403）。规则为固定 9 条静态规则，不拦截、重定向或监控任何其它流量。",
-    "host_permissions": "见 host_access_justification：7 个来源站与其媒体 CDN 用于读取当前条目内容；api.x.ai 仅用于用户主动选择 API 模式时的 AI 请求；x.com 内容脚本在免 Key 模式下仅做页面内 DOM 操作。",
-    "optional_host_permissions": "默认未授予。仅当用户在设置里填写自定义兼容网关地址并主动点击「允许网关域名」时，通过 chrome.permissions.request 申请该单一 https 域名的访问权；用户可随时在扩展详情里撤回。"
+    "host_permissions": "7 个来源站与其媒体 CDN 用于读取当前条目内容并注入 Referer；api.x.ai 仅用于用户主动选择 API 模式时的 AI 请求；x.com / *.x.com 用于内容脚本注入，以及 X 页面自身向 grok.x.com 发起的站内直连请求。详见 host_access_justification 与 broad_host_permission_justification。",
+    "optional_host_permissions": "默认未授予。声明 https://*/* 仅为支持「自定义兼容网关」：用户在设置里填写一个网关域名并主动点「允许网关域名」后，通过 chrome.permissions.request 只申请该单一 https 域名，用户可随时在扩展详情里撤回。扩展从不申请全量 https 站点访问，也不据此注入脚本或读取页面。"
   },
   "data_use_disclosure": {
     "collects_personal_data": false,
@@ -89,12 +89,13 @@
     "third_party_analytics": false,
     "handles_user_generated_content": true,
     "third_party_ai_service": "xAI Grok（api.x.ai，仅 API 模式）／X 站内 Grok（页面模式，由 X 提供）／用户自填的兼容网关（仅 API 模式）",
-    "what_is_transmitted": "API 模式：仅用户主动点「AI 评论」时的该条推文正文（≤1200 字符）+ 设定提示词，或点「核验链接」时的待核验链接 + 本地判定结论 + 与本次判定相关的少量清单条目 + 设定提示词。页面模式：扩展不向 AI 接口发送任何内容；提示词由用户在 X 页面内提交给 X 自家的 Grok，扩展只读回该页回答文本在本机解析。295 条收录清单是内置静态数据，不联网拉取、不整份上传。",
-    "what_is_not_transmitted": "浏览历史、Cookie、X 登录态、其它标签页内容、图片/视频文件、账号密码、API Key 之外的任何凭据。生态导航清单不会从远端下载，也不整份发送给 xAI。页面模式不读取或传输 X 登录态、Cookie、对话历史或其它标签页内容。",
-    "note": "「一键转发」全链路纯本地。不填 API Key 时自动使用 X 站内 Grok 页面模式，扩展自身不产生任何 AI 网络请求；只有 API 模式才把内容传出设备，因此商店数据使用声明里「是否将数据传出设备」仍须选「是」。开发者不运营后端、不接收也不留存上述内容。发送给 xAI / X 的内容分别受其隐私政策约束，API 调用费用由用户承担。",
+    "what_is_transmitted": "站内直连（默认、免 Key）：设定提示词 + 该条推文正文（≤1200 字符），由用户已打开的 X 页面发给 grok.x.com，接收方仅 X/Grok。API 模式：用户主动点「AI 评论」时的推文正文 + 提示词，或点「核验链接」时的待核验链接 + 本地判定结论 + 与本次判定相关的少量清单条目 + 提示词，发给 api.x.ai 或用户自填的兼容网关。295 条收录清单是内置静态数据，不联网拉取、不整份上传。",
+    "what_is_not_transmitted": "浏览历史、Cookie / bearer / X 登录态的明文或副本、其它标签页内容、图片/视频文件、账号密码。站内直连的请求由浏览器自动携带 X 会话凭证，扩展不读取、不保存、不转发这些凭证，扩展后台也不接收推文正文。生态导航清单不从远端下载，也不整份发送给任何 AI 服务。",
+    "note": "「一键转发」全链路纯本地。默认免 Key 的站内直连会以用户已登录的 X 会话向 X/Grok 发送提示词与推文正文（接收方仅 X/Grok）；切到 API 模式时向 api.x.ai 或用户自填网关发送文字/链接。因此商店数据使用声明里「是否将数据传出设备」须选「是」，第三方 AI 服务须如实填写 X/Grok 与 xAI。开发者不运营后端、不接收也不留存上述内容；不收集个人数据、无远程代码、无第三方分析。发送给 X / xAI 的内容分别受其隐私政策约束，API 调用费用由用户承担。",
     "modes": {
-      "page_default": "X 站内 Grok（默认、免 API Key）：扩展不向任何 AI 服务发送网络请求。提示词由用户在 X 页面内提交，对话由 X 处理并保存在用户自己的 X 账号里，受 X 服务条款与隐私政策约束；扩展只在本机读取该页面的回答文本用于解析。",
-      "api": "xAI API（用户主动选择并填入自己的 Key）：扩展后台向 api.x.ai 或自填网关发送用户点选的文字/链接、本地结论、少量相关清单条目与设定提示词，用用户自己的 Key 认证。"
+      "native_default": "X 站内直连（1.4.2 默认、免 API Key）：用户点「AI 评论」后，由 X 页面自身向 grok.x.com/2/grok/add_response.json 发送设定提示词与该条推文正文；请求携带浏览器自动附上的 X 会话凭证，接收方仅 X/Grok，不经扩展后台或任何第三方服务器。扩展不读取、不保存、不导出 Cookie / bearer / 登录态，只在本机解析最终回答块；签名由 X 页面自己的模块在本机生成。",
+      "api": "xAI API（用户主动选择并填入自己的 Key）：扩展后台向 api.x.ai 或用户自填的兼容网关发送用户点选的文字/链接、本地结论、少量相关清单条目与设定提示词，用用户自己的 Key 认证。",
+      "page_fallback": "页面模式（1.4.0 起已弃用，仅用户显式选择时作为手动兜底）：提示词由用户自己粘贴到 x.com/i/grok，扩展只读回该页回答文本在本机解析，扩展自身不向 AI 接口发请求。"
     }
   },
   "privacy_policy_url": "https://kenter1643.github.io/TapePost/privacy.html",
@@ -111,7 +112,7 @@
     "promo_tile_text": "TapePost · 转发 / 免 Key AI 评论 / 295 条生态绿标核验 · 7 平台",
     "screenshots_note": "当前 3 张为功能示意图（非真机截图）。正式提交前建议用真实微博/X 页面截取替换，以免审核认为是误导性展示。"
   },
-  "reviewer_notes": "全部功能验证都无需 xAI API Key：1) 打开 weibo.com 或 x.com 时间线，内容右上角出现橙色「一键转发」；2) 点击后右下角出现图片托盘（多图）或 X 新标签页（单图/纯文字），X 发推框文字已预填，发送按钮未被自动触发。3) AI 功能默认走「X 站内 Grok」模式：审核员只需登录任意可用 Grok 的 X 账号，先点任一推文的「回复」展开输入框，紫色「AI 评论」即在回复填写区右侧；点它后插件会把提示词填进 x.com/i/grok（必要时后台新开标签）并读回回答，生成 3 条候选，选中一条即写回当前回复框（不会自动发布）；设置里点「测试当前模式」可只做页面连通性自检，不会发起真实提问；若刚重载过扩展出现连接失败，点「♻️ 重建 Grok 标签」即可自愈（插件也会自动尝试）。若 X 账号无 Grok 权限，可切到 API 模式自备 Key，或用「复制提示词 / 读取 Grok 回答」手动流程。生态面板（点插件图标 →「打开 TapeOut 生态面板」）内置 295 条静态清单，不联网也能判定；可试 https://tapeout.net/（项目方官方绿标）、https://tapeoutscan.io/（导航收录绿标）、https://evil.tapekit.org/（不给绿标）。本地绿标结论不依赖 Grok；设置面板有「🔍 运行环境自检」可查看 SW / DNR 规则 / 离屏文档状态。",
+  "reviewer_notes": "全部功能验证都无需 xAI API Key（首次加载或重载扩展后请刷新一次 X 页面，MAIN world 脚本才会重新注入）。1) 打开 weibo.com 或 x.com 时间线，内容右上角出现橙色「一键转发」；点击后右下角出现图片托盘（多图）或打开 X 发推页（单图/纯文字），文字已预填、发送按钮不会被自动触发。2) AI 评论：登录任意可用 Grok 的 X 账号 → 点任一推文的「回复」展开输入框 → 填写区右侧出现紫色「AI 评论」→ 点击后弹出等待浮层。1.4.2 走「站内直连」：由 X 页面自身调用 Grok 流式接口，不打开 /i/grok 标签、不模拟点击、不读整页文字；回答解析成 3 条候选，选一条直接写回当前回复框（不会自动发布）。设置里「测试当前模式」只做连通性自检、不发真实提问。若 X 账号无 Grok 权限或直连返回 401，可切到 API 模式自备 Key，或用「复制提示词 → 手动读取回答」兜底；错误弹窗「详情」会显示 X 返回的真实原因。3) 生态面板：点插件图标 →「打开 TapeOut 生态面板」，内置 295 条静态清单，不联网也能判定；可试 https://tapeout.net/（项目方官方绿标）、https://tapeoutscan.io/（导航收录绿标）、https://evil.tapekit.org/（不给绿标）。本地绿标结论不依赖 Grok；设置面板有「🔍 运行环境自检」可查看 SW / DNR 规则 / 离屏文档状态。",
   "distribution": {
     "visibility": "public",
     "countries": "all",
@@ -120,13 +121,17 @@
   "publishing_api_note": "Chrome Web Store API v2 只提供 upload / publish / fetchStatus，没有「新建条目」接口：首个版本必须在 Developer Dashboard 手动 Add new item 上传 zip 并创建条目，拿到 ITEM_ID 与 Publisher ID 后，才能用 store/upload.mjs 自动上传后续版本或提交发布。v2 端点：POST /upload/v2/publishers/{publisherId}/items/{itemId}:upload、POST /v2/publishers/{publisherId}/items/{itemId}:publish；OAuth scope 为 https://www.googleapis.com/auth/chromewebstore。",
   "pre_submit_checklist": [
     "用 Google 账号登录 Chrome Web Store Developer Dashboard，并完成一次性开发者注册（注册费 US$5）",
+    "已为 Google 账号开启两步验证（2FA）并退出重登 Dashboard，否则上传会报 Enabling 2 step verification…",
     "在 Dashboard 点「Add new item」上传 store/TapePost_1.4.2_store.zip",
     "把本文件里的名称、摘要、详细描述、分类、单一用途、逐项权限理由复制到商店表单",
     "隐私政策已托管在 GitHub Pages：https://kenter1643.github.io/TapePost/privacy.html ，直接填入表单即可（如改用自有域名，替换 privacy_policy_url 并同步更新页面）",
     "上传 128×128 图标之外的 3 张截图与 440×280 宣传图；建议替换为真机截图",
-    "勾选数据使用声明：不收集个人数据、无远程代码、无第三方分析；但「是否将数据传出设备」必须选「是」—— 用户切到 API 模式时扩展会向 xAI 发送文字/链接；默认页面模式不发 AI 请求，详见 data_use_disclosure",
+    "勾选数据使用声明：不收集个人数据、无远程代码、无第三方分析；但「是否将数据传出设备」必须选「是」—— 用户切到 API 模式时扩展会向 xAI 发送文字/链接；默认站内直连由 X 页面向 X/Grok 发送请求，详见 data_use_disclosure",
     "保存草稿并预览，确认无误后点「Submit for review」",
-    "审核通常 1–3 个工作日；被要求补充权限说明时，直接引用 permission_justifications",
-    "在「数据使用」页如实披露 xAI Grok 为第三方 AI 服务，并确认隐私政策链接指向 1.4.2 最新版（含 AI 章节、站内直连数据流向、回复框回写与连接自愈说明）"
-  ]
+    "首次上架因「新开发者 + 新扩展 + https://*/* 宽泛主机权限」会进入 in-depth review，通常数天到 3 周（不是 1–3 天）；超过 3 周再联系 developer support",
+    "在「数据使用」页如实披露 xAI Grok 为第三方 AI 服务，并确认隐私政策链接指向 1.4.2 最新版（含 AI 章节、站内直连数据流向、回复框回写与连接自愈说明）",
+    "把 broad_host_permission_justification 粘到 Privacy 页主机访问理由 / Reviewer notes，说明 https://*/* 默认不授予、仅按单一网关域名动态申请"
+  ],
+  "broad_host_permission_justification": "关于 optional_host_permissions 中的 https://*/*：该权限默认不授予、安装时不生效，唯一用途是支持「自定义 xAI 兼容网关」这一可选功能。用户在设置里手动输入一个网关域名并点「允许网关域名」后，扩展调用 chrome.permissions.request({origins:[\"https://该域名/*\"]}) 只申请这一个域名，用户可随时在 chrome://extensions 的站点访问权限里撤回。扩展从不主动遍历、注入或读取所有 https 站点：content_scripts 的 matches 是 7 个站点的固定白名单，host_permissions 是 26 条具体域名；运行时不申请、不使用全量 https://*/* 权限，也不读取浏览历史、Cookie 或其它标签页。若审核方认为该声明仍过宽，可直接移除此可选功能并删除该权限——核心功能（7 站转发、免 Key AI 评论、生态核验）不受影响。",
+  "review_warning_note": "Dashboard 上传后提示「Due to the Host Permission, your extension may require an in-depth review which will delay publishing」属警告而非失败，可继续填写并提交审核。触发项为 optional_host_permissions 中的 https://*/*（官方 review-process 文档明确列为 broad host permission）；此外首次上架本身属「新开发者 + 新扩展」，26 条 host_permissions、downloads 权限与约 400KB 源码也会进入人工审核。预计审核从常见 1–3 天延长到数天至 3 周，超过 3 周可联系 developer support。建议在 Privacy 页的主机访问理由与 Reviewer notes 里粘贴 broad_host_permission_justification，逐项说明理由可显著减少来回补件。"
 }
