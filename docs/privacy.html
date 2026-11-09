@@ -39,10 +39,10 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　适用版本：1.4.2 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 9 日（明确 1.4.2 站内直连的数据流向与认证凭证读取范围）　｜　适用版本：1.4.2 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
-    <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能有两种模式</strong>：默认的「X 站内 Grok」模式不调用任何 AI 接口、不需要 API Key，只把提示词填进你已登录的 X 站内 Grok 页面并读回回答文本（这段对话由 X 提供，受 X 的条款约束）；只有你主动切换到「xAI API」模式并填写自己的 Key 时，扩展才会把你点选的文字或链接、连同设定提示词发送给 xAI。不使用 AI 功能时不会发起任何相关请求。
+    <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」模式并填写自己的 Key 时，接收方才改为 xAI。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。
   </div>
 
   <h2>1. 我们会处理哪些数据</h2>
@@ -54,7 +54,8 @@
     <li>你在生态面板输入框里粘贴的待核验链接；</li>
     <li>页面 DOM 结构（用于定位正文、内容图与插入按钮）。</li>
   </ul>
-  <p>扩展不会读取与你正在操作的内容无关的标签页，不会读取密码、Cookie、表单输入或浏览历史，也不会上传图片或视频文件。</p>
+  <p>扩展不会读取与你正在操作的内容无关的标签页，不会读取密码、表单输入，不建立浏览历史（访问列表 / 页面标题 / 访问时间）记录，也不会上传图片或视频文件。</p>
+  <p><strong>认证凭证（如实披露）：</strong>仅在「X 站内直连」模式下，页面内脚本会读取 X 的 <code>ct0</code> 认证 Cookie（用作 <code>x-csrf-token</code>），并通过轻量包装 <code>window.fetch</code> 观察 X 自身请求头中的 <code>authorization</code> bearer 与 <code>x-client-transaction-id</code>，用于把 Grok 请求发回 X 自己。这些值只存在于该 X 页面的内存变量中，<strong>不写入 <code>chrome.storage</code> / <code>localStorage</code>、不导出、不上传给开发者或任何第三方</strong>，接收方始终只有 X/Grok；扩展不读取你的密码、PIN 或安全问题。因官方把 authentication cookies 归入「Authentication information」，且本地处理同样需要披露，商店 Privacy practices 中已勾选该项，并同时勾选「User activity」（fetch 请求头观察）与「Website content」。</p>
 
   <h2>2. 数据存到哪里</h2>
   <ul>
@@ -71,27 +72,27 @@
   <p><strong>AI 链路（仅主动使用时）：</strong>见下节。</p>
   <p>扩展没有分析、广告或跟踪代码，没有远程加载的脚本，也不连接开发者自建的服务器。</p>
 
-  <h2>4. AI 功能：两种运行模式</h2>
+  <h2>4. AI 功能：运行模式与数据流向</h2>
   <div class="box">
-    <p style="margin-top:0">两个由你手动触发的 AI 功能（X 一键评论、链接真伪查询）支持两种运行模式，可在设置里选择；默认「自动」：<strong>填了 Key 走 API，没填就走 X 站内 Grok</strong>。</p>
+    <p style="margin-top:0">两个由你手动触发的 AI 功能（X 一键评论、链接真伪查询）支持「自动（默认）／站内直连／xAI API／页面模式（1.4.0 起已弃用，仅手动兜底）」。默认「自动」在<strong>未填 API Key 时走 1.4.2 的站内直连</strong>：由 X 页面自身向 X 自有的 Grok 接口发请求；<strong>填了 Key 才走 xAI API</strong>。</p>
     <p><strong>① API 模式（xAI Grok）</strong>：需要你自己的 xAI API Key，扩展后台才会向 <code>https://api.x.ai/v1</code>（或你自填的兼容网关）发起请求：</p>
     <ul>
       <li><strong>X 一键评论</strong>：点击后把该条推文的正文 + 你设定的评论提示词发送给 <code>https://api.x.ai/v1</code>（或你在设置里填写的兼容网关），由 Grok 生成 3 条回复候选。候选只显示在本机浮层里；选中后才写入当前 X 回复框（1.3.1 起按钮位于回复填写区右侧，写入是页面内 DOM 操作，不产生新的网络请求），发送由你手动完成。</li>
       <li><strong>链接真伪查询</strong>：点击核验后把待核验链接 + 插件本地比对得出的结论 + 与本次判定相关的少量清单条目 + 你设定的核验提示词发送给同一接口，由 Grok 生成解释与仿冒风险判断。最终是否给绿标由本地清单决定，不采信模型结论。</li>
     </ul>
-    <p><strong>② X 站内 Grok 模式（1.3.0 新增，免 API Key）</strong>：扩展<strong>不向 xAI 或任何 AI 接口发送网络请求</strong>，也不读取、保存或传输你的 X 登录凭据。它只在你已登录的 <code>x.com/i/grok</code>（或 X 页面上的 Grok 浮窗）里，把设定好的提示词填入输入框、按需点击发送，并从该页面读取 Grok 回答的文本，在本机解析成评论候选或核验结论。必要时会复用已打开的 X 标签，或在后台新开一个 Grok 标签（不抢焦点）。<strong>与 Grok 的对话由 X 自己完成并保存在你的 X 账号里，受 X 的服务条款与隐私政策约束</strong>；扩展不读取你的对话历史、其它标签页或账号信息。此模式不产生 API 调用费用，但受 X 账号的 Grok 使用权限与额度限制。</p>
+    <p><strong>② 页面模式（1.3.0 引入，1.4.0 起已弃用，仅作手动兜底）</strong>：扩展<strong>不向 xAI 或任何 AI 接口发送网络请求</strong>，也不读取 X 登录凭据。它只在你已登录的 <code>x.com/i/grok</code>（或 X 页面上的 Grok 浮窗）里，把设定好的提示词填入输入框、按需点击发送，并从该页面读取 Grok 回答的文本，在本机解析成候选。<strong>与 Grok 的对话由 X 自己完成并保存在你的 X 账号里</strong>，受 X 的服务条款与隐私政策约束；扩展不读取你的对话历史、其它标签页或账号信息。仅当你显式切到该模式、或站内直连与 API 都不可用时使用；此模式不产生 API 调用费用。</p>
     <p>若自动发送或读取失败，可改用手动流程：插件只把提示词填进输入框 / 复制到剪贴板，由你自己粘贴发送，回答出来后再点「读取 Grok 回答」。所有 DOM 选择器都可在设置里修改。</p>
     <p><strong>1.3.2 起的结果校验：</strong>页面模式会用唯一任务标记确认提示词确实只写进了 Grok 输入框、确实被发送，并确认读回了回答块；任一环节不成立就明确报错，不会把 X 页面的侧栏文字或按钮文字当作 Grok 结果展示。点击后出现的等待浮层只显示进度与耗时，不上传任何数据；Grok 回答文本的解析全部在本机完成。</p>
     <p><strong>1.4.2 起的认证修复与同页通道复用：</strong>若用户在同一 X 页面另行安装了 X Viral Monitor，扩展可能优先调用它已暴露在页面内的 Grok 生成函数；该调用仍发生在用户本机浏览器里，请求接收方仍只有 X / Grok（同为 <code>grok.x.com/2/grok/add_response.json</code>，发送提示词与推文正文），不新增第三方接收方、不新增网络请求类型、不把会话或内容回传给 TapePost 服务器或该插件开发者，扩展后台仍只接收 3 条文本候选。401 / 403 时扩展会读取 X 返回的错误说明用于本机排错，并可能用 X 网页客户端公开 bearer 重试一次；错误说明只在本机显示，不上传。</p>
     <p><strong>1.4.1 起的运行模式自动纠正：</strong>旧版可能把「X 站内 Grok」保存为已弃用的「页面模式」，导致站内直连不生效。1.4.1 会在设置面板与后台读取配置时把该旧值按「自动 · 优先站内直连」处理，并可选择一次性写回本机设置（仅修改运行模式这一项，并写入一个一次性标记，用户之后主动选择不会被覆盖）。该过程完全在本机完成，不新增网络请求、不上传任何数据；对 X/Grok 的数据流向与本页 1.4.0 段落所述一致。</p>
-    <p><strong>1.4.0 起的站内直连（请重点阅读）：</strong>「自动 / 站内直连」模式下，AI 评论与链接核验会以你当前已登录的 X 会话，从 X 页面直接向 X 自有的 Grok 接口 <code>grok.x.com/2/grok/add_response.json</code> 发送「提示词 + 你选中的推文正文或待核验链接」。随请求发送的是浏览器自动附带的 X 会话 Cookie 与 X 网页客户端固定请求头（含 <code>ct0</code>、<code>authorization</code>、<code>x-client-transaction-id</code>）；签名在你本机页面内由 X 自带模块生成，<strong>不经过 TapePost 服务器、插件后台或任何第三方</strong>，扩展后台只接收生成的 3 条文本候选。数据接收方仅为 X / Grok，受 X 的条款与隐私政策约束；对话被设为临时对话（<code>isTemporaryChat</code>），不写入你的 Grok 历史。若你填写 API Key 并切到「xAI API」模式，接收方改为 xAI（<code>api.x.ai</code>）；若使用旧的「页面模式」，对话发生在 X 页面内，扩展自身不新增网络请求。插件不读取、不存储、不回传你的 X 密码或登录凭据，也不做遥测。</p>
+    <p><strong>1.4.0 起的站内直连（请重点阅读）：</strong>「自动 / 站内直连」模式下，AI 评论与链接核验会以你当前已登录的 X 会话，从 X 页面直接向 X 自有的 Grok 接口 <code>grok.x.com/2/grok/add_response.json</code> 发送「提示词 + 你选中的推文正文或待核验链接」。随请求发送的是浏览器自动附带的 X 会话 Cookie 与 X 网页客户端固定请求头（含 <code>ct0</code>、<code>authorization</code>、<code>x-client-transaction-id</code>）；签名在你本机页面内由 X 自带模块生成，<strong>不经过 TapePost 服务器、插件后台或任何第三方</strong>，扩展后台只接收生成的 3 条文本候选。数据接收方仅为 X / Grok，受 X 的条款与隐私政策约束；对话被设为临时对话（<code>isTemporaryChat</code>），不写入你的 Grok 历史。若你填写 API Key 并切到「xAI API」模式，接收方改为 xAI（<code>api.x.ai</code>）；若使用旧的「页面模式」，对话发生在 X 页面内，扩展自身不新增网络请求。插件不读取你的 X 密码，也不做遥测；但会在该 X 页面内读取 <code>ct0</code> 认证 Cookie 并观察 X 自身请求头中的 <code>authorization</code> bearer 以复用会话（仅页面内存、不存储、不导出、不回传给开发者或第三方，接收方仅 X 自己），详见第 1 节与第 5 节。</p>
     <p><strong>1.3.4 起的正文清洗（仅指清洗步骤本身）：</strong>回复框内的按钮去重、插件界面文字剥离、推文正文提取全部在页面内 DOM 完成，不涉及任何网络请求、不新增第三方接收方、不上传推文正文或页面内容；清洗后只剩界面文字时扩展会取消生成并在本机提示，不会把该内容发送给 Grok。</p>
     <p><strong>1.3.3 起的连接自愈：</strong>重新加载扩展后，插件可能刷新已打开的 X / Grok 标签，或在后台新建 <code>x.com/i/grok</code> 标签，以恢复失效的页面内脚本。刷新与新建标签均为浏览器本地操作，不会上传页面内容、推文正文、X 登录凭据或任何其它数据，也没有新增第三方接收方；连接错误只在本机转成中文提示，不回传诊断信息。</p>
     <p>生态面板的 295 条收录清单是<strong>内置在扩展里的静态数据</strong>：运行时不会访问 tapeout.link 或 web.tapeout.link 拉取清单，也不会把整份清单上传给 xAI；核验时只发送你输入的链接、本地结论和上述少量相关条目。</p>
-    <p><strong>不会发送：</strong>浏览历史、Cookie、X 登录态、其它标签页内容、图片/视频文件、你的账号密码，以及除 API Key 之外的任何凭据。页面模式同样不会把回答文本上传给任何服务器 —— 解析全部在本机完成。</p>
-    <p><strong>第三方责任：</strong>API 模式下发送给 xAI 的内容受 <a href="https://x.ai/legal/privacy-policy">xAI 的隐私政策</a>与其服务条款约束，调用额度与费用由你自行承担；若填写第三方兼容网关，该网关运营方同样会收到内容，请先确认你信任它。页面模式下，提示词与回答由 X 处理，受 <a href="https://x.com/privacy">X 的隐私政策</a>与服务条款约束。扩展开发者在任何模式下都不接收、不留存这些内容。</p>
+    <p><strong>不会发送给开发者或任何第三方：</strong>浏览历史、其它标签页内容、图片/视频文件、账号密码、个人信息，以及认证凭证的副本或日志。<strong>需要区分的是</strong>：站内直连的请求由浏览器自动携带 X 会话 Cookie 与请求头（含 <code>ct0</code>、<code>authorization</code>）发给 <strong>X 自己</strong>（接收方仅 X/Grok），这是 X 网页客户端发请求的正常行为；扩展不存储、不导出、不回传这些值，也不会把它们发给除 X 之外的任何一方。页面模式同样不会把回答文本上传给任何服务器 —— 解析全部在本机完成。</p>
+    <p><strong>第三方责任：</strong>API 模式下发送给 xAI 的内容受 <a href="https://x.ai/legal/privacy-policy">xAI 的隐私政策</a>与其服务条款约束，调用额度与费用由你自行承担；若填写第三方兼容网关，该网关运营方同样会收到内容，请先确认你信任它。站内直连与页面模式下，提示词与回答由 X 处理，受 <a href="https://x.com/privacy">X 的隐私政策</a>与服务条款约束。扩展开发者在任何模式下都不接收、不留存这些内容。</p>
   </div>
-  <p>你可以在设置面板里切换运行模式、删除 API Key、关闭「自动发送」或关闭「AI 评论」按钮。删除 Key 后 AI 功能会自动改用 X 站内 Grok 模式；只使用「一键转发」时扩展完全离线可用。页面模式需要 Chrome 已登录 x.com 且账号可用 Grok。</p>
+  <p>你可以在设置面板里切换运行模式、删除 API Key、关闭「自动发送」或关闭「AI 评论」按钮。删除 Key 后 AI 功能会自动改用 1.4.2 的站内直连；只使用「一键转发」时扩展完全离线可用。站内直连需要 Chrome 已登录 x.com 且账号具备 Grok 权限。</p>
 
   <h2>5. 权限说明</h2>
   <div class="box">
@@ -103,8 +104,9 @@
     <tr><td>offscreen</td><td>创建离屏文档，在后台用 Canvas 处理图片并写入剪贴板</td></tr>
     <tr><td>declarativeNetRequest</td><td>为图片 CDN 请求设置 Referer，避免防盗链导致下载失败；固定 9 条规则，不拦截其它流量</td></tr>
     <tr><td>站点主机权限</td><td>仅在你打开的 7 个已启用站点页面上识别内容、注入按钮并读取配图</td></tr>
-    <tr><td><code>api.x.ai</code> 主机权限</td><td>仅在 API 模式下、你主动使用 AI 功能时，向 xAI 官方接口发送生成请求；页面模式完全不用它</td></tr>
-    <tr><td>X 站点主机权限 / 内容脚本</td><td>页面模式下仅在你已打开的 X 页面上定位 Grok 输入框、填入提示词并读取回答文本；不读取登录态、不发 AI 请求</td></tr>
+    <tr><td><code>api.x.ai</code> 主机权限</td><td>仅在 API 模式下、你主动使用 AI 功能时，向 xAI 官方接口发送生成请求；站内直连与页面模式都不用它</td></tr>
+    <tr><td>X 站点主机权限 / 内容脚本</td><td>在你已打开的 X 页面上注入「一键转发 / AI 评论」按钮；站内直连时由 X 页面自身向 X 自有 Grok 接口发请求，并在该页面内读取 <code>ct0</code> 与 <code>authorization</code> 以复用会话（仅内存、不存储不导出，接收方仅 X 自己）；页面模式下仅定位 Grok 输入框与读取回答文本</td></tr>
+    <tr><td>认证 Cookie / bearer（页面内读取）</td><td>仅在站内直连时于 X 页面内存中读取并随请求发回 X 自己；不写入任何持久化存储、不上传给开发者或第三方，详见第 1 节</td></tr>
     <tr><td>可选主机权限（默认未授予）</td><td>仅当你在设置里填写自定义网关并主动点「允许网关域名」时，才申请该域名的访问权</td></tr>
   </table>
   </div>
@@ -119,7 +121,7 @@
   <h2>8. 变更与联系</h2>
   <p>如政策有实质变更，我们会更新本页并同步提升扩展版本号。本项目源码公开，可自行审计数据处理逻辑：<a href="https://github.com/kenter1643/TapePost">github.com/kenter1643/TapePost</a>。如需咨询或反馈，请在 <a href="https://github.com/kenter1643/TapePost/issues">GitHub Issues</a> 提交，或通过 Chrome 网上应用店该扩展页面的「支持 / 开发者联系方式」渠道联系开发者。</p>
 
-  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · Grok 默认免 Key 走 X 站内模式　｜　Last updated: 2026-11-08</footer>
+  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · Grok 默认免 Key 走 X 站内模式　｜　Last updated: 2026-11-09</footer>
 </div>
 </body>
 </html>
