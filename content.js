@@ -34,7 +34,11 @@ const SETTINGS_DEFAULT = {
   appendSource: false,           // X 来源时是否在正文末尾附上原推文链接（默认关闭）
   enableAiComment: true,         // X 回复填写区右侧是否显示「AI 评论」按钮
   replyInputSelector: '',        // X 改版时可覆盖回复框选择器（留空用 sites.js 内置）
-  enabledSites: {}               // 各站点开关；默认全部启用（值为 false 才关闭）
+  enabledSites: {},              // 各站点开关；默认全部启用（值为 false 才关闭）
+  // 1.4.3：临时文件 / 落盘策略
+  autoDownloadBackup: false,     // 转发时自动下载图片备份（默认关：图片走剪贴板不落盘）
+  tmpCleanup: true,              // 必要的临时文件（视频 / 手动下载）到期自动清理
+  tmpKeepMinutes: 30             // 保留时长（分钟），0 = 不自动清理
 };
 let settings = Object.assign({}, SETTINGS_DEFAULT);
 
@@ -962,7 +966,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.2';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.3';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1703,13 +1707,17 @@ async function handleResult(msg) {
     copyErr = fb.ok ? '' : fb.error;
   }
 
-  // 图片下载兜底：多图时其余下载；剪贴板没带上首图时首图也下载
   const firstImageInClipboard = clipboardOk && clipboardMedia === 'image';
-  if (b64List.length > 1) {
-    const toDownload = firstImageInClipboard ? b64List.slice(1) : b64List;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', images: toDownload }).catch(() => {});
-  } else if (b64List.length === 1 && !firstImageInClipboard) {
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', images: b64List }).catch(() => {});
+  /* 1.4.3：默认不落盘。图片优先走剪贴板 / 托盘逐张复制；
+   * 只有用户显式开启「自动下载备份」时才在转发时额外下载，
+   * 且这些文件统一进 TapePost_tmp/ 并按保留时长自动清理。 */
+  if (settings.autoDownloadBackup) {
+    if (b64List.length > 1) {
+      const toDownload = firstImageInClipboard ? b64List.slice(1) : b64List;
+      chrome.runtime.sendMessage({ type: 'DOWNLOAD', images: toDownload }).catch(() => {});
+    } else if (b64List.length === 1 && !firstImageInClipboard) {
+      chrome.runtime.sendMessage({ type: 'DOWNLOAD', images: b64List }).catch(() => {});
+    }
   }
 
   // 文字始终预填进 X（最可靠）；剪贴板只放媒体，Ctrl+V 贴图不会带出重复文字
@@ -1732,18 +1740,20 @@ async function handleResult(msg) {
       : '已打开 X（文字已预填）。');
   if (firstImageInClipboard) tip += ' 干净首图已复制到剪贴板，Ctrl+V 贴入即可。';
   else if (clipboardOk && clipboardMedia === 'video') tip += ' 视频已写入剪贴板，可在 X 里 Ctrl+V 试试。';
-  else if (images.length) tip += ` 图片自动复制失败（${copyErr || '剪贴板不可用'}），请点「📋 复制图片到剪贴板」按钮，或用下载的文件拖入 X。`;
+  else if (images.length) tip += ` 图片自动复制失败（${copyErr || '剪贴板不可用'}），请点「📋 复制图片到剪贴板」，或点托盘「下载到临时目录」。`;
 
   if (images.length === 1 && !firstImageInClipboard) {
-    tip += ' 首图已下载到本地下载目录，请拖入 X 发布框。';
+    tip += settings.autoDownloadBackup
+      ? ' 首图已存入临时目录，请拖入 X（到期自动清理）。'
+      : ' 需要本地文件时点浮层按钮下载到临时目录。';
   }
   // 数量诊断：识别到几张、成功几张，多图漏采/下载失败一眼可见
   if (results.length) tip += ` 内容图 ${results.length} 张 → 干净图 ${images.length} 张。`;
   if (results.length > 1 && images.length <= 1) {
-    tip += '（只采到 1 张：微博多图可能还在懒加载，往下滚一下再点，或用托盘的「全部下载」取本地文件）';
+    tip += '（只采到 1 张：往下滚一下再点，或用托盘「下载到临时目录」取文件）';
   }
   if (video) {
-    if (video.ok) tip += ` 视频已下载（${video.filename || 'mp4'}，${video.source || '原片'}），请拖入 X 发布框。`;
+    if (video.ok) tip += ` 视频已存入临时目录（${video.source || '原片'}），请拖入 X；到期自动清理。`;
     else tip += ` 视频处理失败：${video.error || '未知原因'}。`;
   }
   if (!opened && !multi) tip += '（X 弹窗被拦截/打不开，已尝试把文字复制到剪贴板）';
@@ -1752,7 +1762,7 @@ async function handleResult(msg) {
     tip += ` 去水印：${wmDone} 张已处理${wmSkip ? `、${wmSkip} 张未检测到水印（原图保留）` : ''}。`;
   }
   if (failed) tip += `（${failed} 张图获取失败${failReason ? '：' + failReason : ''}）`;
-  if (multi) tip += ' 其余图也已下载备份。';
+  if (multi && settings.autoDownloadBackup) tip += ' 其余图也已存入临时目录。';
   // 把实际转发走的文字回显出来：一旦作者信息/话题尾巴又混进来，点一次就能看见
   const bodyPreview = text ? (text.length > 42 ? text.slice(0, 42) + '…' : text) : '（无正文）';
   showToast(tip + '\n转发正文：' + bodyPreview, 9000);
@@ -1857,7 +1867,7 @@ function showGallery(text, images, b64List, xUrl) {
 
   const tip = document.createElement('div');
   tip.className = 'wbx-g-tip';
-  tip.textContent = '① 点「复制第 N 张」或「拼成长图」→ ② 点上方蓝色按钮打开 X → ③ 在发布框 Ctrl+V。一条推文最多 4 张，超过请用长图。';
+  tip.textContent = '① 复制第 N 张 / 拼长图 → ② 打开 X → ③ Ctrl+V。默认不落盘；需要文件才点「下载到临时目录」，到期自动清理。';
   panel.appendChild(tip);
 
   const list = document.createElement('div');
@@ -1883,7 +1893,7 @@ function showGallery(text, images, b64List, xUrl) {
         setTimeout(() => { b.textContent = '复制第 ' + (i + 1) + ' 张'; }, 2500);
       } catch (e) {
         b.textContent = '❌ 失败';
-        showToast('复制失败：' + (e && e.message || e) + '，请改用「全部下载」后拖入 X');
+        showToast('复制失败：' + (e && e.message || e) + '，请改用「下载到临时目录」');
       }
     });
     item.appendChild(img);
@@ -1905,17 +1915,29 @@ function showGallery(text, images, b64List, xUrl) {
       showToast(`${images.length} 张已拼成一张长图并复制：点「打开 X 发推」后按 Ctrl+V 一次贴上。`);
       setTimeout(() => { collage.textContent = '拼成长图并复制'; }, 3000);
     } catch (e) {
-      showToast('拼图失败：' + (e && e.message || e) + '，请改用逐张复制或下载的文件');
+      showToast('拼图失败：' + (e && e.message || e) + '，请改用逐张复制或临时目录');
     }
   });
   const dl = document.createElement('button');
-  dl.textContent = '全部下载';
+  dl.textContent = '下载到临时目录';
   dl.addEventListener('click', () => {
     try { chrome.runtime.sendMessage({ type: 'DOWNLOAD', images: b64List }).catch(() => {}); } catch (e) {}
-    showToast(`已把 ${b64List.length} 张干净图下载到下载目录。`);
+    showToast(`已存 ${b64List.length} 张到临时目录，到期自动清理。`);
+  });
+  const clean = document.createElement('button');
+  clean.textContent = '🧹 清理临时文件';
+  clean.addEventListener('click', () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'TMP_CLEAN' }, (r) => {
+        showToast(r && r.ok
+          ? `已清理 ${r.removed || 0} 个文件${r.remaining ? `，剩 ${r.remaining} 个` : '，本机无残留'}`
+          : '清理失败，请在设置面板重试');
+      });
+    } catch (e) { showToast('清理失败，请在设置面板重试'); }
   });
   actions.appendChild(collage);
   actions.appendChild(dl);
+  actions.appendChild(clean);
   panel.appendChild(actions);
 
   document.body.appendChild(panel);
@@ -1934,7 +1956,7 @@ function showCopyButton(text, images) {
       b.textContent = '✅ 已复制，切到 X 按 Ctrl+V';
       setTimeout(() => b.remove(), 3000);
     } else {
-      b.textContent = '❌ 仍失败：' + fb.error + '，请用下载的文件';
+      b.textContent = '❌ 仍失败：' + fb.error + '，请在设置里开启自动下载';
     }
   });
   document.body.appendChild(b);

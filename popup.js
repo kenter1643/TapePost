@@ -22,7 +22,11 @@ const DEFAULTS = Object.assign({
   commentPrompt: '',       // 空 = 用 grok.js 内置默认提示词
   verifyPrompt: '',
   enabledSites: {},
-  grokModeMigrated141: false  // 1.4.1：旧 page 设置只自动升级一次
+  grokModeMigrated141: false, // 1.4.1：旧 page 设置只自动升级一次
+  // 1.4.3：临时文件策略
+  autoDownloadBackup: false,  // 转发时自动下载图片备份（默认关）
+  tmpCleanup: true,           // 到期自动清理
+  tmpKeepMinutes: 30          // 0 = 不自动清理
 }, PAGE_DEFAULTS);
 
 // 页面模式的文本配置项；选择器全部可改，X 改版时不用升版本
@@ -136,6 +140,12 @@ function load() {
     document.getElementById('sig').checked = !!s.appendSignature;
     const source = document.getElementById('source');
     if (source) source.checked = !!s.appendSource;
+    const autoDl = document.getElementById('tmpAutoDownload');
+    if (autoDl) autoDl.checked = !!s.autoDownloadBackup;
+    const tmpClean = document.getElementById('tmpCleanup');
+    if (tmpClean) tmpClean.checked = s.tmpCleanup !== false;
+    const keep = document.getElementById('tmpKeepMinutes');
+    if (keep) keep.value = String(s.tmpKeepMinutes == null ? 30 : s.tmpKeepMinutes);
     document.getElementById('domain').value = s.xDomain || 'x.com';
     const ai = document.getElementById('aiComment');
     if (ai) ai.checked = s.enableAiComment !== false;
@@ -192,6 +202,9 @@ function save() {
     inpaintVideo: document.getElementById('videoWm').checked,
     appendSignature: document.getElementById('sig').checked,
     appendSource: !!(document.getElementById('source') || {}).checked,
+    autoDownloadBackup: !!(document.getElementById('tmpAutoDownload') || {}).checked,
+    tmpCleanup: !!(document.getElementById('tmpCleanup') || {}).checked,
+    tmpKeepMinutes: Number((document.getElementById('tmpKeepMinutes') || {}).value || 0),
     enableAiComment: !!(document.getElementById('aiComment') || {}).checked,
     replyInputSelector: (document.getElementById('replyInputSelector') || {}).value || '',
     commentPrompt: promptToStore('commentPrompt'),
@@ -415,6 +428,7 @@ const INFO = {
   versions: {
     title: '版本说明',
     lines: [
+      'v1.4.3 默认不落盘；临时文件到期自动清理。',
       'v1.4.2 修好直连 401 认证，可复用同页 XVM 通道。',
       'v1.4.1 旧「页面模式」设置自动升级为「自动」。',
       'v1.4.0 AI 评论改为直连 X 自带 Grok 接口。',
@@ -438,10 +452,21 @@ const INFO = {
       '一键转发：内容右上角点按钮，整理正文与配图成 X 草稿。',
       'AI 评论：先点推文「回复」，按钮在填写区右侧。',
       '选中候选会写回回复框，最后一步仍由你手动点「回复」。',
-      '多图弹托盘：逐张复制、拼长图或全部下载。',
+      '多图弹托盘：逐张复制、拼长图或下载到临时目录。',
       '去水印只在本机处理，检测不到水印的图片原样保留。',
       '生态面板：295 条内置清单核验链接，以本地结论为准。',
       'X 改版导致按钮不出现时，可填「回复框选择器」。'
+    ]
+  },
+  tmp: {
+    title: '临时文件',
+    lines: [
+      '1.4.3 起图片默认走剪贴板，转发不再自动落盘。',
+      '视频只能拖入 X，会存到下载目录的 TapePost_tmp/ 子目录。',
+      '托盘「下载到临时目录」也是同一位置，用完可点「🧹 清理」。',
+      '按保留时长自动删除文件与下载记录，默认 30 分钟。',
+      '扩展启动、新下载、打开设置时都会顺带清一次。',
+      '选「不自动清理」时，请手动点「立即清理临时文件」。'
     ]
   },
   privacy: {
@@ -477,6 +502,29 @@ document.querySelectorAll('[data-info]').forEach(function (btn) {
 });
 bind('infoClose', closeInfo);
 bind('infoOk', closeInfo);
+
+// 1.4.3：临时文件状态与立即清理
+function refreshTmpStatus() {
+  const el = document.getElementById('tmpStatus');
+  if (!el) return;
+  try {
+    chrome.runtime.sendMessage({ type: 'TMP_STATUS' }, (r) => {
+      el.textContent = (r && r.ok)
+        ? `当前记录 ${r.remaining || 0} 个临时文件（到期自动清理）`
+        : '临时文件：状态不可用';
+    });
+  } catch (e) { el.textContent = '临时文件：状态不可用'; }
+}
+bind('tmpCleanNow', () => {
+  try {
+    chrome.runtime.sendMessage({ type: 'TMP_CLEAN' }, (r) => {
+      const el = document.getElementById('tmpStatus');
+      if (el) el.textContent = (r && r.ok)
+        ? `已清理 ${r.removed || 0} 个文件，剩 ${r.remaining || 0} 个`
+        : '清理失败，请重试';
+    });
+  } catch (e) {}
+});
 if (infoMask) infoMask.addEventListener('click', function (e) {
   if (e.target === infoMask) closeInfo();
 });
@@ -485,3 +533,4 @@ document.addEventListener('keydown', function (e) {
 });
 
 load();
+refreshTmpStatus();

@@ -199,7 +199,9 @@ function makeChrome(name) {
             scenario.grokPreferNative === false ? { grokPreferNative: false } : {},
             scenario.grokPageAutoSubmit === false ? { grokPageAutoSubmit: false } : {},
             scenario.grokPageNewChat === false ? { grokPageNewChat: false } : {},
-            scenario.pagePromptExtra ? { pagePromptExtra: scenario.pagePromptExtra } : {});
+            scenario.pagePromptExtra ? { pagePromptExtra: scenario.pagePromptExtra } : {},
+            // 1.4.3：需要验证「自动下载备份」路径的场景，显式打开该开关
+            (scenario.__expect && scenario.__expect.download) ? { autoDownloadBackup: true } : {});
           // 1.4.1 迁移用数组键读取；其余场景保持原来的「默认值 + 覆盖值」语义
           if (Array.isArray(keys)) {
             const store = scenario.storageSync || {};
@@ -2128,7 +2130,7 @@ function resetWorld() {
 
 async function runScenario(name, cfg, expect) {
   resetWorld();
-  scenario = cfg;
+  scenario = Object.assign({}, cfg, { __expect: expect });
   loadBackground();
   loadContent();
   note('TEST', `--- 场景：${name} ---`);
@@ -2269,7 +2271,7 @@ async function runScenario(name, cfg, expect) {
   const fallbackBtn = !!dom._nodes['wbx-copybtn'];
   const toastText = (dom._nodes['wbx-toast'] && dom._nodes['wbx-toast'].textContent) || '';
   const copyFailTip = toastText.includes('自动复制失败');
-  const videoTip = toastText.includes('视频已下载');
+  const videoTip = /视频已存入临时目录[^\n]*到期自动清理/.test(toastText);
   const videoFailTip = toastText.includes('视频处理失败');
 
   // CROSSPOST payload 里的 text = 真正被转发走的文字（已清洗）
@@ -2312,7 +2314,8 @@ async function runScenario(name, cfg, expect) {
     '首图剪贴板': expect.clipboard ? clipboard && validBytes : null,
     '图片字节完整': expect.clipboard ? validBytes : null,
     '剪贴板文字策略': clipboardTextOk,
-    '其余图下载': expect.download ? downloaded : null,
+    // 1.4.3：默认不落盘，未显式开启备份开关的场景必须没有 png 下载
+    '其余图下载': expect.download ? downloaded : !downloaded,
     '视频下载mp4': expect.videoDownloaded ? mp4Downloaded : null,
     '视频提示可见': expect.videoTip ? videoTip : null,
     '接口兜底': expect.videoApiFallback ? /fetch 公开接口 statuses\/show/.test(joined) : null,
@@ -2587,8 +2590,39 @@ async function runScenario(name, cfg, expect) {
       ok: briefShorts.length >= 6 && briefShorts.every((s) => s.length <= 26) },
     { name: '1.4.2 生态面板长说明改为折叠',
       ok: panelHtml.includes('查看分档说明') && !panelHtml.includes('绿标由插件本地内置清单精确比对得出') },
-    { name: '1.4.2 文案改动不变更版本号',
-      ok: read('manifest.json').includes('"version": "1.4.2"') }
+    { name: '1.4.2 文案精简不涉及扩展代码',
+      ok: !contentJs.includes('没有读到被回复推文的正文（') }
+  ];
+
+  // ---- v1.4.3：临时文件 / 默认不落盘 ----
+  const backgroundJs = read('background.js');
+  const offscreenJs = read('offscreen.js');
+  const manifestJson = JSON.parse(read('manifest.json'));
+  const tmpChecks = [
+    { name: '1.4.3 manifest 版本号已升',
+      ok: manifestJson.version === '1.4.3' },
+    { name: '1.4.3 默认关闭自动下载备份',
+      ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
+    { name: '1.4.3 图片下载统一进临时子目录',
+      ok: backgroundJs.includes("const TMP_DIR = 'TapePost_tmp'") && backgroundJs.includes('${TMP_DIR}/xpost_') },
+    { name: '1.4.3 视频下载也进临时子目录',
+      ok: offscreenJs.includes("'TapePost_tmp/xpost_'") },
+    { name: '1.4.3 后台具备 erase/removeFile 自动清理',
+      ok: backgroundJs.includes('async function purgeTmp') && backgroundJs.includes('chrome.downloads.erase') && backgroundJs.includes('chrome.downloads.removeFile') },
+    { name: '1.4.3 支持立即清理与状态查询',
+      ok: backgroundJs.includes("msg.type === 'TMP_CLEAN'") && backgroundJs.includes("'TMP_STATUS'") && contentJs.includes("type: 'TMP_CLEAN'") },
+    { name: '1.4.3 视频下载主动登记 downloadId',
+      ok: offscreenJs.includes("type: 'TMP_TRACK'") && backgroundJs.includes("msg.type === 'TMP_TRACK'") },
+    { name: '1.4.3 托盘提供下载与清理按钮',
+      ok: contentJs.includes("dl.textContent = '下载到临时目录'") && contentJs.includes("clean.textContent = '🧹 清理临时文件'") },
+    { name: '1.4.3 设置面板有临时文件选项',
+      ok: ['tmpAutoDownload','tmpCleanup','tmpKeepMinutes','tmpCleanNow','tmpStatus'].every((id) => popupHtml.includes('id="' + id + '"')) },
+    { name: '1.4.3 设置读写接入新键',
+      ok: popupJs.includes('autoDownloadBackup: !!(document.getElementById') && popupJs.includes('tmpKeepMinutes: Number(') && popupJs.includes('refreshTmpStatus()') },
+    { name: '1.4.3 未新增 manifest 权限',
+      ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
+    { name: '1.4.3 不再出现旧的「全部下载」按钮',
+      ok: !contentJs.includes("dl.textContent = '全部下载'") }
   ];
 
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
@@ -2604,7 +2638,8 @@ async function runScenario(name, cfg, expect) {
     .concat(await runNativeEndToEnd())
     .concat(await runAuth401Checks())
     .concat(await runModeMigrationChecks())
-    .concat(conciseChecks);
+    .concat(conciseChecks)
+    .concat(tmpChecks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

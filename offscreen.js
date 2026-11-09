@@ -139,7 +139,9 @@ async function fetchVideoBlob(url) {
 
 /* 视频不走消息总线（几十 MB 会撑爆 JSON），直接在离屏文档里下载 */
 async function downloadVideo(blob) {
-  const filename = 'xpost_' + Date.now() + '.mp4';
+  // 1.4.3：视频只能拖入 X（剪贴板不支持 mp4），统一放进临时子目录，
+  // background 通过 downloads.onCreated 登记并按保留时长自动清理。
+  const filename = 'TapePost_tmp/xpost_' + Date.now() + '.mp4';
   const url = URL.createObjectURL(blob);
   let apiErr = null;
   try {
@@ -147,13 +149,16 @@ async function downloadVideo(blob) {
     // 无法被下载服务解析，失败时退回离屏文档内的 <a download> 点击。
     if (chrome.downloads && chrome.downloads.download) {
       try {
-        await chrome.downloads.download({ url, filename, saveAs: false });
+        const id = await chrome.downloads.download({ url, filename, saveAs: false });
+        // onCreated 触发时 filename 可能还没定，这里主动登记最可靠
+        try { chrome.runtime.sendMessage({ type: 'TMP_TRACK', id: id, filename: filename }).catch(() => {}); } catch (e) {}
         return { ok: true, filename, bytes: blob.size || 0, via: 'downloads' };
       } catch (e) { apiErr = e; }
     }
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    // <a download> 不支持路径分隔，退回纯文件名；后台按 xpost_ 前缀仍会登记
+    a.download = filename.split('/').pop();
     document.body.appendChild(a);
     a.click();
     a.remove();

@@ -773,6 +773,97 @@ async function handleGrokMessage(msg, sender) {
   throw new Error('未知的 Grok 消息类型：' + msg.type);
 }
 
+
+// ---- 1.4.3：临时文件管理（尽量不在本机留下文件） ----
+/*
+ * 图片默认走剪贴板、不再自动下载；视频只能拖入 X，必须落盘。
+ * 所有必要的下载统一放进下载目录的 TapePost_tmp/ 子目录，记录 downloadId + 时间戳，
+ * 超过保留时长后 erase（磁盘文件与下载历史一起删）。
+ * 不新增任何权限：沿用已有的 downloads / storage；清理由「扩展启动 / 新下载 /
+ * 打开设置 / 用户点清理」这些事件顺带触发，Service Worker 被挂起也不会漏掉。
+ */
+const TMP_DIR = 'TapePost_tmp';
+const TMP_KEY = 'tapeTmpDownloads';
+const CLEANUP_DEFAULTS = { tmpCleanup: true, tmpKeepMinutes: 30 };
+
+async function getCleanupCfg() {
+  try {
+    const s = await chrome.storage.sync.get(CLEANUP_DEFAULTS);
+    const n = Number(s && s.tmpKeepMinutes);
+    return { enabled: !s || s.tmpCleanup !== false, minutes: Number.isFinite(n) ? Math.max(0, n) : 30 };
+  } catch (e) { return { enabled: true, minutes: 30 }; }
+}
+
+async function readTmpList() {
+  try {
+    const o = await chrome.storage.local.get(TMP_KEY);
+    return Array.isArray(o && o[TMP_KEY]) ? o[TMP_KEY] : [];
+  } catch (e) { return []; }
+}
+
+async function writeTmpList(list) {
+  try { await chrome.storage.local.set({ [TMP_KEY]: list.slice(-200) }); } catch (e) {}
+}
+
+async function trackTmp(id, name) {
+  if (id == null) return;
+  try {
+    const list = await readTmpList();
+    if (list.some((r) => r.id === id)) return;
+    list.push({ id: id, ts: Date.now(), name: String(name || '').split('/').pop() });
+    await writeTmpList(list);
+  } catch (e) {}
+}
+
+async function eraseTmpDownload(id) {
+  // erase() 同时删除磁盘文件与下载历史；老版本 Chrome 回退 removeFile()
+  try {
+    if (chrome.downloads && chrome.downloads.erase) {
+      await chrome.downloads.erase({ id: id });
+      return true;
+    }
+  } catch (e) {}
+  try {
+    if (chrome.downloads && chrome.downloads.removeFile) {
+      await chrome.downloads.removeFile(id);
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+async function purgeTmp(force) {
+  const cfg = await getCleanupCfg();
+  const list = await readTmpList();
+  if (!list.length) return { removed: 0, remaining: 0 };
+  const now = Date.now();
+  const keep = [];
+  let removed = 0;
+  for (const rec of list) {
+    const age = now - (rec.ts || 0);
+    const expired = !!force || (cfg.enabled && cfg.minutes > 0 && age >= cfg.minutes * 60000);
+    if (!expired) { keep.push(rec); continue; }
+    const ok = await eraseTmpDownload(rec.id);
+    if (ok) removed++;
+    // 文件已被用户手动删掉 / 记录失效时，不无限期重试（24 小时后丢弃记录）
+    else if (!force && age < 24 * 3600 * 1000) keep.push(rec);
+  }
+  await writeTmpList(keep);
+  return { removed: removed, remaining: keep.length };
+}
+
+// offscreen 里直接调 chrome.downloads.download（视频）时，用它兜底记录
+if (chrome.downloads && chrome.downloads.onCreated) {
+  chrome.downloads.onCreated.addListener((item) => {
+    if (!item || !item.filename) return;
+    const name = String(item.filename || '');
+    const base = name.split('/').pop();
+    // 主路径带 TapePost_tmp/ 前缀；<a download> 兜底只有 xpost_ 文件名
+    if (name.indexOf(TMP_DIR) === -1 && !/^xpost_/.test(base)) return;
+    trackTmp(item.id, name).catch(() => {});
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
 
@@ -857,24 +948,53 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 保持通道打开，异步 sendResponse
   }
 
-  // 来自 content script：下载处理后的图片（备份）。images 为 base64 字符串数组。
+  // 来自 content script：下载处理后的图片（可选备份 / 托盘手动下载）。
   // 注意：Service Worker 里没有 URL.createObjectURL（blob: URL 不可用），
-  // 直接用 data: URL 交给 downloads API，避免兜底下载静默失效。
+  // 直接用 data: URL 交给 downloads API，避免下载静默失效。
+  // 1.4.3：统一放进 TapePost_tmp/ 子目录并登记，便于按保留时长自动清理。
   if (msg.type === 'DOWNLOAD') {
     const list = msg.images || [];
-    // 批次随机后缀：自动下载 + 托盘「全部下载」可能在同一毫秒发生，避免同名覆盖
+    // 批次随机后缀：自动下载 + 托盘「下载到临时目录」可能在同一毫秒发生，避免同名覆盖
     const batch = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    list.forEach((b64, i) => {
-      try {
-        if (!b64 || !/^[A-Za-z0-9+/=]+$/.test(b64)) return;
-        chrome.downloads.download({
-          url: 'data:image/png;base64,' + b64,
-          filename: `xpost_${batch}_${i + 1}.png`,
-          saveAs: false
-        }).catch(() => {});
-      } catch (e) { /* ignore */ }
-    });
+    (async () => {
+      purgeTmp(false).catch(() => {});   // 每次新下载顺带清过期文件，不阻塞本次下载
+      for (let i = 0; i < list.length; i++) {
+        const b64 = list[i];
+        try {
+          if (!b64 || !/^[A-Za-z0-9+/=]+$/.test(b64)) continue;
+          const filename = `${TMP_DIR}/xpost_${batch}_${i + 1}.png`;
+          const id = await chrome.downloads.download({
+            url: 'data:image/png;base64,' + b64,
+            filename: filename,
+            saveAs: false
+          });
+          await trackTmp(id, filename);
+        } catch (e) { /* ignore */ }
+      }
+    })();
     try { sendResponse({ ok: true }); } catch (e) {}
+    return true;
+  }
+
+  // 1.4.3：离屏文档下载视频后主动登记（此时 downloadId 与文件名都已确定）
+  if (msg.type === 'TMP_TRACK') {
+    trackTmp(msg.id, msg.filename).catch(() => {});
+    try { sendResponse({ ok: true }); } catch (e) {}
+    return true;
+  }
+
+  // 1.4.3：设置面板「立即清理临时文件」/ 剩余文件数查询
+  if (msg.type === 'TMP_CLEAN' || msg.type === 'TMP_STATUS') {
+    (async () => {
+      try {
+        const out = (msg.type === 'TMP_CLEAN')
+          ? await purgeTmp(true)
+          : { removed: 0, remaining: (await readTmpList()).length };
+        try { sendResponse(Object.assign({ ok: true }, out)); } catch (e) {}
+      } catch (e) {
+        try { sendResponse({ ok: false, error: String(e && e.message || e), removed: 0, remaining: 0 }); } catch (e2) {}
+      }
+    })();
     return true;
   }
 
@@ -897,6 +1017,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
-chrome.runtime.onInstalled.addListener(() => { installRefererRules(); });
-chrome.runtime.onStartup.addListener(() => { installRefererRules(); });
+chrome.runtime.onInstalled.addListener(() => { installRefererRules(); purgeTmp(false).catch(() => {}); });
+chrome.runtime.onStartup.addListener(() => { installRefererRules(); purgeTmp(false).catch(() => {}); });
 installRefererRules();
+purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一次过期临时文件
