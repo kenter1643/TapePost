@@ -1254,12 +1254,19 @@ async function runStaleTabRecoveryChecks() {
 
 /* ---------- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ---------- */
 /* ---------- 1.4.0：站内直连 Grok（直接调 X 自带接口） ---------- */
-function makeNativeCtx() {
+function makeNativeCtx(opts) {
+  opts = opts || {};
+  const state = { fetchCalls: [], xvmCalls: [] };
   const g = {
     window: {
       addEventListener: () => {},
       postMessage: () => {},
-      fetch: () => Promise.resolve({ ok: true }),
+      fetch: (url, init) => {
+        state.fetchCalls.push({ url: String(url), init });
+        return typeof opts.fetch === 'function'
+          ? opts.fetch(state.fetchCalls.length, url, init)
+          : Promise.resolve({ ok: true });
+      },
       webpackChunk_twitter_responsive_web: []
     },
     document: { cookie: 'ct0=fake-ct0-token; other=1' },
@@ -1269,11 +1276,105 @@ function makeNativeCtx() {
     TextDecoder,
     DOMParser: function () {},
     setTimeout, clearTimeout,
-    console: { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
+    console: { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    __testState: state
   };
+  if (opts.xvmGrok) g.window.__xvmGrok = opts.xvmGrok(state);
+  if (opts.xvmNet) g.window.__xvmNet = opts.xvmNet(state);
+  if (opts.xvmXct) g.window.__xvmXct = opts.xvmXct(state);
   const ctx = vm.createContext(g);
   vm.runInContext(read('grok-native.js'), ctx, { filename: 'grok-native.js' });
   return ctx;
+}
+
+/* 1.4.2 真机事故回放：站内直连返回 HTTP 401。模拟 XVM 通道、实时 bearer、
+ * 401 响应体、公开 bearer 重试与自有签名器，锁住修复后的完整链路。 */
+async function runAuth401Checks() {
+  const checks = [];
+  const A = (name, ok) => checks.push({ name, ok: !!ok });
+  const run = (ctx, expr) => vm.runInContext(expr, ctx, { timeout: 5000 });
+  const NDJSON_OK = JSON.stringify({
+    result: {
+      sender: 'ASSISTANT',
+      message: '```\n回落候选一内容\n```\n```\n回落候选二内容\n```\n```\n回落候选三内容\n```',
+      messageTag: 'final'
+    }
+  }) + '\n';
+  const okRes = () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(NDJSON_OK) });
+  const errRes = () => Promise.resolve({
+    ok: false, status: 401, statusText: 'Unauthorized',
+    text: () => Promise.resolve('{"errors":[{"code":32,"message":"Could not authenticate you."}]}'),
+    body: { cancel: () => {} }
+  });
+  const fakeXct = () => ({ generateTxId: () => Promise.resolve('fake-tx-id-1234567890') });
+
+  try {
+    // A：页面里已装 XVM → 直接复用它稳定的通道，自有 fetch 完全不发
+    const xvmCtx = makeNativeCtx({
+      xvmGrok: (state) => ({ generate: (o) => {
+        state.xvmCalls.push(o);
+        return Promise.resolve(['认同并补充一点', '这个角度有意思', '想问下后续怎么走']);
+      } })
+    });
+    const borrowed = await run(xvmCtx, 'window.__tapeGrokNative.generate("【TapePost 任务开始】完整提示词")');
+    A('1.4.2 复用 XVM 通道并返回 3 条候选',
+      borrowed && borrowed.comments && borrowed.comments.length === 3 && borrowed.via === 'xvm-grok');
+    A('1.4.2 借用 XVM 时不再发自有直连请求', run(xvmCtx, '__testState.fetchCalls.length') === 0);
+    A('1.4.2 借用 XVM 时完整提示词原样透传',
+      /完整提示词/.test(run(xvmCtx, '__testState.xvmCalls[0].tweetText')));
+    A('1.4.2 借用 XVM 使用占位符透传模板',
+      run(xvmCtx, '__testState.xvmCalls[0].promptTemplate') === '[推文内容]');
+    A('1.4.2 状态报告能识别 XVM 通道', run(xvmCtx, 'window.__tapeGrokNative.status().hasXvmGrok') === true);
+
+    // B：XVM 抛错 → 安静回落到自有直连，仍能出结果
+    const fbCtx = makeNativeCtx({
+      xvmGrok: () => ({ generate: () => Promise.reject(new Error('XVM 未就绪')) }),
+      xvmXct: fakeXct, fetch: () => okRes()
+    });
+    const fallback = await run(fbCtx, 'window.__tapeGrokNative.generate("回落提示词")');
+    A('1.4.2 XVM 失败后回落自有直连', fallback && fallback.comments && fallback.comments.length === 3);
+
+    // C：实时 bearer 优先级与强制公开 bearer
+    const lbCtx = makeNativeCtx({ xvmNet: () => ({ getBearer: () => 'Bearer LIVE-XVM' }) });
+    const hLive = await run(lbCtx, 'window.__tapeGrokNative.buildHeaders("tx-fake-1234567890")');
+    const hPub = await run(lbCtx, 'window.__tapeGrokNative.buildHeaders("tx-fake-1234567890", true)');
+    A('1.4.2 优先使用 XVM 的实时 bearer', hLive.authorization === 'Bearer LIVE-XVM');
+    A('1.4.2 可强制切回 X 网页客户端公开 bearer', /^Bearer AAAA/.test(hPub.authorization));
+    A('1.4.2 公开 bearer 与实时 bearer 确实不同', hLive.authorization !== hPub.authorization);
+
+    // D：真机 401 → 读出 X 错误体并用公开 bearer 自动重试成功
+    const r401 = makeNativeCtx({ xvmXct: fakeXct, fetch: (n) => (n === 1 ? errRes() : okRes()) });
+    run(r401, 'window.__tapeGrokNative._remember("https://x.com/i/api/graphql", ' +
+      '{headers:{authorization:"Bearer STALE-HOOK"}})');
+    const healed = await run(r401, 'window.__tapeGrokNative.generate("401 提示词")');
+    A('1.4.2 401 后公开 bearer 重试成功并返回候选',
+      healed && healed.comments && healed.comments.length === 3 && healed.via === 'public-bearer');
+    A('1.4.2 401 确实触发了第二次请求', run(r401, '__testState.fetchCalls.length') === 2);
+    A('1.4.2 第一次用捕获 bearer、第二次用公开 bearer',
+      run(r401, '__testState.fetchCalls[0].init.headers.authorization') === 'Bearer STALE-HOOK' &&
+      /^Bearer AAAA/.test(run(r401, '__testState.fetchCalls[1].init.headers.authorization')));
+
+    // E：重试仍 401 → 错误里带 X 的真实返回体，不再笼统说「请重新登录」
+    const r401b = makeNativeCtx({ xvmXct: fakeXct, fetch: () => errRes() });
+    run(r401b, 'window.__tapeGrokNative._remember("https://x.com/i/api/graphql", ' +
+      '{headers:{authorization:"Bearer STALE-HOOK"}})');
+    let msg401 = '';
+    try { await run(r401b, 'window.__tapeGrokNative.generate("401 提示词")'); }
+    catch (e) { msg401 = String(e && e.message || e); }
+    A('1.4.2 401 错误带出 X 返回的真实原因', /Could not authenticate you/.test(msg401));
+    A('1.4.2 401 错误标明已尝试两种 bearer', /公开 bearer/.test(msg401) && /HTTP 401/.test(msg401));
+    A('1.4.2 401 不再用误导性的「请重新登录 X」结论', !/请重新登录 X 后刷新页面/.test(msg401));
+
+    // F：XVM 捕获的真实签名也能被自有链路复用
+    const txCtx = makeNativeCtx({ xvmGrok: () => ({ __capturedTxId: 'xvm-captured-tx-1234567890' }) });
+    A('1.4.2 能复用 XVM 捕获的 X-UI 真实签名',
+      run(txCtx, 'window.__tapeGrokNative.status().xvmCapturedTx') === true &&
+      run(txCtx, 'window.__tapeGrokNative.status().capturedTx') === true);
+  } catch (e) {
+    A('1.4.2 401 修复检查无异常抛出', false);
+    note('ERROR', '401 修复检查异常: ' + (e && e.message));
+  }
+  return checks;
 }
 
 async function runNativePureChecks() {
@@ -2470,6 +2571,7 @@ async function runScenario(name, cfg, expect) {
     .concat(await runStaleTabRecoveryChecks())
     .concat(await runNativePureChecks())
     .concat(await runNativeEndToEnd())
+    .concat(await runAuth401Checks())
     .concat(await runModeMigrationChecks());
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));

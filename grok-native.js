@@ -5,6 +5,12 @@
  *      这条脆弱链路，而是与 X 自己的网页客户端一样，直接调用 X 内置的
  *      Grok 流式接口 https://grok.x.com/2/grok/add_response.json。
  *
+ * 1.4.2 起，若同一 X 页面已安装 X Viral Monitor（window.__xvmGrok.generate），
+ *      优先复用它已验证稳定的直连通道；真机 401 出现在我们自有的认证链路上，
+ *      借用后不必重复实现 bearer / 签名的会话匹配。同时在自有链路里优先使用
+ *      XVM 的实时 bearer 与捕获签名，并在 401/403 时读出 X 的真实错误体、
+ *      用 X 网页客户端公开 bearer 自动重试一次。
+ *
  * 设计参考了本机已安装的 X Viral Monitor 的稳定实现，但代码独立：
  *   - 复用 X 页面自己的 webpack「ondemand.s」模块生成 x-client-transaction-id，
  *     签名算法随 X 前端更新，不需要硬编码或抓包；
@@ -36,6 +42,10 @@
 
   var originalFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
   var captured = { bearer: '', ct0: '', txId: '', txAt: 0, viaHook: false };
+  var lastSentTxId = '';
+  // XVM 的 renderPrompt 遇到只含占位符的模板时，会原样返回 tweetText。
+  // 我们的 prompt 已经拼好（含推文正文与格式要求），因此借用 XVM 时透传即可。
+  var XVM_PASSTHROUGH_TEMPLATE = '[推文内容]';
 
   // ---------------------------------------------------------------- 1. 请求头捕获
   function headerMap(init) {
@@ -105,8 +115,38 @@
     } catch (e) { return ''; }
   }
 
+  /* 1.4.2：X Viral Monitor 在同一 X 页面暴露 __xvmNet.getBearer()（它维护的
+   * 最新实时 bearer）与 __xvmGrok.__capturedTxId（从 X-UI 真实请求抓到的签名）。
+   * 两者都是 X 页面自己产生的值，优先复用比我们自己的 fetch 观察钩子更抗改版。
+   * 真机 401 正是自有钩子抓到的 bearer 与当前 X 会话不匹配。 */
+  function liveBearer() {
+    try {
+      if (window.__xvmNet && typeof window.__xvmNet.getBearer === 'function') {
+        var b = window.__xvmNet.getBearer();
+        if (b && /^Bearer /i.test(String(b))) return String(b);
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  function xvmCapturedTx() {
+    try {
+      if (window.__xvmGrok && typeof window.__xvmGrok.__capturedTxId === 'string' &&
+          window.__xvmGrok.__capturedTxId.length > TX_MIN_LEN) {
+        return window.__xvmGrok.__capturedTxId;
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  function hasXvmGrok() {
+    try { return !!(window.__xvmGrok && typeof window.__xvmGrok.generate === 'function'); }
+    catch (e) { return false; }
+  }
+
   function freshCapturedTx() {
-    return captured.txId && (Date.now() - captured.txAt) < TX_TTL_MS ? captured.txId : '';
+    var own = captured.txId && (Date.now() - captured.txAt) < TX_TTL_MS ? captured.txId : '';
+    return own || xvmCapturedTx();
   }
 
   // ---------------------------------------------------------------- 2. X 原生签名器
@@ -258,11 +298,15 @@
     }); }
   }
 
-  async function buildHeaders(txId) {
+  async function buildHeaders(txId, useDefaultBearer) {
     var ct0 = cookieValue('ct0') || captured.ct0;
     if (!ct0) throw new Error('没检测到 X 登录会话（ct0）。请先登录 X 并刷新页面。');
+    // 1.4.2：优先 XVM 的实时 bearer，其次自有钩子捕获值，最后才是公开 bearer。
+    // 401 时会用 useDefaultBearer=true 强制改回 XVM 的默认公开 bearer 再试一次。
+    var bearer = useDefaultBearer ? DEFAULT_BEARER
+      : (liveBearer() || captured.bearer || DEFAULT_BEARER);
     return {
-      authorization: captured.bearer || DEFAULT_BEARER,
+      authorization: bearer,
       'content-type': 'text/plain;charset=UTF-8',
       accept: '*/*',
       'x-csrf-token': ct0,
@@ -274,8 +318,9 @@
     };
   }
 
-  function send(body, txId) {
-    return buildHeaders(txId).then(function (headers) {
+  function send(body, txId, useDefaultBearer) {
+    lastSentTxId = String(txId || '');
+    return buildHeaders(txId, useDefaultBearer).then(function (headers) {
       return rawFetch()(ENDPOINT, { method: 'POST', headers: headers, body: body, credentials: 'include' });
     });
   }
@@ -400,6 +445,28 @@
     var res = null;
     var via = '';
 
+    // 0. 1.4.2：页面里已装 X Viral Monitor 时，直接复用它已验证稳定的站内
+    //    Grok 通道（同一端点、同一 X 会话，它自己维护实时 bearer 与捕获签名）。
+    //    真机 401 出现在我们自有的认证链路上，借用后无需重复实现。
+    if (hasXvmGrok()) {
+      try {
+        var out = await window.__xvmGrok.generate({
+          tweetText: String(prompt || ''),
+          promptTemplate: XVM_PASSTHROUGH_TEMPLATE,
+          temporaryChat: true
+        });
+        var list = (Array.isArray(out) ? out : [])
+          .map(function (s) { return String(s || '').trim(); })
+          .filter(function (s) { return s && !isNoise(s); });
+        if (list.length >= 3) {
+          return { comments: list.slice(0, 3), raw: list.slice(0, 3).join('\n'), via: 'xvm-grok' };
+        }
+        attempts.push('XVM 通道只返回 ' + list.length + ' 条候选');
+      } catch (e) {
+        attempts.push('XVM 通道：' + String(e && e.message || e));
+      }
+    }
+
     // A. 优先用 X 自己在 /i/grok 发请求时留下的真实签名
     if (capTx) {
       try {
@@ -447,17 +514,44 @@
         '。请刷新 X 页面；若仍失败，可到 x.com/i/grok 随便发一条消息让扩展抓到有效签名，或在设置里切回「页面模式」。');
     }
     if (!res.ok) {
+      var httpStatus = res.status;
+      if (httpStatus === 401 || httpStatus === 403) {
+        /* 1.4.2：真机 401 的根因是自有钩子抓到的 bearer 与当前 X 会话不匹配。
+         * 先把 X 返回的真实错误体读出来（例如 code 32 = Could not authenticate
+         * you），再用 XVM 默认的 X 网页客户端公开 bearer 原签名重试一次。 */
+        var detail = '';
+        try { detail = String(await res.text() || '').replace(/\s+/g, ' ').slice(0, 260); }
+        catch (e) { try { res.body && res.body.cancel && res.body.cancel(); } catch (e2) {} }
+        var canRetry = !!(liveBearer() || captured.bearer) && !!lastSentTxId;
+        if (canRetry) {
+          var retry = null;
+          try { retry = await send(body, lastSentTxId, true); }
+          catch (e) { attempts.push('公开 bearer 重试：' + String(e && e.message || e)); }
+          if (retry && retry.ok) {
+            var retryText = await readStream(retry);
+            var retryComments = extractComments(retryText);
+            if (retryComments.length) {
+              return { comments: retryComments, raw: String(retryText).slice(0, 1200), via: 'public-bearer' };
+            }
+            attempts.push('公开 bearer 重试已通但没解析出候选');
+          } else if (retry) {
+            try { retry.body && retry.body.cancel && retry.body.cancel(); } catch (e) {}
+          }
+        }
+        throw new Error('X 站内 Grok 拒绝认证（HTTP ' + httpStatus + '）' +
+          (detail ? '，X 返回：' + detail : '') +
+          '。已尝试实时 bearer 与 X 网页客户端公开 bearer' + (canRetry ? '（重试仍失败）' : '') +
+          '；请确认 X 已登录且账号可用 Grok，可到 x.com/i/grok 手动发一条消息后刷新重试。' +
+          (attempts.length ? ' 诊断：' + attempts.slice(-2).join('；') : ''));
+      }
       try { res.body && res.body.cancel && res.body.cancel(); } catch (e) {}
-      if (res.status === 404) {
+      if (httpStatus === 404) {
         captured.txId = '';
         resetGenerator();
         throw new Error('X 拒绝了本次 Grok 签名（404）。请刷新 X 页面后重试；持续失败请在设置里切到「页面模式」。');
       }
-      if (res.status === 401 || res.status === 403) {
-        throw new Error('X 会话已失效或账号暂无 Grok 权限（HTTP ' + res.status + '）。请重新登录 X 后刷新页面。');
-      }
-      if (res.status === 429) throw new Error('X 站内 Grok 触发限流（429），稍等一两分钟再试。');
-      throw new Error('X 站内 Grok 请求失败：HTTP ' + res.status + ' ' + (res.statusText || ''));
+      if (httpStatus === 429) throw new Error('X 站内 Grok 触发限流（429），稍等一两分钟再试。');
+      throw new Error('X 站内 Grok 请求失败：HTTP ' + httpStatus + ' ' + (res.statusText || ''));
     }
 
     var finalText = await readStream(res);
@@ -476,7 +570,10 @@
     var tx = await g.fn('POST', ENDPOINT_PATH);
     if (!tx || String(tx).length <= TX_MIN_LEN) throw new Error('X 签名生成结果异常');
     return { ok: true, via: g.via, txLen: String(tx).length,
-      note: '已确认 X 会话与站内 Grok 签名可用（' + (g.via === 'xvm-xct' ? '借用 X Viral Monitor 签名器' : '使用 X 自带签名模块') + '）' };
+      hasXvmGrok: hasXvmGrok(), liveBearer: !!liveBearer(),
+      note: '已确认 X 会话与站内 Grok 签名可用（' +
+        (hasXvmGrok() ? '优先复用 X Viral Monitor 已验证通道' :
+          g.via === 'xvm-xct' ? '借用 X Viral Monitor 签名器' : '使用 X 自带签名模块') + '）' };
   }
 
   function status() {
@@ -485,6 +582,9 @@
       hasSession: !!(cookieValue('ct0') || captured.ct0),
       capturedTx: !!freshCapturedTx(),
       capturedBearer: !!captured.bearer,
+      liveBearer: !!liveBearer(),
+      hasXvmGrok: hasXvmGrok(),
+      xvmCapturedTx: !!xvmCapturedTx(),
       hasXct: !!(window.__xvmXct && window.__xvmXct.generateTxId),
       hasWebpack: Array.isArray(window.webpackChunk_twitter_responsive_web)
     };
@@ -500,6 +600,10 @@
     extractComments: extractComments,
     cleanLine: cleanLine,
     isNoise: isNoise,
+    liveBearer: liveBearer,
+    xvmCapturedTx: xvmCapturedTx,
+    hasXvmGrok: hasXvmGrok,
+    XVM_PASSTHROUGH_TEMPLATE: XVM_PASSTHROUGH_TEMPLATE,
     status: status,
     checkReady: checkReady,
     generate: generate,

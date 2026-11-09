@@ -681,9 +681,11 @@ async function handleGrokMessage(msg, sender) {
     catch (e) {
       if (nativeFailure) {
         // 1.4.1：把直连的真实失败原因放在最前面，避免被页面模式的
-        // 「提示词写入校验失败」盖住，导致每次都误判成 DOM 问题。
-        throw new Error('站内直连失败：' + nativeFailure.slice(0, 220) +
-          '；已自动降级到页面模式，但页面模式也失败：' + String(e && e.message || e));
+        // 「提示词写入校验失败」盖住。1.4.2：页面模式已弃用且必然失败，
+        // 不再把它那一长串误导性提示怼给用户，只保留一句结论 + 可操作兜底。
+        throw new Error('站内直连失败：' + nativeFailure.slice(0, 300) +
+          '。旧的「页面模式」兜底同样不可用（X 改版后写入常失败，已弃用）。' +
+          '请点插件图标 → Grok 设置 → 「测试当前模式」看诊断；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。');
       }
       throw e;
     }

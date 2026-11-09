@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.1　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -18,6 +18,25 @@
 3. **本地去水印**：Canvas 先检测底部白色水印，只在命中时用包围盒插值 / BFS 重建；没检测到的图原样保留，不会强行抹图。
 4. **多图托盘**：右下角弹出「干净图 N 张」，可逐张复制、拼长图、全部下载；托盘就绪后再点按钮打开 X，避免 X 抢焦点。
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
+
+### 1.4.2 修复：站内直连返回 HTTP 401（认证链路）
+
+**真机报错**：`站内直连失败：X 会话已失效或账号暂无 Grok 权限（HTTP 401）。请重新登录 X 后刷新页面。；已自动降级到页面模式，但页面模式也失败：提示词写入校验失败…`。
+这条报错其实是**好消息**：1.4.1 的三层保险已生效，直连真的被走到了，不再是模式路由问题；失败发生在 X 接口的**认证阶段**。
+
+**对照 X Viral Monitor**：它的 `lib/grok-reply.js` 里 `authorization` 优先取 `window.__xvmNet.getBearer()`（自己维护的**最新实时 bearer**），签名优先用 `window.__xvmGrok.__capturedTxId`（从 X-UI 真实请求抓到的）。而 TapePost 1.4.0/1.4.1 的自有 fetch 观察钩子只保存**第一个**看到的 bearer，一旦它与用户当前 X 会话不匹配就返回 401；旧代码还直接 `cancel()` 掉 401 响应体，只留一句笼统的「请重新登录」，既没定位也没自愈。
+
+**修复**：
+
+- **优先复用同页已安装的 X Viral Monitor**：检测到 `window.__xvmGrok.generate()` 时直接调用这条用户实测稳定的通道。TapePost 的完整提示词通过只含 `[推文内容]` 的模板原样透传（XVM 的 `renderPrompt` 会直接返回它），取返回的前 3 条候选。XVM 未安装、未就绪或抛错时安静回落自有直连，不影响其它用户。
+- **自有链路对齐 XVM**：`authorization` 改为 `__xvmNet.getBearer()` → 自有捕获 → 公开 bearer；`freshCapturedTx()` 复用 `__xvmGrok.__capturedTxId`；`status()` 与 `checkReady()` 报告 XVM 通道、实时 bearer、捕获签名是否可用，「测试当前模式」会显示诊断。
+- **401/403 可读 + 可自愈**：先读出 X 返回的真实错误体（例如 `{"code":32,"message":"Could not authenticate you."}`），再用 X 网页客户端公开 bearer 带原签名自动重试一次；仍失败才抛出含真实原因、已尝试两种 bearer 与诊断的中文错误，不再让用户做「重新登录」这种无用功。
+- **降级报错收敛**：页面模式已弃用且必然写入失败，后台不再把它那一长串误导性提示怼给用户，只保留「站内直连失败：真实原因」+「测试当前模式 / 复制提示词手动流程」两条可操作建议。
+- 回归测试扩到 **253 个场景**（新增 16 个：XVM 借用与回落、实时 bearer 优先级、强制公开 bearer、401 响应体、公开 bearer 重试成功/失败、XVM 捕获签名复用）。
+
+**隐私**：借用 XVM 只是在同一 X 页面调用它已暴露的函数，请求接收方仍是 X/Grok（提示词 + 推文正文），签名本机生成、后台只收 3 条文本；不新增第三方、不新增网络请求类型、不上传数据到 TapePost 服务器。
+
+> 升级后请在 `chrome://extensions` 点 TapePost「重新加载」，再**刷新一次 X 页面**；「一键转发」title 应显示 `v1.4.2`。若你已安装 X Viral Monitor，它会在同页直接被复用。
 
 ### 1.4.1 修复：旧「页面模式」设置让 1.4.0 的直连从未生效
 
@@ -107,7 +126,7 @@ if (mode !== 'auto') return mode;   // page 直接返回，后面的直连判断
 - 自动发送后校验 `promptSent / hasAnswer / changed`，任一不满足就带诊断信息报错；候选面板顶部显示「✅ 已确认读到 Grok 回答」。
 - **点击即弹出等待浮层**：spinner、随耗时推进的阶段文案、「关闭等待提示」按钮；结果回来或报错才自动关闭。手动「复制提示词 / 读取 Grok 回答」同样有等待反馈。
 
-该版本回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM（1.3.3 扩到 163 个、1.3.4 扩到 170 个、1.4.0 扩到 224 个、1.4.1 扩到 237 个）。
+该版本回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM（1.3.3 扩到 163 个、1.3.4 扩到 170 个、1.4.0 扩到 224 个、1.4.1 扩到 237 个、1.4.2 扩到 253 个）。
 
 ### 1.3.1 新增：AI 评论按钮移到 X 回复填写区右侧
 
@@ -184,7 +203,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 
 ## 安装
 
-**Chrome 网上应用店**：1.4.1 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
+**Chrome 网上应用店**：1.4.2 已打包完成，首次上架需要开发者本人在 [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 完成注册并创建条目，见 `store/listing.json`。
 
 **本地加载（开发者模式）**
 
@@ -194,10 +213,10 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 4. 打开任一支持的站点，内容右上角出现「一键转发」即可使用
 5. 要用 AI 评论 / 链接核验：默认「自动」模式，在 X 页面里直连 X 自带 Grok（免费、免 Key、最稳定），失败才降级旧的页面模式；想走官方 API 才在「Grok 设置 → API 模式专属设置」填 Key 并点「测试当前模式」
 
-商店提交包 `store/TapePost_1.4.1_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.4.1_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
+商店提交包 `store/TapePost_1.4.2_store.zip` 随仓库分发，也可在[介绍页](https://kenter1643.github.io/TapePost/)直接下载（介绍页附带副本 `docs/assets/TapePost_1.4.2_store.zip`）。解压后在 `chrome://extensions` 以开发者模式加载即可。自行重新打包：
 
 ```bash
-zip -q store/TapePost_1.4.1_store.zip \
+zip -q store/TapePost_1.4.2_store.zip \
   manifest.json account.js sites.js grok.js grok-page.js grok-native.js grok-native-bridge.js \
   background.js content.js inpaint.js \
   offscreen.html offscreen.js popup.html popup.js panel.html panel.js \
