@@ -2599,8 +2599,8 @@ async function runScenario(name, cfg, expect) {
   const offscreenJs = read('offscreen.js');
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
-    { name: '1.4.3 manifest 版本号已升',
-      ok: manifestJson.version === '1.4.3' },
+    { name: '1.4.3 起 manifest 版本号持续升级',
+      ok: manifestJson.version === '1.4.4' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2625,6 +2625,27 @@ async function runScenario(name, cfg, expect) {
       ok: !contentJs.includes("dl.textContent = '全部下载'") }
   ];
 
+  // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
+  const portChecks = [
+    { name: '1.4.4 manifest 版本号已升',
+      ok: manifestJson.version === '1.4.4' },
+    { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
+      ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
+    { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
+      ok: (popupJs.match(/chrome\.runtime\.sendMessage\(/g) || []).length === 1 &&
+          popupJs.indexOf('function sendBg(') < popupJs.indexOf('chrome.runtime.sendMessage(') },
+    { name: '1.4.4 popup 状态查询改读 storage.local',
+      ok: popupJs.includes("chrome.storage.local.get('tapeTmpDownloads'") && !popupJs.includes("type: 'TMP_STATUS'") },
+    { name: '1.4.4 自检 / 测试 / 重建 / 清理均走 sendBg',
+      ok: ["sendBg({ type: 'GROK_TEST' }", "sendBg({ type: 'GROK_PAGE_RESET' }", "sendBg({ type: 'DIAG' }", "sendBg({ type: 'TMP_CLEAN' }"].every((s) => popupJs.includes(s)) },
+    { name: '1.4.4 托盘清理回调读取 lastError',
+      ok: contentJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') && contentJs.includes('!err && r && r.ok') },
+    { name: '1.4.4 未新增 manifest 权限',
+      ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
+    { name: '1.4.4 UI 版本号同步',
+      ok: contentJs.includes('v1.4.4') && popupHtml.includes('当前 v1.4.4') }
+  ];
+
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
   const aiChecks = runTapeAIChecks()
     .concat(await runCommentButtonChecks())
@@ -2639,7 +2660,8 @@ async function runScenario(name, cfg, expect) {
     .concat(await runAuth401Checks())
     .concat(await runModeMigrationChecks())
     .concat(conciseChecks)
-    .concat(tmpChecks);
+    .concat(tmpChecks)
+    .concat(portChecks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

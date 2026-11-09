@@ -966,7 +966,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.3';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.4';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1929,7 +1929,9 @@ function showGallery(text, images, b64List, xUrl) {
   clean.addEventListener('click', () => {
     try {
       chrome.runtime.sendMessage({ type: 'TMP_CLEAN' }, (r) => {
-        showToast(r && r.ok
+        // 1.4.4：端口可能在后台回包前关闭，必须同步读取 lastError
+        const err = chrome.runtime && chrome.runtime.lastError;
+        showToast(!err && r && r.ok
           ? `已清理 ${r.removed || 0} 个文件${r.remaining ? `，剩 ${r.remaining} 个` : '，本机无残留'}`
           : '清理失败，请在设置面板重试');
       });

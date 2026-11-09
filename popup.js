@@ -54,6 +54,25 @@ const SITE_LIST = (typeof SITE_PROFILES !== 'undefined')
     { id: 'x', label: 'X（推文）' }
   ];
 
+/*
+ * 1.4.4：统一发消息通道，消除 chrome://extensions 里的
+ * "Unchecked runtime.lastError: The message port closed before a response was received"。
+ * popup 随时可能被用户关掉；若端口在后台 sendResponse 之前关闭，回调里
+ * 不读取 chrome.runtime.lastError 就会被 Chrome 记成扩展错误。
+ * 所有发往后台的消息都走这里，并在回调第一行同步读取 lastError。
+ */
+function sendBg(msg, cb) {
+  const done = (typeof cb === 'function') ? cb : function () {};
+  try {
+    chrome.runtime.sendMessage(msg, function (resp) {
+      const err = chrome.runtime && chrome.runtime.lastError; // 必须同步读取
+      try { done(resp || null, err || null); } catch (e) {}
+    });
+  } catch (e) {
+    try { done(null, e); } catch (e2) {}
+  }
+}
+
 function renderAccount() {
   const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
   set('meAvatar', (ACCOUNT.name || '昆').slice(0, 1));
@@ -247,8 +266,7 @@ function testGrok() {
   grokStatus('正在连接 Grok…', true);
   saveGrokSecrets().then(() => {
     try {
-      chrome.runtime.sendMessage({ type: 'GROK_TEST' }, (r) => {
-        const err = chrome.runtime && chrome.runtime.lastError;
+      sendBg({ type: 'GROK_TEST' }, (r, err) => {
         if (err) return grokStatus('连不上后台：' + err.message + '（请到 chrome://extensions 重新加载扩展）', false);
         if (!r || !r.ok) return grokStatus('连接失败：' + ((r && r.error) || '后台没有返回结果'), false);
         const modeText = r.mode === 'page' ? 'X 站内 Grok（免 API Key）' : 'xAI API';
@@ -291,8 +309,7 @@ function resetGrokTab() {
   grokStatus('正在刷新旧的 Grok 标签并重建连接…', true);
   saveGrokSecrets().then(() => {
     try {
-      chrome.runtime.sendMessage({ type: 'GROK_PAGE_RESET' }, (r) => {
-        const err = chrome.runtime && chrome.runtime.lastError;
+      sendBg({ type: 'GROK_PAGE_RESET' }, (r, err) => {
         if (err) return grokStatus('连不上后台：' + err.message + '（请到 chrome://extensions 重新加载扩展）', false);
         if (!r || !r.ok) {
           return grokStatus('重建失败：' + ((r && r.error) || '后台没有返回结果') +
@@ -363,8 +380,7 @@ function runDiagnostics() {
   }, 5000);
 
   try {
-    chrome.runtime.sendMessage({ type: 'DIAG' }, (r) => {
-      const err = chrome.runtime.lastError;
+    sendBg({ type: 'DIAG' }, (r, err) => {
       if (err) {
         finish(['⚠️ 无法连接后台：' + err.message, '', '请在 chrome://extensions 重新加载扩展，并刷新微博页面。']);
         return;
@@ -504,26 +520,29 @@ bind('infoClose', closeInfo);
 bind('infoOk', closeInfo);
 
 // 1.4.3：临时文件状态与立即清理
+// 1.4.4：状态直接读 storage.local —— popup 打开时不再发 runtime 消息，
+// 避免弹窗被快速关闭时留下 "message port closed before a response" 错误。
 function refreshTmpStatus() {
   const el = document.getElementById('tmpStatus');
   if (!el) return;
+  const fallback = () => { el.textContent = '临时文件：状态不可用'; };
   try {
-    chrome.runtime.sendMessage({ type: 'TMP_STATUS' }, (r) => {
-      el.textContent = (r && r.ok)
-        ? `当前记录 ${r.remaining || 0} 个临时文件（到期自动清理）`
-        : '临时文件：状态不可用';
+    if (!chrome.storage || !chrome.storage.local) return fallback();
+    chrome.storage.local.get('tapeTmpDownloads', (o) => {
+      const err = chrome.runtime && chrome.runtime.lastError;
+      if (err) return fallback();
+      const list = (o && Array.isArray(o.tapeTmpDownloads)) ? o.tapeTmpDownloads : [];
+      el.textContent = `当前记录 ${list.length} 个临时文件（到期自动清理）`;
     });
-  } catch (e) { el.textContent = '临时文件：状态不可用'; }
+  } catch (e) { fallback(); }
 }
 bind('tmpCleanNow', () => {
-  try {
-    chrome.runtime.sendMessage({ type: 'TMP_CLEAN' }, (r) => {
-      const el = document.getElementById('tmpStatus');
-      if (el) el.textContent = (r && r.ok)
-        ? `已清理 ${r.removed || 0} 个文件，剩 ${r.remaining || 0} 个`
-        : '清理失败，请重试';
-    });
-  } catch (e) {}
+  sendBg({ type: 'TMP_CLEAN' }, (r, err) => {
+    const el = document.getElementById('tmpStatus');
+    if (el) el.textContent = (!err && r && r.ok)
+      ? `已清理 ${r.removed || 0} 个文件，剩 ${r.remaining || 0} 个`
+      : '清理失败，请重试';
+  });
 });
 if (infoMask) infoMask.addEventListener('click', function (e) {
   if (e.target === infoMask) closeInfo();

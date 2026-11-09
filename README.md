@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.3（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.4（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,19 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-09）**：本仓库 `main` 是 **1.4.3**（默认不落盘 + 临时文件自动清理）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把 1.4.3 发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+> **版本状态（2026-11-09）**：本仓库 `main` 是 **1.4.4**（修复 popup 消息端口报错）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+
+### 1.4.4：修复重新加载后 popup 的 `Unchecked runtime.lastError`
+
+**真机报错**（chrome://extensions → 错误）：`Unchecked runtime.lastError: The message port closed before a response was received. Context: popup.html`。
+原因是 1.4.3 新增的「临时文件状态 / 立即清理」两个回调没有读取 `chrome.runtime.lastError`：popup 一打开就会发 `TMP_STATUS`，用户很快关掉弹窗时，端口在后台 `sendResponse` 之前关闭，Chrome 把未检查的 `lastError` 记成扩展错误。
+
+- **统一消息通道**：popup 内所有 `chrome.runtime.sendMessage` 改走 `sendBg()`，回调第一行同步读取 `chrome.runtime.lastError`；后台没回包时只显示为「状态不可用 / 清理失败」，不再往错误面板写日志。
+- **状态查询零消息**：`refreshTmpStatus()` 直接读 `chrome.storage.local` 的 `tapeTmpDownloads`，popup 打开时不再向后台发消息；只有用户主动点「立即清理」才发 `TMP_CLEAN`。
+- **托盘清理同步加固**：图片托盘的「🧹 清理临时文件」回调也读取 `lastError`。
+- 未新增任何 manifest 权限；回归测试全量通过（数量以 `node test-harness.js` 输出为准）。
+
+下载：`store/TapePost_1.4.4_store.zip`（GitHub 仓库内直接下载，或 `git clone` 后解压加载）。
 
 ### 1.4.3：转发不再自动落盘，临时文件到期自动清理
 
@@ -28,11 +40,11 @@
 - **必要的落盘统一进 `TapePost_tmp/`**：视频必须用文件拖进 X（剪贴板不支持 mp4），托盘「下载到临时目录」同理；两者都写入下载目录下的 `TapePost_tmp/` 子目录、`xpost_` 前缀，便于识别与整目录清理。
 - **到期自动清理**：后台记录 `downloadId` + 时间戳，保留时长（默认 30 分钟，可选 15 / 60 / 120 分钟或「不自动清理」）到期后调用 `chrome.downloads.erase()` 同时删除**磁盘文件与下载历史记录**；老版本 Chrome 回退 `removeFile()`。扩展启动、每次新下载、打开设置、Service Worker 唤醒时都会顺带清一次，不依赖定时器。
 - **手动清理**：设置面板「🧹 立即清理临时文件」与图片托盘「🧹 清理临时文件」一键清空，并显示剩余数量。
-- **未新增任何 manifest 权限**（仍是 `storage / downloads / clipboardWrite / offscreen / declarativeNetRequest`）；回归测试 **274 个场景全通过**。
+- **未新增任何 manifest 权限**（仍是 `storage / downloads / clipboardWrite / offscreen / declarativeNetRequest`）。
 
-下载：`store/TapePost_1.4.3_store.zip`（GitHub 仓库内直接下载，或 `git clone` 后解压加载）。
+历史包：`store/TapePost_1.4.3_store.zip`。
 
-> ⚠️ 1.4.2 已提交商店审核，**在线介绍页与隐私政策页仍按 1.4.2 口径保持不变**——它们是该条目的披露依据，提前改成 1.4.3 行为会造成「Dashboard 披露 / 隐私政策 / 实际包」不一致。等 1.4.3 正式发布到商店时再同步更新这两页与商店文案。
+> ⚠️ 1.4.2 已提交商店审核，**在线介绍页与隐私政策页仍按 1.4.2 口径保持不变**——它们是该条目的披露依据，提前改成新版行为会造成「Dashboard 披露 / 隐私政策 / 实际包」不一致。等新版正式发布到商店时再同步更新这两页与商店文案。
 
 ### 1.4.2 修复：站内直连返回 HTTP 401（认证链路）
 
