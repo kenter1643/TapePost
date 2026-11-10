@@ -189,12 +189,12 @@
 
     <div class="promptbox" id="promoBox">
       <h2>📣 评论末尾推广（TapeOut / $BEM）</h2>
-      <p>两种用法：AI 候选自动随机附一句；或自己写完评论，点回复框右侧唯一的 T 按钮带入。</p>
+      <p>两种用法：AI 候选自动随机附一句；或自己写完评论，点当前回复框右侧的 T 按钮带入。</p>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoQuickButtons" />
         <label for="promoQuickButtons" style="margin:0;font-weight:400">回复框右侧显示 T 按钮（默认开启，与 AI 评论无关）</label>
       </div>
-      <p class="tiny" style="margin:0 0 8px">一个 T 按钮：左键点一下随机带入一句，再点换一句（不会重复、不会叠加）；右键去掉推广句。只替换末尾那一句，你写的正文、分段、@、表情、配图一律不动。</p>
+      <p class="tiny" style="margin:0 0 8px">全页只出现一个 T 按钮，跟着你正在编辑的那个回复框走。左键点一下随机带入一句，再点换一句（不会重复、不会叠加）；右键去掉推广句。只替换末尾那一句，正文、分段、@、表情、配图一律不动；手工删掉推广句后再点可重新带入。</p>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoEnabled" />
         <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的 3 条候选自动随机附一句（默认关闭）</label>
@@ -217,7 +217,7 @@
         <label for="promoCustomBEM">$BEM 话术</label>
         <textarea id="promoCustomBEM" spellcheck="false" placeholder="每行一句；填了就覆盖该主题的内置话术"></textarea>
       </details>
-      <p class="tiny">只作用于 X 评论 / 回复框，不改一键转发正文。1.4.8 起写回只用浏览器原生编辑命令，不再整体重写或直接改 DOM；认不出末尾推广句时会停止写入并复制新句，绝不弄乱正文。内置话术仅作生态与技术介绍，不含价格或收益承诺；最终回复始终由你手动点发送。
+      <p class="tiny">只作用于 X 评论 / 回复框，不改一键转发正文。1.4.9 起按钮绑定当前回复框、点击时保住焦点，写回只用浏览器原生编辑命令，不再整体重写或直接改 DOM；认不出末尾推广句时会停止写入并复制新句，绝不弄乱正文。内置话术仅作生态与技术介绍，不含价格或收益承诺；最终回复始终由你手动点发送。
         <button type="button" class="infobtn" data-info="promo">推广说明</button>
       </p>
     </div>
@@ -228,7 +228,7 @@
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
-      <b>当前 v1.4.8</b>：只留一个 T 按钮，点击随机换句、不重复；写回彻底改为原生编辑命令，修好重复与手工编辑乱掉。重载后刷新一次 X 页面。
+      <b>当前 v1.4.9</b>：全页只有一个 T 按钮，且只认你正在编辑的那个回复框；修好按钮成排出现、文字写错框、手工改完就乱。把鼠标悬在 T 按钮上可看到 v1.4.9，用来确认重载生效。重载后刷新一次 X 页面。
       <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 

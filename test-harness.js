@@ -1914,9 +1914,11 @@ async function runReplyComposerChecks() {
     dom.execCommand = () => false;
     const fallbackOk = vm.runInContext('writeIntoReply(__replyInput, "兜底写入")', contentCtx);
     dom.execCommand = origExec;
-    A('execCommand 被拦时走 input 事件兜底',
-      fallbackOk === true && rd.input.textContent.includes('兜底写入') &&
-      (rd.input._events || []).length > 0);
+    // 1.4.9：兜底分支已删除。直接改 textContent / innerText 会绕过 X 受控
+    // 编辑器 state，用户下一次手动输入就把旧文本还原回来（「一改就乱」）。
+    A('1.4.9 execCommand 被拦时不改 DOM，只返回 false',
+      fallbackOk === false && !rd.input.textContent.includes('兜底写入') &&
+      (dom._inserted || []).length === 2);
 
     // 1.3.2：点击后必须有可见的等待浮层，结果回来才关闭
     const busy = vm.runInContext('showAiBusy("Grok 正在生成 3 条回复候选")', contentCtx);
@@ -2023,6 +2025,21 @@ async function runReplyComposerChecks() {
     Object.assign(contentCtx, { __inlineWrap: inlineWrap, __inlineInput: inlineInput });
     A('1.3.4 无 Replying to 文案、只有 Reply 按钮的内联回复框也能识别',
       vm.runInContext('isReplyInput(__inlineInput, replyScopeOf(__inlineInput))', contentCtx) === true);
+
+    /* ---- 1.4.9 真机事故回放：X 详情页同时有两个回复框 ----
+     * 旧版给每个 composer 都注入一组按钮，页面上冒出一排 T，点其中一个
+     * 却按容器第一个 textbox 定位，文字写进另一个评论区。 */
+    vm.runInContext("settings.replyInputSelector = ''", contentCtx);
+    A('1.4.9 同页两个回复框都能被识别',
+      vm.runInContext('findReplyComposers().length', contentCtx) === 2);
+    vm.runInContext('scanAndInject()', contentCtx, { timeout: 3000 });
+    A('1.4.9 多个回复框时全页只有一个 T 按钮',
+      vm.runInContext('document.querySelectorAll(".wbx-promo-bar").length', contentCtx) === 1);
+    A('1.4.9 多个回复框时全页只有一个 AI 评论按钮',
+      vm.runInContext('document.querySelectorAll(".wbx-reply-btn").length', contentCtx) === 1);
+    A('1.4.9 T 按钮绑定的是当前正在编辑的回复框',
+      vm.runInContext('document.querySelectorAll(".wbx-promo-bar")[0].__wbxInput === __replyInput',
+        contentCtx));
     inlineWrap.remove();
   } catch (e) {
     A('回复框注入/回写检查无异常', false);
@@ -2601,7 +2618,7 @@ async function runScenario(name, cfg, expect) {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.8' },
+      ok: manifestJson.version === '1.4.9' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2629,7 +2646,7 @@ async function runScenario(name, cfg, expect) {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.8' },
+      ok: manifestJson.version === '1.4.9' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -2644,7 +2661,7 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.4 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.8') && popupHtml.includes('当前 v1.4.8') }
+      ok: contentJs.includes('v1.4.9') && popupHtml.includes('当前 v1.4.9') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -2809,7 +2826,7 @@ async function runScenario(name, cfg, expect) {
       };
       showToast = function (m) { toasts.push(String(m)); };
 
-      var bar = { parentElement: host, __wbxPromoLine: '' };
+      var bar = { parentElement: host, __wbxPromoLine: '', __wbxInput: input };
       var clickT = function () { applyQuickPromo(bar, nextQuickPromoLine(bar.__wbxPromoLine || '')); };
       var rightT = function () { applyQuickPromo(bar, ''); };
 
@@ -2832,6 +2849,11 @@ async function runScenario(name, cfg, expect) {
       tn.nodeValue = handBody + NL + L3;
       rightT();  var cleared = tn.nodeValue;
 
+      // 1.4.9：用户手工把整行推广句删掉后，再点 T 应能重新带入一句（旧版会一直提示「已被手工改动」）
+      tn.nodeValue = handBody;
+      bar.__wbxPromoLine = L3;
+      clickT();  var afterManualDelete = tn.nodeValue, L4 = bar.__wbxPromoLine;
+
       // X 常在末尾留零宽占位符：换句仍要整句替换，不能残留半个字
       var zwLine = nextQuickPromoLine(L3);
       tn.nodeValue = '零宽测试' + NL + L3 + '\u200b';
@@ -2845,26 +2867,41 @@ async function runScenario(name, cfg, expect) {
       var adjacentSame = seq.some(function (x, i) { return i > 0 && x === seq[i - 1]; });
       var clickBodyTimes = tn.nodeValue.split('连点测试').length - 1;
 
-      // 按钮只能定位到自己所在的回复框，绝不跨评论区
+      // 1.4.9：按钮绑定的输入框优先，绝不跨评论区，也不在多输入框容器里乱猜
       var input2 = { nodeType: 1, tagName: 'DIV', childNodes: [], closest: function () { return null; } };
       var host2 = { querySelectorAll: function () { return [input2]; } };
-      var bar2 = { parentElement: host2, __wbxPromoLine: '' };
+      input2.parentElement = host2;
+      var bar2 = { parentElement: host2, __wbxPromoLine: '', __wbxInput: input2 };
       var noCross = (promoInputFor(bar2) === input2 && promoInputFor(bar) === input);
+
+      // 绑定引用失效（X 换过 DOM）时，只恢复到按钮自己 host 里唯一的输入框
+      var foreignHost = { querySelectorAll: function () { return [input2]; } };
+      var foreignInput = { parentElement: foreignHost, childNodes: [], closest: function () { return null; } };
+      var barStale = { parentElement: host, __wbxPromoLine: '', __wbxInput: foreignInput };
+      var staleRecovered = promoInputFor(barStale) === input;
+
+      // 一个容器里出现两个输入框时不敢猜，直接停手
+      var host3 = { querySelectorAll: function () { return [input, input2]; } };
+      var bar3 = { parentElement: host3, __wbxPromoLine: '' };
+      var ambiguous = promoInputFor(bar3) === null;
 
       document.createRange = origCR; window.getSelection = origSel;
       document.execCommand = origExec; showToast = origToast;
       return { body0: body0, handBody: handBody, first: first, second: second,
                edited: edited, rewritten: rewritten, beforeRewrite: beforeRewrite,
-               cleared: cleared, L1: L1, L2: L2, L3: L3, seq: seq,
+               cleared: cleared, L1: L1, L2: L2, L3: L3, L4: L4, seq: seq,
+               afterManualDelete: afterManualDelete,
                adjacentSame: adjacentSame, clickBodyTimes: clickBodyTimes,
-               noCross: noCross, toasts: toasts, editLog: editLog,
+               noCross: noCross, staleRecovered: staleRecovered, ambiguous: ambiguous,
+               toasts: toasts, editLog: editLog,
                zw: zw, zwExpect: zwExpect };
     })()`, contentCtx);
   } catch (e) { note('ERROR', 'promo148 runtime: ' + (e && e.stack)); }
 
   const promo148Checks = [
-    { name: '1.4.8 manifest / UI 版本均为 1.4.8',
-      ok: manifestJson.version === '1.4.8' && contentJs.includes('v1.4.8') && popupHtml.includes('当前 v1.4.8') },
+    { name: '1.4.9 manifest / UI / 按钮 title 版本均为 1.4.9',
+      ok: manifestJson.version === '1.4.9' && contentJs.includes('v1.4.9') &&
+          popupHtml.includes('当前 v1.4.9') && contentJs.includes('TapePost v1.4.9') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -2919,6 +2956,44 @@ async function runScenario(name, cfg, expect) {
           ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
   ];
 
+  // ---- v1.4.9：全页唯一按钮 + 精准回写（真机「很多按钮 / 写错框 / 手动改就乱」） ----
+  const promo149Checks = [
+    { name: '1.4.9 按活跃回复框挑唯一目标，不再逐个 composer 注入',
+      ok: contentJs.includes('function pickActiveComposer(') &&
+          contentJs.includes('const target = pickActiveComposer(composers);') &&
+          !contentJs.includes('composers.forEach((c) =>') },
+    { name: '1.4.9 按钮绑定真实输入框，AI 候选也不再 fallback 到 list[0]',
+      ok: contentJs.includes('btn.__wbxInput = c.input') &&
+          contentJs.includes('bar.__wbxInput = c.input') &&
+          contentJs.includes('const bound = btn.__wbxInput;') &&
+          !contentJs.includes('|| list[0]') && !contentJs.includes('findReplyComposers()[0]') },
+    { name: '1.4.9 mousedown 保焦 + 按钮禁止选中文字',
+      ok: (contentJs.match(/addEventListener\('mousedown'/g) || []).length >= 2 &&
+          contentJs.includes('user-select:none !important') },
+    { name: '1.4.9 所有写回都走原生编辑命令，没有直改 DOM 的兜底',
+      ok: !contentJs.includes('input.textContent = next') &&
+          !contentJs.includes('input.innerText = next') &&
+          !contentJs.includes("new Ev('input'") &&
+          contentJs.includes("return nativeReplyEdit(input, 'insertText', payload);") },
+    { name: '1.4.9 手工改写推广句只停手、绝不删字，也不留缓存状态',
+      ok: contentJs.includes('function hasEditedPromoTail(') &&
+          contentJs.includes('hasEditedPromoTail(full)') &&
+          !contentJs.includes('promoLineState') },
+    { name: '1.4.9 随机到当前末尾那句会自动再取一句',
+      ok: contentJs.includes('if (tail && tail === line)') &&
+          contentJs.includes('const alt = nextQuickPromoLine(tail, tail);') },
+    { name: '1.4.9 运行时：手工删掉推广句后可重新带入，正文仍只有一份',
+      ok: !!promo148 && promo148.afterManualDelete === promo148.handBody + '\n' + promo148.L4 &&
+          promo148.L4 !== promo148.L3 },
+    { name: '1.4.9 运行时：绑定失效只恢复到自己 host 的输入框',
+      ok: !!promo148 && promo148.staleRecovered === true },
+    { name: '1.4.9 运行时：一个容器里两个输入框时不敢猜、直接停手',
+      ok: !!promo148 && promo148.ambiguous === true },
+    { name: '1.4.9 未新增 manifest 权限',
+      ok: (manifestJson.permissions || []).sort().join(',') ===
+          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+  ];
+
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
   const aiChecks = runTapeAIChecks()
     .concat(await runCommentButtonChecks())
@@ -2936,7 +3011,8 @@ async function runScenario(name, cfg, expect) {
     .concat(tmpChecks)
     .concat(portChecks)
     .concat(promoChecks)
-    .concat(promo148Checks);
+    .concat(promo148Checks)
+    .concat(promo149Checks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

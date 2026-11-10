@@ -128,8 +128,9 @@ function injectStyle() {
     position:absolute !important;top:2px !important;right:6px !important;z-index:30 !important;
     height:20px !important;padding:0 8px !important;font-size:11px !important;line-height:20px !important;
     box-shadow:0 1px 4px rgba(107,70,193,.5) !important;
+    user-select:none !important;-webkit-user-select:none !important;
   }
-  /* 1.4.8：只有一个 T 按钮，贴着 AI 评论按钮左侧；不依赖 AI，手写的评论也能点 */
+  /* 1.4.9：全页只有一个 T 按钮，贴着 AI 评论按钮左侧；不依赖 AI，手写的评论也能点 */
   .wbx-promo-bar{
     position:absolute !important;top:2px !important;right:76px !important;z-index:30 !important;
     display:inline-flex !important;align-items:center;gap:2px;
@@ -140,6 +141,7 @@ function injectStyle() {
     border:none;border-radius:6px;cursor:pointer;
     background:#ff7800;color:#fff;font-size:11px;font-weight:700;line-height:20px;
     box-shadow:0 1px 3px rgba(255,120,0,.45);white-space:nowrap;
+    user-select:none !important;-webkit-user-select:none !important;
   }
   .wbx-promo-btn.wbx-promo-single:hover{background:#ff8c1a;}
   /* AI 评论候选卡片：与图片托盘同级的强可见浮层，不抢 X 的焦点 */
@@ -1001,7 +1003,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.8';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.9';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1141,7 +1143,7 @@ function currentPromoCustom() {
 
 /* 1.4.8：只保留一个 T 按钮 —— 每次点击从「内置 + 自定义」池里随机取一句，
  * 并排除上一次那句，保证连点不会出现同一句、也不会叠加第二句。 */
-function nextQuickPromoLine(prev) {
+function nextQuickPromoLine(prev, extra) {
   if (typeof TapePromo === 'undefined') return '';
   const p = TapePromo.pools(currentPromoCustom());
   const target = settings.promoTarget || 'both';
@@ -1149,35 +1151,47 @@ function nextQuickPromoLine(prev) {
     : (target === 'bem') ? p.bem
       : p.tapeout.concat(p.bem);
   const unique = all.filter((x, i) => x && all.indexOf(x) === i);
-  const usable = unique.filter((x) => x !== prev);
-  const pool = usable.length ? usable : unique;
-  return pool[Math.floor(Math.random() * pool.length)] || '';
+  // extra 是「当前回复框末尾实际那句」：用户手工改过 / 删过之后也要排除它，
+  // 否则点 T 可能随机到同一句，看起来像「点了没反应」。
+  const usable = unique.filter((x) => x !== prev && x !== extra);
+  const pool = usable.length ? usable : unique.filter((x) => x !== extra);
+  const finalPool = pool.length ? pool : unique;
+  return finalPool[Math.floor(Math.random() * finalPool.length)] || '';
 }
 
 function injectAiButton(c) {
   const host = c.host;
   if (!host || !host.appendChild) return;
-  // 内容不变时一律早退：注入按钮本身会触发 MutationObserver，删了重建会自触发死循环
-  const exists = Array.prototype.some.call(host.children || [],
-    (n) => String(n.className || '').indexOf('wbx-reply-btn') !== -1);
-  if (exists) return;
-  ensureRelative(host);
-  const btn = document.createElement('button');
-  btn.className = 'wbx-comment-btn wbx-reply-btn';
-  btn.type = 'button';
-  btn.textContent = 'AI 评论';
-  btn.title = 'TapePost · 生成 3 条回复候选，手动发送';
-  btn.__wbxReply = true;
+  // 内容不变时一律早退：注入按钮本身会触发 MutationObserver，删了重建会自触发死循环。
+  // 但每轮扫描都要把按钮重新绑到「当前这个」输入框：X 会复用 DOM 节点，
+  // 缓存的旧引用会把候选写进另一个评论区。
+  let btn = Array.prototype.filter.call(host.children || [],
+    (n) => String(n.className || '').indexOf('wbx-reply-btn') !== -1)[0];
+  if (!btn) {
+    ensureRelative(host);
+    btn = document.createElement('button');
+    btn.className = 'wbx-comment-btn wbx-reply-btn';
+    btn.type = 'button';
+    btn.textContent = 'AI 评论';
+    btn.title = 'TapePost · 生成 3 条回复候选，手动发送';
+    btn.__wbxReply = true;
+    /* 1.4.9：mousedown 默认会把焦点从 contenteditable 抢到按钮上，
+     * 之后 execCommand('insertText') 就没有正确的编辑目标 → 文字写不进回复框。 */
+    btn.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // 点击瞬间实时定位，避免 X 重渲染后闭包里拿到旧的回复框
+      const list = findReplyComposers();
+      const live = list.find((x) => x.input === btn.__wbxInput) ||
+        list.find((x) => x.scope === btn.__wbxScope);
+      const ctx = resolveReplyContext(btn, live && live.scope);
+      return onAiComment(ctx, btn);
+    });
+    host.appendChild(btn);
+  }
+  btn.__wbxInput = c.input;
   btn.__wbxScope = c.scope;
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // 点击瞬间实时定位，避免 X 重渲染后闭包里拿到旧的回复框
-    const live = findReplyComposers().find((x) => x.scope === btn.__wbxScope) || findReplyComposers()[0];
-    const ctx = resolveReplyContext(btn, live && live.scope);
-    return onAiComment(ctx, btn);
-  });
-  host.appendChild(btn);
 }
 
 /* =========================================================================
@@ -1201,7 +1215,8 @@ function injectAiButton(c) {
  *     只提示并复制，绝不模糊猜、绝不追加成第二句；
  *  ⑤ 回复框由按钮所在容器实时定位，不缓存 scope、不 fallback 到别的框。
  * ========================================================================= */
-const promoLineState = new Map();
+/* 1.4.9：不再用「上次带入的是哪句」这种额外状态做判断。
+ * 一切以点击瞬间回复框里的真实文本为准，用户手工删改后立刻能恢复正常工作。 */
 
 /* 手写递归收集文本节点：不依赖 TreeWalker，X 改版或老环境都能工作。
  * 跳过插件自己注入的按钮 / 候选面板，避免把 UI 文案算进正文。 */
@@ -1274,32 +1289,63 @@ function fullContainsKnownPromo(full) {
   return knownPromoLines().some((l) => full.indexOf(l) >= 0);
 }
 
-/* 按钮栏所在的 host 就是注入时输入框的父容器：实时 querySelector 一一对应。
- * 旧版用缓存的 scope 引用 + findReplyComposers()[0] 兜底，X 重渲染后会
- * 把句子写进另一个评论区（真机反馈「回写的评论区有问题」）。 */
+/* 1.4.9：末尾那句是否被用户手工改写过 —— 只用于「停手」，绝不用于删除。
+ * 1.4.8 只做全文精确包含判断：用户改了一个标点就认不出来，插件会把改过的
+ * 推广句当成普通正文再叠一句新的，看起来就是「手动改就乱」。
+ * 只在最后一段里比对，要求归一化相同或高相似度；从不删任何字符。 */
+function hasEditedPromoTail(full) {
+  if (!full || typeof TapePromo === 'undefined') return false;
+  const parts = TapePromo.rtrim(full).split(/[\r\n]+/);
+  const tail = parts[parts.length - 1] || '';
+  if (tail.length < 8) return false;
+  const nt = TapePromo.normalize(tail);
+  const known = knownPromoLines();
+  for (let i = 0; i < known.length; i++) {
+    const line = known[i];
+    if (nt && nt === TapePromo.normalize(line)) return true;
+    if (TapePromo.similarity(tail, line) >= 0.86) return true;
+    // 分隔符被手工删掉时，推广句会跟正文粘在同一段
+    if (tail.length > line.length &&
+        TapePromo.similarity(tail.slice(-line.length), line) >= 0.9) return true;
+  }
+  return false;
+}
+
+/* 1.4.9：注入时就把「这个按钮属于哪个输入框」记下来，点击时直接用它。
+ * 旧版按 host.querySelectorAll(...)[0] 抓第一个，X 详情页一个容器里套着
+ * 多个 textbox 时就会写到另一个评论区（真机「文字没写对在回复框」）。 */
+function isLiveReplyInput(el, bar) {
+  if (!el || !el.parentElement) return false;
+  // 按钮和输入框必须挂在同一个 host；否则宁可不写，也绝不跨区乱写
+  if (bar && bar.parentElement && el.parentElement !== bar.parentElement) return false;
+  try {
+    if (typeof document !== 'undefined' && document.contains && !document.contains(el)) return false;
+  } catch (e) { /* 测试桩没有 contains */ }
+  return true;
+}
+
 function promoInputFor(bar) {
+  const bound = bar && bar.__wbxInput;
+  if (isLiveReplyInput(bound, bar)) return bound;
   const host = bar && bar.parentElement;
   if (!host || typeof host.querySelectorAll !== 'function') return null;
-  const pick = (sels) => {
-    for (let i = 0; i < sels.length; i++) {
-      try {
-        const list = host.querySelectorAll(sels[i]);
-        for (let j = 0; j < list.length; j++) {
-          const el = list[j];
-          if (el && el.closest && el.closest('#wbx-comments')) continue;
-          return el;
-        }
-      } catch (e) { /* 单个选择器非法不影响其它 */ }
+  const sels = replyInputSelectors().concat([
+    '[contenteditable="true"][role="textbox"]', '[role="textbox"][contenteditable]'
+  ]);
+  const found = [];
+  for (let i = 0; i < sels.length; i++) {
+    let list;
+    try { list = host.querySelectorAll(sels[i]); } catch (e) { continue; }
+    for (let j = 0; j < list.length; j++) {
+      const el = list[j];
+      if (!el || found.indexOf(el) !== -1) continue;
+      if (el.closest && el.closest('#wbx-comments')) continue;
+      found.push(el);
     }
-    return null;
-  };
-  let found = pick(replyInputSelectors()) ||
-    pick(['[contenteditable="true"][role="textbox"]', '[role="textbox"][contenteditable]']);
-  if (!found) return null;
-  try {
-    if (typeof document !== 'undefined' && document.contains && !document.contains(found)) return null;
-  } catch (e) { /* 测试桩没有 contains */ }
-  return found;
+  }
+  // 容器里有多于一个输入框时不敢猜：让用户点进要写的那个框再按 T
+  if (found.length !== 1) return null;
+  return isLiveReplyInput(found[0], bar) ? found[0] : null;
 }
 
 function applyReplySelection(input, range) {
@@ -1380,15 +1426,17 @@ function applyQuickPromo(bar, line) {
     const full = TapePromo.rtrim(rawFull);
     const trailingJunk = rawFull.length - full.length;  // 末尾零宽占位符不进选区
     const tail = findTrailingPromo(full);                 // 精确：一字不差才认
-    const statePrev = promoLineState.get(input) || bar.__wbxPromoLine || '';
 
-    // 认不出末尾那句时绝不猜：既不删正文，也不再叠一句（重复的根因）
-    if (!tail && (statePrev || fullContainsKnownPromo(full))) {
+    /* 1.4.9：只按「当前文本」判断，不看缓存状态。
+     * 满屏推广句被用户手工删掉 / 整行删掉时，全文里已没有话术 → 视为首次带入，
+     * 正常追加一句新的。旧版还看 statePrev，结果用户删完再点 T 会一直提示
+     * 「已被手工改动」，看起来像坏掉了。只有「话术还在、但不在末尾或被改写」
+     * 才停手，因为那种情况无法安全定位，硬删必然弄乱正文。 */
+    if (!tail && (fullContainsKnownPromo(full) || hasEditedPromoTail(full))) {
       copyPromoLine(line);
       showToast(line
         ? '推广句已被手工改动或不在末尾，为避免弄乱正文已停止写入；新句已复制，请自行粘贴 / 删旧句。'
         : '推广句已被手工改动，已停止自动删除，请手动删掉那一行。', 7000);
-      promoLineState.set(input, '');
       bar.__wbxPromoLine = '';
       return;
     }
@@ -1399,15 +1447,19 @@ function applyQuickPromo(bar, line) {
         showToast('删除失败，未改动正文；请手动删掉推广句那一行。', 6000);
         return;
       }
-      promoLineState.set(input, '');
       bar.__wbxPromoLine = '';
       showToast('已去掉推广句，你写的正文一个字都没动（可能留一个空行）。', 3500);
       return;
     }
 
+    // 随机到当前末尾那句时再取一次，保证「点一下一定换一句」，不出现点了没反应
     if (tail && tail === line) {
-      showToast('这句已经在末尾了，再点一次会换一句。', 2500);
-      return;
+      const alt = nextQuickPromoLine(tail, tail);
+      if (!alt || alt === tail) {
+        showToast('话术池里只有这一句，暂时换不了；可以在设置里补充自定义话术。', 3500);
+        return;
+      }
+      line = alt;
     }
 
     let ok;
@@ -1438,47 +1490,82 @@ function applyQuickPromo(bar, line) {
       ? '已带入推广句；再点一次 T 换一句，右键可去掉。'
       : '写入结果与预期不一致，请目视检查回复框（已停止自动重试）。', sane ? 3000 : 7000);
 
-    promoLineState.set(input, line);
     bar.__wbxPromoLine = line;
   } finally {
     bar.__wbxBusy = false;
   }
 }
 
-/* 1.4.8：整个推广区只有一个 T 按钮。
- * 左键 = 随机带入 / 换一句（自动排除上一句）；右键 = 去掉末尾推广句。 */
+/* 1.4.9：整个 X 页面只有一个 T 按钮，只挂在「当前正在编辑的回复框」右侧。
+ * 左键 = 随机带入 / 换一句（排除当前末尾那句）；右键 = 去掉末尾推广句。
+ * 注入时绑定真实 input，点击时不再重新猜输入框。 */
 function injectPromoBar(c) {
   const host = c.host;
   if (!host || !host.appendChild) return;
-  const sig = [settings.promoTarget,
-    settings.promoCustomTapeOut || '', settings.promoCustomBEM || ''].join('|');
   let bar = Array.prototype.filter.call(host.children || [],
     (n) => String(n.className || '').indexOf('wbx-promo-bar') !== -1)[0];
-  if (bar && bar.dataset && bar.dataset.wbxSig === sig) return; // 内容不变早退，避免自激循环
-  if (bar && bar.remove) bar.remove();
-  ensureRelative(host);
-  bar = document.createElement('div');
-  bar.className = 'wbx-promo-bar';
-  bar.dataset.wbxSig = sig;
+  if (!bar || bar.parentElement !== host) {
+    ensureRelative(host);
+    bar = document.createElement('div');
+    bar.className = 'wbx-promo-bar';
+    bar.__wbxPromoLine = '';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'wbx-promo-btn wbx-promo-single';
+    b.textContent = 'T';
+    b.title = 'TapePost v1.4.9 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
+    // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
+    b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const input = promoInputFor(bar);
+      const tail = input ? findTrailingPromo(TapePromo.rtrim(replyPlainText(input))) : '';
+      applyQuickPromo(bar, nextQuickPromoLine(bar.__wbxPromoLine || '', tail));
+    });
+    b.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyQuickPromo(bar, '');
+    });
+    bar.appendChild(b);
+    host.appendChild(bar);
+  }
+  // 每轮扫描刷新绑定：X 复用 DOM 节点时，按钮不会还指向上一个回复框
+  bar.__wbxInput = c.input;
   bar.__wbxScope = c.scope;
-  bar.__wbxPromoLine = '';
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'wbx-promo-btn wbx-promo-single';
-  b.textContent = 'T';
-  b.title = 'TapePost · 点一下随机带入一句推广，再点换一句（不重复、不动你写的正文）；右键去掉推广句';
-  b.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    applyQuickPromo(bar, nextQuickPromoLine(bar.__wbxPromoLine || ''));
-  });
-  b.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    applyQuickPromo(bar, '');
-  });
-  bar.appendChild(b);
-  host.appendChild(bar);
+}
+
+/* 1.4.9：全局只保留「一组」回复区按钮（AI 评论 + T）。
+ * 旧版对 findReplyComposers() 里的每个 composer 都注入一遍，X 详情页同时
+ * 存在主回复框 / 嵌套回复框 / 引用框时就会冒出一排按钮，点哪个都可能
+ * 写进另一个框 —— 真机反馈「很多按钮」「文字没写对在回复框」。 */
+let lastFocusedReplyInput = null;
+try {
+  document.addEventListener('focusin', (e) => {
+    const t = e && e.target;
+    if (!t) return;
+    if (t.isContentEditable || (t.getAttribute && t.getAttribute('role') === 'textbox')) {
+      lastFocusedReplyInput = t;
+    }
+  }, true);
+} catch (e) { /* 环境不支持 focusin 时退化为 activeElement + 单 composer 判定 */ }
+
+function pickActiveComposer(composers) {
+  if (!composers || !composers.length) return null;
+  const active = (typeof document !== 'undefined') ? document.activeElement : null;
+  const byFocus = composers.find((c) => c.input === active);
+  if (byFocus) return byFocus;
+  if (lastFocusedReplyInput) {
+    const byLast = composers.find((c) => c.input === lastFocusedReplyInput);
+    if (byLast) return byLast;
+  }
+  if (composers.length === 1) return composers[0];
+  // 多个回复框、又没明确焦点：优先弹窗里的那个；再不明确就先不挂按钮，
+  // 等用户点进某个框（focusin）再出现，绝不随便挑一个把字写错地方。
+  return composers.find((c) => c.input.closest &&
+    c.input.closest('[role="dialog"],[aria-modal="true"]')) || null;
 }
 
 function injectIntoReplyComposers() {
@@ -1490,23 +1577,25 @@ function injectIntoReplyComposers() {
   if (!quickOn) injectedPromoBars().forEach((n) => { if (n.remove) n.remove(); });
   if (!aiOn && !quickOn) return;
   const composers = findReplyComposers();
-  const hosts = composers.map((c) => c.host).filter(Boolean);
-  /* 1.3.4 关键修复：host.children 是 HTMLCollection，没有 .filter！
-   * 每轮扫描都往回复框里再塞按钮会累积到 33 个，按钮文字还会被当成推文正文。 */
+  const target = pickActiveComposer(composers);
+  const host = target && target.host;
+
+  // 凡是没挂在目标 host 上的按钮一律清掉：页面里永远只有一组
   [injectedReplyButtons(), injectedPromoBars()].forEach((list) => {
-    list.forEach((n) => { if (hosts.indexOf(n.parentElement) === -1 && n.remove) n.remove(); });
-  });
-  hosts.forEach((host) => {
-    ['wbx-reply-btn', 'wbx-promo-bar'].forEach((cls) => {
-      const mine = Array.prototype.filter.call(host.children || [],
-        (x) => String(x.className || '').indexOf(cls) !== -1);
-      for (let i = 1; i < mine.length; i++) { if (mine[i].remove) mine[i].remove(); }
+    list.forEach((n) => {
+      if (!host || n.parentElement !== host) { if (n.remove) n.remove(); }
     });
   });
-  composers.forEach((c) => {
-    if (aiOn) injectAiButton(c);
-    if (quickOn) injectPromoBar(c);
+  if (!host) return;
+  /* 1.3.4 关键修复：host.children 是 HTMLCollection，没有 .filter！
+   * 每轮扫描都往回复框里再塞按钮会累积到 33 个，按钮文字还会被当成推文正文。 */
+  ['wbx-reply-btn', 'wbx-promo-bar'].forEach((cls) => {
+    const mine = Array.prototype.filter.call(host.children || [],
+      (x) => String(x.className || '').indexOf(cls) !== -1);
+    for (let i = 1; i < mine.length; i++) { if (mine[i].remove) mine[i].remove(); }
   });
+  if (aiOn) injectAiButton(target);
+  if (quickOn) injectPromoBar(target);
 }
 
 /* 回复弹窗里被回复的推文正文：优先弹窗内的 article，其次按钮所在 article，
@@ -1547,26 +1636,27 @@ function writeIntoReply(input, text) {
     } catch (e) { /* 光标定位失败不影响插入 */ }
     const existing = nodeText(input).trim();
     const payload = existing ? '\n' + text : text;
-    if (document.execCommand && document.execCommand('insertText', false, payload)) return true;
-    // 兜底：直接改文本并派发 input 事件（X 改版导致 execCommand 被拦时）
-    const next = existing ? existing + '\n' + text : text;
-    if (input.textContent != null) input.textContent = next;
-    if (input.innerText != null) input.innerText = next;
-    try {
-      const Ev = (typeof InputEvent === 'function') ? InputEvent : Event;
-      const ev = new Ev('input', { bubbles: true, inputType: 'insertText', data: payload });
-      if (input.dispatchEvent) input.dispatchEvent(ev);
-      return true;
-    } catch (e) { return false; }
+    /* 1.4.9：删掉「textContent = / innerText = + 合成 input 事件」兜底。
+     * 那条兜底会绕过 X 的受控编辑器 state，下一次用户输入就把旧文本还原回来，
+     * 表现为「写进去看着对了，一手动改就乱」。现在失败就明确失败，不改 DOM。 */
+    return nativeReplyEdit(input, 'insertText', payload);
   } catch (e) { return false; }
 }
 
 function applyCommentToReply(text, btn) {
   if (!btn || !btn.__wbxReply) return false;
+  // 1.4.9：按钮注入时绑定的那个输入框优先；不再 fallback 到 list[0]
+  const bound = btn.__wbxInput;
+  if (bound && bound.parentElement) {
+    try {
+      if (typeof document !== 'undefined' && document.contains && !document.contains(bound)) return false;
+    } catch (e) { /* 测试桩没有 contains */ }
+    return writeIntoReply(bound, text);
+  }
   const list = findReplyComposers();
-  if (!list.length) return false;
-  const target = list.find((c) => c.scope === btn.__wbxScope) || list[0];
-  return writeIntoReply(target.input, text);
+  const target = list.find((c) => c.input === bound) ||
+    list.find((c) => c.scope === btn.__wbxScope);
+  return target ? writeIntoReply(target.input, text) : false;
 }
 
 /* 插件自己打开的 X 发布页不注入「一键转发」按钮：否则发推框里会再叠一个。

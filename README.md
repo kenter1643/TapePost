@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.8（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.9（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,26 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.8**（单个 T 按钮 + 写回链路重写）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.9**（全页一个 T 按钮 + 精准回写）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+
+### 1.4.9：全页只有一个 T 按钮，写回只认当前回复框（真机反馈修复）
+
+1.4.8 上线后真机仍看到「很多按钮」、点 T 后「文字没写对在回复框」「手动改就乱」。复盘出三条新根因：
+
+1. `injectIntoReplyComposers()` 对 `findReplyComposers()` 返回的**每一个** composer 都注入一组按钮。X 详情页同时存在主回复框、嵌套回复框、引用框时，就会冒出一排 T；点其中一个，回写却按容器里的第一个 textbox 定位，写进别的评论区。
+2. `mousedown` 默认把焦点从 `contenteditable` 抢到按钮上，`execCommand('insertText')` 失去编辑目标，文字没落进当前回复框。
+3. AI 候选的 `writeIntoReply()` 还留着 `textContent =` / `innerText =` + 合成 `InputEvent` 兜底，绕过 X 受控编辑器 state，下一次手动输入把旧文本还原 → 看着写对了、一改就乱。另外「上次带入哪句」的缓存状态，让用户手动删掉推广句后再点 T 会一直提示「已被手工改动」。
+
+1.4.9 的做法：
+
+- **全局一组按钮**：`pickActiveComposer()` 按 `activeElement` → 最近 `focusin` → 唯一 composer → 弹窗内 composer 决定唯一目标；多个回复框且焦点不明确时先不挂按钮，等用户点进某个框。不在目标 host 上的按钮每轮扫描全部清掉。
+- **按钮绑定真实输入框**：注入时 `__wbxInput` 指向那个 input，每轮扫描刷新；`promoInputFor()` / `applyCommentToReply()` 都优先用它，容器里出现多个 textbox 时宁可停手也不猜，彻底去掉 `findReplyComposers()[0]` 兜底。
+- **mousedown 保焦**：T 与 AI 评论按钮都在 `mousedown` 上 `preventDefault()`，并加 `user-select:none`，保住焦点与选区。
+- **所有写回只有一条路径**：AI 候选也改成只用 `execCommand('insertText')`，删掉直改 DOM 的兜底；失败只提示，不污染编辑器 state。
+- **手工编辑更宽容**：判断只看点击瞬间回复框里的真实文本。推广句整行删掉后视为首次带入，正常追加新句；只有「话术还在但不在末尾 / 被改写」才停手并复制新句。随机到当前末尾那句会自动再取一句，保证点一下必定换句。
+- **未新增任何 manifest 权限**。把鼠标悬在 T 按钮上看到 `v1.4.9`，即确认重载生效。
+
+下载：`store/TapePost_1.4.9_store.zip`。
 
 ### 1.4.8：只有一个 T 按钮，写回链路彻底重写（真机反馈修复）
 
