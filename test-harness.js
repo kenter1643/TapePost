@@ -565,6 +565,7 @@ function loadContent() {
   contentCtx = vm.createContext(g);
   vm.runInContext(read('account.js'), contentCtx, { filename: 'account.js' });
   vm.runInContext(read('sites.js'), contentCtx, { filename: 'sites.js' });
+  vm.runInContext(read('promo.js'), contentCtx, { filename: 'promo.js' });
   vm.runInContext(read('content.js'), contentCtx, { filename: 'content.js' });
   const orig = contentCtx.handleResult;
   contentCtx.handleResult = function (msg) {
@@ -2599,8 +2600,8 @@ async function runScenario(name, cfg, expect) {
   const offscreenJs = read('offscreen.js');
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
-    { name: '1.4.3 起 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.4' },
+    { name: '1.4.5 manifest 版本号持续升级',
+      ok: manifestJson.version === '1.4.5' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2627,8 +2628,8 @@ async function runScenario(name, cfg, expect) {
 
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
-    { name: '1.4.4 manifest 版本号已升',
-      ok: manifestJson.version === '1.4.4' },
+    { name: '1.4.4 修复保留且版本继续推进',
+      ok: manifestJson.version === '1.4.5' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -2642,8 +2643,102 @@ async function runScenario(name, cfg, expect) {
       ok: contentJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') && contentJs.includes('!err && r && r.ok') },
     { name: '1.4.4 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
-    { name: '1.4.4 UI 版本号同步',
-      ok: contentJs.includes('v1.4.4') && popupHtml.includes('当前 v1.4.4') }
+    { name: '1.4.4 UI 版本号同步升级到 1.4.5',
+      ok: contentJs.includes('v1.4.5') && popupHtml.includes('当前 v1.4.5') }
+  ];
+
+  // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
+  const promoJs = read('promo.js');
+  const promoCtx = vm.createContext({});
+  vm.runInContext(promoJs, promoCtx, { filename: 'promo.js' });
+  const P = promoCtx.TapePromo;
+  const seqRng = (function () {
+    const seq = [0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6];
+    let i = 0;
+    return () => seq[(i++) % seq.length];
+  })();
+  const allBuiltin = P.LINES.tapeout.concat(P.LINES.bem).join('\n');
+  const onlyT = P.pickLines('tapeout', {}, 3, seqRng);
+  const onlyB = P.pickLines('bem', {}, 3, seqRng);
+  const mixed = P.pickLines('both', {}, 3, seqRng);
+  const customPool = P.pickLines('tapeout', { tapeout: '自定义甲\n自定义乙\n自定义丙' }, 2, seqRng);
+  const decorated = P.decorate(['甲', '乙', '丙'], { target: 'both', rng: seqRng });
+  const rerolled = P.pickLines('both', {}, 3, seqRng, decorated.lines);
+  const longText = P.appendLine('啊'.repeat(280), '尾巴');
+  const dupText = P.appendLine('正文里已经有尾巴', '尾巴');
+  const emojiText = P.appendLine('😀'.repeat(10), '尾巴');
+  const cp = (s) => Array.from(String(s)).length;
+
+  let promoRuntime = { on: null, off: null };
+  try {
+    promoRuntime = vm.runInContext(`(function () {
+      var saved = Object.assign({}, settings);
+      settings.promoEnabled = true;
+      settings.promoTarget = 'both';
+      settings.promoCustomTapeOut = '';
+      settings.promoCustomBEM = '';
+      var on = buildCommentTexts(['甲', '乙', '丙']);
+      settings.promoEnabled = false;
+      var off = buildCommentTexts(['甲', '乙', '丙']);
+      Object.keys(saved).forEach(function (k) { settings[k] = saved[k]; });
+      return { on: on, off: off };
+    })()`, contentCtx);
+  } catch (e) { note('ERROR', 'promo runtime: ' + (e && e.message)); }
+
+  const promoChecks = [
+    { name: '1.4.5 内置两组话术各不少于 8 条',
+      ok: P.LINES.tapeout.length >= 8 && P.LINES.bem.length >= 8 },
+    { name: '1.4.5 内置话术不含价格 / 收益 / 买入承诺',
+      ok: !/(价格|收益|涨幅|买入|稳赚|翻倍|上车|投资建议)/.test(allBuiltin) },
+    { name: '1.4.5 单主题模式只取该主题',
+      ok: onlyT.every((l) => P.LINES.tapeout.indexOf(l) >= 0) &&
+          onlyB.every((l) => P.LINES.bem.indexOf(l) >= 0) },
+    { name: '1.4.5 both 模式交替覆盖两个主题',
+      ok: P.LINES.tapeout.indexOf(mixed[0]) >= 0 && P.LINES.bem.indexOf(mixed[1]) >= 0 &&
+          P.LINES.tapeout.indexOf(mixed[2]) >= 0 },
+    { name: '1.4.5 自定义话术覆盖内置',
+      ok: customPool.length === 2 && customPool.every((l) => /^自定义/.test(l)) },
+    { name: '1.4.5 推广句追加在评论末尾',
+      ok: P.appendLine('正文', '尾巴') === '正文\n\n尾巴' },
+    { name: '1.4.5 已有同句不重复追加',
+      ok: dupText === '正文里已经有尾巴' },
+    { name: '1.4.5 超长正文压缩且保住推广句',
+      ok: cp(longText) <= P.MAX_CHARS && longText.endsWith('\n\n尾巴') && longText.indexOf('…') > 0 },
+    { name: '1.4.5 emoji 按码点处理不截断',
+      ok: emojiText.indexOf('😀\n\n') > 0 && emojiText.indexOf('\uFFFD') < 0 },
+    { name: '1.4.5 decorate 为 3 条候选各附一句',
+      ok: decorated.texts.length === 3 && decorated.lines.length === 3 &&
+          decorated.texts.every((t, i) => t.startsWith(['甲', '乙', '丙'][i]) && t.endsWith(decorated.lines[i])) },
+    { name: '1.4.5 换一批排除上一批话术',
+      ok: rerolled.length === 3 && rerolled.every((l) => decorated.lines.indexOf(l) < 0) },
+    { name: '1.4.5 manifest 注入 promo.js 且顺序在 content.js 之前',
+      ok: (() => {
+        const js = ((manifestJson.content_scripts || [])[0].js || []);
+        return js.indexOf('promo.js') >= 0 && js.indexOf('promo.js') < js.indexOf('content.js');
+      })() },
+    { name: '1.4.5 popup 引入 promo.js 且四项设置齐备',
+      ok: popupHtml.includes('<script src="promo.js"></script>') &&
+          ['promoEnabled', 'promoTarget', 'promoCustomTapeOut', 'promoCustomBEM', 'promoPreview', 'promoPreviewBox']
+            .every((id) => popupHtml.includes('id="' + id + '"')) },
+    { name: '1.4.5 设置读写接入推广键，默认关闭',
+      ok: popupJs.includes('promoEnabled: false') && popupJs.includes('promoTarget: \'both\'') &&
+          popupJs.includes('promoEnabled: !!(document.getElementById') &&
+          contentJs.includes('promoEnabled: false') },
+    { name: '1.4.5 推广只作用于 AI 评论，不改转发正文',
+      ok: contentJs.includes('function buildCommentTexts(') &&
+          contentJs.includes('promo.texts.forEach(') &&
+          contentJs.includes('const text = withSource(withSignature(cleaned), card);') &&
+          !contentJs.includes('withPromo(') },
+    { name: '1.4.5 候选面板提供「换一批」且设置改动能即时生效',
+      ok: contentJs.includes('🎲 换一批') && contentJs.includes('chrome.storage.onChanged.addListener') },
+    { name: '1.4.5 运行时：开＝追加、关＝原样',
+      ok: !!(promoRuntime.on && promoRuntime.off) &&
+          promoRuntime.on.enabled === true && promoRuntime.on.texts.length === 3 &&
+          promoRuntime.on.texts.every((t) => t.indexOf('\n\n') > 0) &&
+          promoRuntime.off.enabled === false && promoRuntime.off.texts.join('|') === '甲|乙|丙' },
+    { name: '1.4.5 未新增 manifest 权限',
+      ok: (manifestJson.permissions || []).sort().join(',') ===
+          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
   ];
 
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
@@ -2661,7 +2756,8 @@ async function runScenario(name, cfg, expect) {
     .concat(await runModeMigrationChecks())
     .concat(conciseChecks)
     .concat(tmpChecks)
-    .concat(portChecks);
+    .concat(portChecks)
+    .concat(promoChecks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

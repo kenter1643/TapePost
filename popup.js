@@ -26,7 +26,12 @@ const DEFAULTS = Object.assign({
   // 1.4.3：临时文件策略
   autoDownloadBackup: false,  // 转发时自动下载图片备份（默认关）
   tmpCleanup: true,           // 到期自动清理
-  tmpKeepMinutes: 30          // 0 = 不自动清理
+  tmpKeepMinutes: 30,         // 0 = 不自动清理
+  // 1.4.5：AI 评论末尾的生态推广尾巴（默认关闭，用户显式勾选才生效）
+  promoEnabled: false,
+  promoTarget: 'both',        // both | tapeout | bem
+  promoCustomTapeOut: '',     // 每行一句；留空用内置话术
+  promoCustomBEM: ''
 }, PAGE_DEFAULTS);
 
 // 页面模式的文本配置项；选择器全部可改，X 改版时不用升版本
@@ -168,6 +173,15 @@ function load() {
     document.getElementById('domain').value = s.xDomain || 'x.com';
     const ai = document.getElementById('aiComment');
     if (ai) ai.checked = s.enableAiComment !== false;
+    // 1.4.5：评论末尾推广
+    const promoOn = document.getElementById('promoEnabled');
+    if (promoOn) promoOn.checked = s.promoEnabled === true;
+    const promoTarget = document.getElementById('promoTarget');
+    if (promoTarget) promoTarget.value = ['both', 'tapeout', 'bem'].indexOf(s.promoTarget) >= 0 ? s.promoTarget : 'both';
+    const promoT = document.getElementById('promoCustomTapeOut');
+    if (promoT) promoT.value = s.promoCustomTapeOut || '';
+    const promoB = document.getElementById('promoCustomBEM');
+    if (promoB) promoB.value = s.promoCustomBEM || '';
     const replySel = document.getElementById('replyInputSelector');
     if (replySel) replySel.value = s.replyInputSelector || '';
     renderPrompt('commentPrompt', s.commentPrompt);
@@ -225,6 +239,11 @@ function save() {
     tmpCleanup: !!(document.getElementById('tmpCleanup') || {}).checked,
     tmpKeepMinutes: Number((document.getElementById('tmpKeepMinutes') || {}).value || 0),
     enableAiComment: !!(document.getElementById('aiComment') || {}).checked,
+    // 1.4.5：推广开关与话术
+    promoEnabled: !!(document.getElementById('promoEnabled') || {}).checked,
+    promoTarget: (document.getElementById('promoTarget') || {}).value || 'both',
+    promoCustomTapeOut: (document.getElementById('promoCustomTapeOut') || {}).value || '',
+    promoCustomBEM: (document.getElementById('promoCustomBEM') || {}).value || '',
     replyInputSelector: (document.getElementById('replyInputSelector') || {}).value || '',
     commentPrompt: promptToStore('commentPrompt'),
     verifyPrompt: promptToStore('verifyPrompt'),
@@ -439,11 +458,37 @@ bind('resetPageExtra', () => {
 bind('previewPrompt', previewPrompt);
 bind('openGrok', openGrokPage);
 
+/* 1.4.5：随机预览 —— 用的是候选注入时同一份话术库与抽取逻辑 */
+function previewPromo() {
+  const box = document.getElementById('promoPreviewBox');
+  if (!box || typeof TapePromo === 'undefined') return;
+  const target = (document.getElementById('promoTarget') || {}).value || 'both';
+  const custom = {
+    tapeout: (document.getElementById('promoCustomTapeOut') || {}).value || '',
+    bem: (document.getElementById('promoCustomBEM') || {}).value || ''
+  };
+  const lines = TapePromo.pickLines(target, custom, 3);
+  const label = target === 'tapeout' ? 'TapeOut' : (target === 'bem' ? '$BEM' : 'TapeOut + $BEM 交替');
+  box.textContent = '当前主题：' + label + '\n\n' +
+    lines.map((l, i) => `候选 ${i + 1} → ${l}`).join('\n\n');
+  box.style.display = 'block';
+}
+bind('promoPreview', previewPromo);
+bind('promoReset', () => {
+  ['promoCustomTapeOut', 'promoCustomBEM'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  grokStatus('自定义话术已清空，恢复内置话术（记得点「保存设置」）。', true);
+});
+
 /* 1.4.2 文案精简：长说明收进一个简洁弹窗，设置页只留一句结论。 */
 const INFO = {
   versions: {
     title: '版本说明',
     lines: [
+      'v1.4.5 可勾选「评论末尾推广」，随机附一句 TapeOut / $BEM 介绍。',
+      'v1.4.4 修好重载后 popup 的消息端口报错。',
       'v1.4.3 默认不落盘；临时文件到期自动清理。',
       'v1.4.2 修好直连 401 认证，可复用同页 XVM 通道。',
       'v1.4.1 旧「页面模式」设置自动升级为「自动」。',
@@ -472,6 +517,18 @@ const INFO = {
       '去水印只在本机处理，检测不到水印的图片原样保留。',
       '生态面板：295 条内置清单核验链接，以本地结论为准。',
       'X 改版导致按钮不出现时，可填「回复框选择器」。'
+    ]
+  },
+  promo: {
+    title: '评论末尾推广',
+    lines: [
+      '默认关闭，勾上后只对「AI 评论」的 3 条候选生效。',
+      '每条候选随机附一句；选「交替随机」时两个主题都会出现。',
+      '可自定义话术：每行一句，按 TapeOut / $BEM 分开填。',
+      '内置话术只讲生态与技术，不提价格、收益或买入建议。',
+      '附带后超过 260 字会压缩正文，保证推广句完整。',
+      '插件只把文字写回回复框，最后仍由你手动点「回复」。',
+      '在候选面板点「🎲 换一批」可不重新生成评论就换推广句。'
     ]
   },
   tmp: {

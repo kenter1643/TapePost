@@ -38,7 +38,12 @@ const SETTINGS_DEFAULT = {
   // 1.4.3：临时文件 / 落盘策略
   autoDownloadBackup: false,     // 转发时自动下载图片备份（默认关：图片走剪贴板不落盘）
   tmpCleanup: true,              // 必要的临时文件（视频 / 手动下载）到期自动清理
-  tmpKeepMinutes: 30             // 保留时长（分钟），0 = 不自动清理
+  tmpKeepMinutes: 30,            // 保留时长（分钟），0 = 不自动清理
+  // 1.4.5：AI 评论末尾的 TapeOut / $BEM 推广尾巴（默认关闭）
+  promoEnabled: false,
+  promoTarget: 'both',           // both | tapeout | bem
+  promoCustomTapeOut: '',
+  promoCustomBEM: ''
 };
 let settings = Object.assign({}, SETTINGS_DEFAULT);
 
@@ -52,6 +57,19 @@ function loadSettings() {
     } catch (e) { resolve(settings); }
   });
 }
+
+/* 1.4.5：设置页保存「评论末尾推广」后立即生效，已打开的 X 页面不用刷新。
+ * 只同步本次新增的 4 个键，不覆盖其它运行期状态；老环境没有 onChanged 时静默跳过。 */
+try {
+  if (chrome.storage && chrome.storage.onChanged && chrome.storage.onChanged.addListener) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'sync' || !changes) return;
+      ['promoEnabled', 'promoTarget', 'promoCustomTapeOut', 'promoCustomBEM'].forEach((k) => {
+        if (changes[k]) settings[k] = changes[k].newValue;
+      });
+    });
+  }
+} catch (e) { /* ignore */ }
 
 /* 1.4.1 一次性设置迁移 —— 让「站内直连」真正生效，且不需要重载扩展。
  * 老版本(1.3.x)把用户选的「X 站内 Grok」存成了显式 grokMode="page"。
@@ -966,7 +984,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.4';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.5';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1498,11 +1516,31 @@ function makeCommentEl(tag, cls, text) {
   return n;
 }
 
-function showCommentPicker(comments, statusId, card, btn, postText, mode, diag) {
+/* 1.4.5：两条生成路径（站内直连 / 手动读回回答）都汇到这里，
+ * 所以推广尾巴只在这一处注入，不会出现漏加或重复加。
+ * 只在用户显式勾选时生效；未加载 promo.js 时安静降级为原始候选。 */
+function buildCommentTexts(comments, exclude) {
+  const raw = (comments || []).map((c) => String(c == null ? '' : c));
+  if (settings.promoEnabled !== true || typeof TapePromo === 'undefined') {
+    return { texts: raw, lines: [], enabled: false };
+  }
+  const out = TapePromo.decorate(raw, {
+    target: settings.promoTarget,
+    custom: {
+      tapeout: settings.promoCustomTapeOut || '',
+      bem: settings.promoCustomBEM || ''
+    },
+    exclude: exclude || []
+  });
+  return { texts: out.texts, lines: out.lines, enabled: true };
+}
+
+function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, exclude) {
   const old = document.getElementById('wbx-comments');
   if (old && old.remove) old.remove();
   const panel = document.createElement('div');
   panel.id = 'wbx-comments';
+  const promo = buildCommentTexts(comments, exclude);
 
   const head = makeCommentEl('div', 'wbx-c-head');
   const modeLabel = mode === 'page' ? 'X 站内 Grok · 免 Key' : (mode === 'api' ? 'xAI API' : 'Grok');
@@ -1513,7 +1551,9 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag) 
   close.addEventListener('click', () => { if (panel.remove) panel.remove(); });
   head.appendChild(close);
   panel.appendChild(head);
-  panel.appendChild(makeCommentEl('div', 'wbx-c-tip', '选一条写入回复框，由你手动发送。'));
+  panel.appendChild(makeCommentEl('div', 'wbx-c-tip', promo.enabled
+    ? '选一条写入回复框；末尾已随机附一句 TapeOut / $BEM 介绍，可点「🎲 换一批」更换。'
+    : '选一条写入回复框，由你手动发送。'));
   // 1.3.2：把「是否真的触发 Grok / 读到回答」明确显示出来，不再静默兜底
   if (diag && mode === 'page') {
     const bits = [diag.hasAnswer === false ? '⚠️ 未确认读到 Grok 回答，请核对' : '✅ 已确认读到 Grok 回答'];
@@ -1523,7 +1563,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag) 
     panel.appendChild(makeCommentEl('div', 'wbx-c-diag', bits.join(' · ')));
   }
 
-  comments.forEach((c, i) => {
+  promo.texts.forEach((c, i) => {
     const item = makeCommentEl('div', 'wbx-c-item');
     item.appendChild(makeCommentEl('div', 'wbx-c-label', '候选 ' + (i + 1)));
     item.appendChild(makeCommentEl('div', 'wbx-c-text', c));
@@ -1587,6 +1627,18 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag) 
   dismiss.type = 'button';
   dismiss.addEventListener('click', () => { if (panel.remove) panel.remove(); });
   foot.appendChild(again);
+  if (promo.enabled) {
+    const reroll = makeCommentEl('button', '', '🎲 换一批');
+    reroll.type = 'button';
+    reroll.title = '不重新生成评论，只换末尾的推广句';
+    reroll.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (panel.remove) panel.remove();
+      showCommentPicker(comments, statusId, card, btn, postText, mode, diag, promo.lines);
+    });
+    foot.appendChild(reroll);
+  }
   foot.appendChild(dismiss);
   panel.appendChild(foot);
 

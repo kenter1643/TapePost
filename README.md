@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.4（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.5（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,21 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-09）**：本仓库 `main` 是 **1.4.4**（修复 popup 消息端口报错）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.5**（新增「评论末尾推广」勾选）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+
+### 1.4.5：可勾选的「评论末尾推广」（TapeOut / $BEM 随机话术）
+
+在设置页「🤖 Grok 设置」里新增 **📣 评论末尾推广**，**默认关闭**，勾上后才生效：
+
+- **3 条 AI 评论候选各随机附一句**推广短句，追加在候选末尾；选「交替随机」时两个主题都会出现，也可只推 TapeOut 或只推 `$BEM`。
+- **话术可改**：内置两组各 8 句（共 16 句），只讲生态与技术，不含价格、收益、买入建议，也不塞外链；在「✏️ 自定义话术」里按主题每行填一句即可覆盖内置，设置页可「🎲 随机预览一句」。
+- **不重复、不超长**：同一句不会重复追加；按 Unicode 码点计数，附带后超过 260 字符会压缩正文并保住推广句（X 上限 280，留 20 字符余量给链接计权 / emoji）。
+- **可换一批**：候选面板点「🎲 换一批」只换推广句、不重新调 Grok，且会避开上一批话术。
+- **只作用于 AI 评论**：一键转发的正文完全不变；插件仍只把文字写回回复框，最后一步由你手动点「回复」。
+- **设置即时生效**：`chrome.storage.onChanged` 只同步这 4 个键，保存后已打开的 X 页面不用刷新。
+- 新增共享层 `promo.js`（content script 与 popup 同一份话术），**未新增任何 manifest 权限**；回归测试 **300/300 全通过**。
+
+下载：`store/TapePost_1.4.5_store.zip`（GitHub 仓库内直接下载，或 `git clone` 后解压加载）。
 
 ### 1.4.4：修复重新加载后 popup 的 `Unchecked runtime.lastError`
 
