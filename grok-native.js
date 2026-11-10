@@ -272,7 +272,11 @@
     }
   }
 
-  function buildBody(prompt) {
+  /* 1.4.11 快速模式：
+   * - enableSideBySide=true 会让 X 并排跑两份回答，体感直接翻倍，关掉；
+   * - disableReasoning / disableDeepSearch 是 X 站内接口的软开关，服务端
+   *   忽略也不影响，配合提示词里的「不要思考」一起把长链路压到最短。 */
+  function buildBody(prompt, fast) {
     return JSON.stringify({
       responses: [{ message: String(prompt || ''), sender: 1, promptSource: '', fileAttachments: [] }],
       systemPromptName: '',
@@ -284,7 +288,9 @@
       promptMetadata: { promptSource: 'NATURAL', action: 'INPUT' },
       imageGenerationCount: 0,
       requestFeatures: { eagerTweets: false, serverHistory: false },
-      enableSideBySide: true,
+      enableSideBySide: false,
+      disableReasoning: fast !== false,
+      disableDeepSearch: fast !== false,
       toolOverrides: {},
       modelConfigOverride: {},
       isTemporaryChat: true
@@ -345,21 +351,51 @@
     return chunks.join('');
   }
 
-  async function readStream(res) {
+  /* 1.4.11：Grok 出完答案后还会继续推思考尾帧 / 元数据帧。旧版死等流结束，
+   * 常常白等十几秒。这里给 read() 加心跳：
+   *   - 已拿到 final 文本且连续 idleMs 没有新内容 → 主动 cancel 收尾；
+   *   - 超过 hardMs 一律收尾，用已收到的内容去解析，绝不空等到后台超时。 */
+  async function readStream(res, opts) {
+    var fast = !!(opts && opts.fast);
+    var idleMs = fast ? 1200 : 4000;
+    var hardMs = fast ? 26000 : 85000;
     if (!res.body || !res.body.getReader) return String(await res.text() || '');
     var reader = res.body.getReader();
     var decoder = new TextDecoder();
     var pending = '';
     var finalText = '';
-    while (true) {
-      var part = await reader.read();
+    var started = Date.now();
+    var lastGrow = started;
+    var stopped = false;
+    function stop() {
+      if (stopped) return;
+      stopped = true;
+      try { reader.cancel(); } catch (e) {}
+    }
+    while (!stopped) {
+      var part;
+      try {
+        part = await Promise.race([
+          reader.read(),
+          new Promise(function (resolve) {
+            setTimeout(function () { resolve({ __tick: true }); }, 400);
+          })
+        ]);
+      } catch (e) { stop(); break; }
+      if (part.__tick) {
+        var now = Date.now();
+        if (finalText && now - lastGrow >= idleMs) { stop(); break; }
+        if (now - started >= hardMs) { stop(); break; }
+        continue;
+      }
       if (part.done) break;
       pending += decoder.decode(part.value, { stream: true });
       var nl = pending.lastIndexOf('\n');
       if (nl < 0) continue;
       var ready = pending.slice(0, nl);
       pending = pending.slice(nl + 1);
-      finalText += extractFinalText(ready);
+      var chunk = extractFinalText(ready);
+      if (chunk) { finalText += chunk; lastGrow = Date.now(); }
     }
     if (pending.trim()) finalText += extractFinalText(pending);
     return finalText;
@@ -438,8 +474,11 @@
   }
 
   // ---------------------------------------------------------------- 5. 主流程
-  async function generate(prompt) {
-    var body = buildBody(prompt);
+  async function generate(prompt, opts) {
+    /* 1.4.11：默认快速模式。关掉开关才恢复旧的完整链路（含 XVM 通道）。 */
+    var fast = !(opts && opts.fast === false);
+    var streamOpts = { fast: fast };
+    var body = buildBody(prompt, fast);
     var capTx = freshCapturedTx();
     var attempts = [];
     var res = null;
@@ -448,7 +487,9 @@
     // 0. 1.4.2：页面里已装 X Viral Monitor 时，直接复用它已验证稳定的站内
     //    Grok 通道（同一端点、同一 X 会话，它自己维护实时 bearer 与捕获签名）。
     //    真机 401 出现在我们自有的认证链路上，借用后无需重复实现。
-    if (hasXvmGrok()) {
+    /* 快速模式跳过 XVM：它用「[推文内容]」当提示词，Grok 会自由发挥长篇
+     * 分析甚至思考过程，最慢且最不稳定。自有直连才是短平快的那条路。 */
+    if (!fast && hasXvmGrok()) {
       try {
         var out = await window.__xvmGrok.generate({
           tweetText: String(prompt || ''),
@@ -528,7 +569,7 @@
           try { retry = await send(body, lastSentTxId, true); }
           catch (e) { attempts.push('公开 bearer 重试：' + String(e && e.message || e)); }
           if (retry && retry.ok) {
-            var retryText = await readStream(retry);
+            var retryText = await readStream(retry, streamOpts);
             var retryComments = extractComments(retryText);
             if (retryComments.length) {
               return { comments: retryComments, raw: String(retryText).slice(0, 1200), via: 'public-bearer' };
@@ -554,7 +595,7 @@
       throw new Error('X 站内 Grok 请求失败：HTTP ' + httpStatus + ' ' + (res.statusText || ''));
     }
 
-    var finalText = await readStream(res);
+    var finalText = await readStream(res, streamOpts);
     var comments = extractComments(finalText);
     if (!comments.length) {
       throw new Error('Grok 已返回结果，但没解析到 3 条可用评论（模型可能没按格式输出）。原文：' +
@@ -625,7 +666,8 @@
     };
     var job = d.action === 'ping' ? Promise.resolve({ ok: true, status: status() })
       : d.action === 'check' ? checkReady().then(function (r) { return { ok: true, check: r }; })
-        : generate(d.prompt || '').then(function (r) { return { ok: true, comments: r.comments, raw: r.raw, via: r.via }; });
+        : generate(d.prompt || '', { fast: d.fast !== false })
+          .then(function (r) { return { ok: true, comments: r.comments, raw: r.raw, via: r.via }; });
     job.catch(function (e) { return { ok: false, error: String((e && e.message) || e), status: status() }; }).then(reply);
   });
 })();

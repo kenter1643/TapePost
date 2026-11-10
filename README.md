@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.10（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.11（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,26 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.10**（按钮不压正文 + 写回后收拢选区）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.11**（写回链路重写 + AI 快速模式）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+
+### 1.4.11：写回链路重写（重复 / 不可编辑）+ AI 评论快速模式
+
+真机确认 Chrome 里加载的确实是 **v1.4.10**（按钮 title 为证），但用户截图里同一句 TapeOut 话术仍然粘着出现两遍，且回复框「不可编辑」；对照截图里手动输入的文字完全正常。所以这不是没重载，而是 1.4.8~1.4.10 共用的写入方式根本不兼容 X 的受控编辑器：
+
+1. **局部 Range 是元凶**：旧写法用 `selectReplyTail()` 跨文本节点选中末尾那句，再 `delete` / `insertText`。X 的编辑器不认这种外部选区，`insertText` 会退化成「在当前光标处追加」→ 换句变成叠加第二句；局部删除又让编辑器 state 与 DOM 失步 → 之后打字没反应。
+2. **`\n` 不可靠**：`insertText('\n' + line)` 里的换行在 X 里被折叠成空白，所以截图两句之间没有分段。
+3. **没有回滚**：写入结果不对时只提示，DOM 已经坏了。
+
+1.4.11 的做法：
+
+- 新增 `rewriteReplyOnce()`：**一次标准选区**（`selectNodeContents` = 全选，等价于用户 Cmd+A）+ **一次 `insertText`** 写入预先算好的「完整最终文本」。`applyQuickPromo()` 与 `writeIntoReply()` 共用，彻底废弃局部删改与重试。
+- 正文与推广句之间用 `\n\n` 单独成段；写后按「去掉所有空白后的字符序列」校验（X 会把 `\n` 变成 `<br>`，而文本节点收集跳过 `<br>`），并确认推广句只出现一次、正文前缀一字未动。异常时**自动把原文写回去** + 复制推广句。
+- `replyHasRichContent()`：正文里有 @ 提及、emoji 图片、链接卡片、配图时一律降级为「只复制、不写 DOM」，避免全量纯文本重写弄丢它们。
+- 新增 **T 安全模式**（`promoCopyOnly`，默认关）：开启后 T 永远只复制 + 聚焦回复框，用户自己 Cmd/Ctrl+V，100% 不会弄乱正文。
+- **AI 评论快速模式**（`grokFastMode`，默认开）：`enableSideBySide: false`（原来并排跑两份回答，耗时翻倍）、`disableReasoning` / `disableDeepSearch`、快速模式跳过 XVM 的长提示词通道、提示词明确「不要思考、凭第一反应写短评」；流式读取加心跳：拿到 final 答案后连续 1.2 秒无新增就主动 `cancel()` 收尾，不再空等思考尾帧；后台超时 90s → 30s。关掉开关可恢复完整模式。
+- **未新增任何 manifest 权限**。把鼠标悬在 T 按钮上看到 `v1.4.11`，即确认重载生效。
+
+下载：`store/TapePost_1.4.11_store.zip`。
 
 ### 1.4.10：按钮不再压住回复正文，写回后不留灰色选中块（真机截图复盘）
 

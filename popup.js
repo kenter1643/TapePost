@@ -34,7 +34,10 @@ const DEFAULTS = Object.assign({
   promoCustomBEM: '',
   // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无关，默认开启）
   promoQuickButtons: true,
-  promoQuickCount: 4             // 兼容旧配置，1.4.8 起不再使用
+  promoQuickCount: 4,            // 兼容旧配置，1.4.8 起不再使用
+  // 1.4.11
+  promoCopyOnly: false,          // T 只复制、不改 X 编辑器
+  grokFastMode: true             // AI 评论非思考快速模式
 }, PAGE_DEFAULTS);
 
 // 页面模式的文本配置项；选择器全部可改，X 改版时不用升版本
@@ -176,9 +179,13 @@ function load() {
     document.getElementById('domain').value = s.xDomain || 'x.com';
     const ai = document.getElementById('aiComment');
     if (ai) ai.checked = s.enableAiComment !== false;
-    // 1.4.5 / 1.4.8：评论末尾推广（自动附加 + 单个 T 按钮）
+    const fastMode = document.getElementById('grokFastMode');
+    if (fastMode) fastMode.checked = s.grokFastMode !== false;
+    // 1.4.5 / 1.4.8 / 1.4.11：评论末尾推广（自动附加 + 单个 T 按钮 + 安全模式）
     const quickOn = document.getElementById('promoQuickButtons');
     if (quickOn) quickOn.checked = s.promoQuickButtons !== false;
+    const copyOnly = document.getElementById('promoCopyOnly');
+    if (copyOnly) copyOnly.checked = s.promoCopyOnly === true;
     const promoOn = document.getElementById('promoEnabled');
     if (promoOn) promoOn.checked = s.promoEnabled === true;
     const promoTarget = document.getElementById('promoTarget');
@@ -244,6 +251,9 @@ function save() {
     tmpCleanup: !!(document.getElementById('tmpCleanup') || {}).checked,
     tmpKeepMinutes: Number((document.getElementById('tmpKeepMinutes') || {}).value || 0),
     enableAiComment: !!(document.getElementById('aiComment') || {}).checked,
+    // 1.4.11：AI 快速模式 / T 安全模式
+    grokFastMode: (document.getElementById('grokFastMode') || { checked: true }).checked !== false,
+    promoCopyOnly: !!(document.getElementById('promoCopyOnly') || {}).checked,
     // 1.4.5：推广开关与话术
     promoEnabled: !!(document.getElementById('promoEnabled') || {}).checked,
     promoTarget: (document.getElementById('promoTarget') || {}).value || 'both',
@@ -494,6 +504,7 @@ const INFO = {
   versions: {
     title: '版本说明',
     lines: [
+      'v1.4.11 写回改为一次全量替换，修掉文字重复与回复框不可编辑；新增 T 安全模式与 AI 评论快速模式。',
       'v1.4.10 按钮移到回复正文上方外侧不再压字；写回后收拢选区不留灰色高亮；已有两句以上推广句时停手不叠加。',
       'v1.4.9 全页只有一个 T 按钮且绑定当前回复框；点击保住焦点，修好按钮成排、写错框、手工改完就乱。',
       'v1.4.8 只留一个 T 按钮，点击随机换句不重复；写回改用原生编辑命令，正文绝不被重写。',
@@ -540,10 +551,11 @@ const INFO = {
       '右键点 T 可去掉末尾推广句，只留你自己写的正文；手工删掉后再点会重新带入。',
       '1.4.10 按钮不再压在正文上；每次写回后自动把选区收成光标，不留灰色选中块。',
       '1.4.10 正文里已经有两句以上推广句时会停手，只提示、不继续叠加；右键 T 仍可去掉末尾那句。',
-      '1.4.9 按钮绑定真实输入框、点击时不抢焦点，写回只发原生编辑命令：不整体重写、不直改 DOM、不模糊猜句子。',
-      '你手工写的分段、@、表情、已贴的图，以及光标位置全部原样保留。',
+      '1.4.11 写回只做一次「全量替换」（等价于自己全选后重打一遍），不再用局部选区删改：这就是之前文字重复、回复框不可编辑的根因。',
+      '1.4.11 正文里有 @ / 表情 / 配图时自动降级为只复制，绝不弄丢它们；也可手动开「安全模式」让 T 永远只复制。',
+      '1.4.11 AI 评论默认走快速模式：不思考、不并排生成、拿到答案即收尾，通常 5~15 秒。',
       '如果推广句被你手动改过，插件会停止写入并复制新句，绝不弄乱正文。',
-      '写入后会校验结果；异常时只提示、不自动重试，避免越点越重复。',
+      '写入后会校验结果；异常时自动恢复原文并把推广句复制到剪贴板，绝不重试。',
       'AI 候选则是 3 条各随机附一句，候选面板可「🎲 换一批」。',
       '可自定义话术：每行一句，按 TapeOut / $BEM 分开填。',
       '内置话术只讲生态与技术，不提价格、收益或买入建议。'

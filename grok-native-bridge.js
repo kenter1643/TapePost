@@ -55,7 +55,8 @@
       return true;
     }
     if (msg.type === 'GROK_NATIVE_CALL') {
-      call({ action: 'generate', prompt: msg.prompt || '' }, msg.timeoutMs || 90000).then(sendResponse);
+      call({ action: 'generate', prompt: msg.prompt || '', fast: msg.fast !== false },
+        msg.timeoutMs || 90000).then(sendResponse);
       return true;
     }
     return false;

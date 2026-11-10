@@ -16,7 +16,10 @@ const DIR = __dirname;
 const read = (f) => fs.readFileSync(path.join(DIR, f), 'utf8');
 
 const log = [];
-const note = (tag, s) => { log.push(`[${tag}] ${s}`); };
+const note = (tag, s) => {
+  log.push(`[${tag}] ${s}`);
+  if (tag === 'ERROR') console.error(`[${tag}] ${s}`);
+};
 
 // ---------- 共享 Blob / URL / ClipboardItem ----------
 class FakeBlob {
@@ -525,6 +528,14 @@ function makeDom() {
   root.id = 'body';
   const rootAppend = root.appendChild.bind(root);
   root.appendChild = (n) => { if (n && n.id) nodes[n.id] = n; return rootAppend(n); };
+  /* 1.4.11：写回改成「全选 + 一次 insertText」。测试桩必须能区分
+   * 「全选替换」与「折叠光标追加」，才能验证不重复、不覆盖、正文不动。 */
+  const selection = {
+    _ranges: [], rangeCount: 0,
+    getRangeAt(i) { return this._ranges[i]; },
+    removeAllRanges() { this._ranges = []; this.rangeCount = 0; },
+    addRange(r) { this._ranges = [r]; this.rangeCount = 1; }
+  };
   const doc = {
     readyState: 'complete',
     head: { appendChild() {} },
@@ -535,12 +546,21 @@ function makeDom() {
     querySelector: (sel) => root.querySelector(sel),
     addEventListener: () => {},
     activeElement: null,
+    createRange: () => ({
+      __el: null, __full: false,
+      selectNodeContents(el) { this.__el = el; this.__full = true; },
+      collapse() { this.__full = false; },
+      setStart() {}, setEnd() {}
+    }),
+    _selection: selection,
     // execCommand('insertText') 是写回 X contenteditable 的主路径
     execCommand: (cmd, ui, text) => {
       const el = doc.activeElement;
       if (cmd !== 'insertText' || !el) return false;
+      const range = selection._ranges[0];
+      const full = !!(range && range.__full);
       const cur = String(el.innerText || el.textContent || '');
-      el.innerText = cur + String(text);
+      el.innerText = full ? String(text) : cur + String(text);
       el.textContent = el.innerText;
       (doc._inserted || (doc._inserted = [])).push(String(text));
       return true;
@@ -562,6 +582,8 @@ function loadContent() {
     WBX_TEST_HOST: scenario.hostname || 'weibo.com',
     WBX_TEST_PATH: scenario.path || '/'
   });
+  // 1.4.11：rewriteReplyOnce() 依赖真实的 Selection / Range 语义
+  g.window.getSelection = () => dom._selection;
   contentCtx = vm.createContext(g);
   vm.runInContext(read('account.js'), contentCtx, { filename: 'account.js' });
   vm.runInContext(read('sites.js'), contentCtx, { filename: 'sites.js' });
@@ -1319,7 +1341,7 @@ async function runAuth401Checks() {
         return Promise.resolve(['认同并补充一点', '这个角度有意思', '想问下后续怎么走']);
       } })
     });
-    const borrowed = await run(xvmCtx, 'window.__tapeGrokNative.generate("【TapePost 任务开始】完整提示词")');
+    const borrowed = await run(xvmCtx, 'window.__tapeGrokNative.generate("【TapePost 任务开始】完整提示词", {fast:false})');
     A('1.4.2 复用 XVM 通道并返回 3 条候选',
       borrowed && borrowed.comments && borrowed.comments.length === 3 && borrowed.via === 'xvm-grok');
     A('1.4.2 借用 XVM 时不再发自有直连请求', run(xvmCtx, '__testState.fetchCalls.length') === 0);
@@ -1334,7 +1356,7 @@ async function runAuth401Checks() {
       xvmGrok: () => ({ generate: () => Promise.reject(new Error('XVM 未就绪')) }),
       xvmXct: fakeXct, fetch: () => okRes()
     });
-    const fallback = await run(fbCtx, 'window.__tapeGrokNative.generate("回落提示词")');
+    const fallback = await run(fbCtx, 'window.__tapeGrokNative.generate("回落提示词", {fast:false})');
     A('1.4.2 XVM 失败后回落自有直连', fallback && fallback.comments && fallback.comments.length === 3);
 
     // C：实时 bearer 优先级与强制公开 bearer
@@ -1349,7 +1371,7 @@ async function runAuth401Checks() {
     const r401 = makeNativeCtx({ xvmXct: fakeXct, fetch: (n) => (n === 1 ? errRes() : okRes()) });
     run(r401, 'window.__tapeGrokNative._remember("https://x.com/i/api/graphql", ' +
       '{headers:{authorization:"Bearer STALE-HOOK"}})');
-    const healed = await run(r401, 'window.__tapeGrokNative.generate("401 提示词")');
+    const healed = await run(r401, 'window.__tapeGrokNative.generate("401 提示词", {fast:false})');
     A('1.4.2 401 后公开 bearer 重试成功并返回候选',
       healed && healed.comments && healed.comments.length === 3 && healed.via === 'public-bearer');
     A('1.4.2 401 确实触发了第二次请求', run(r401, '__testState.fetchCalls.length') === 2);
@@ -1362,7 +1384,7 @@ async function runAuth401Checks() {
     run(r401b, 'window.__tapeGrokNative._remember("https://x.com/i/api/graphql", ' +
       '{headers:{authorization:"Bearer STALE-HOOK"}})');
     let msg401 = '';
-    try { await run(r401b, 'window.__tapeGrokNative.generate("401 提示词")'); }
+    try { await run(r401b, 'window.__tapeGrokNative.generate("401 提示词", {fast:false})'); }
     catch (e) { msg401 = String(e && e.message || e); }
     A('1.4.2 401 错误带出 X 返回的真实原因', /Could not authenticate you/.test(msg401));
     A('1.4.2 401 错误标明已尝试两种 bearer', /公开 bearer/.test(msg401) && /HTTP 401/.test(msg401));
@@ -1905,9 +1927,9 @@ async function runReplyComposerChecks() {
     A('空回复框：候选直接写入',
       vm.runInContext('applyCommentToReply("第一条候选", __replyBtn)', contentCtx) === true &&
       rd.input.innerText === '第一条候选');
-    A('已有草稿：追加一行而不是覆盖',
+    A('已有草稿：整段重写但原文一字不动，新候选单独成段',
       vm.runInContext('applyCommentToReply("第二条候选", __replyBtn)', contentCtx) === true &&
-      rd.input.innerText === '第一条候选\n第二条候选');
+      rd.input.innerText === '第一条候选\n\n第二条候选');
     A('写入走 execCommand insertText 主路径', (dom._inserted || []).length === 2);
 
     const origExec = dom.execCommand;
@@ -2618,7 +2640,7 @@ async function runScenario(name, cfg, expect) {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.10' },
+      ok: manifestJson.version === '1.4.11' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2646,7 +2668,7 @@ async function runScenario(name, cfg, expect) {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.10' },
+      ok: manifestJson.version === '1.4.11' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -2661,7 +2683,7 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.4 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.10') && popupHtml.includes('当前 v1.4.10') }
+      ok: contentJs.includes('v1.4.11') && popupHtml.includes('当前 v1.4.11') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -2867,7 +2889,8 @@ async function runScenario(name, cfg, expect) {
       var zwLine = nextQuickPromoLine(L3);
       tn.nodeValue = '零宽测试' + NL + L3 + '\u200b';
       applyQuickPromo(bar, zwLine);
-      var zw = tn.nodeValue, zwExpect = '零宽测试' + NL + zwLine + '\u200b';
+      // 1.4.11：全量替换会把末尾零宽占位符一起清掉，推广句单独成段
+      var zw = tn.nodeValue, zwExpect = '零宽测试' + NL + NL + zwLine;
 
       // 连点 20 次：相邻两句不能相同，正文不能出现两份
       tn.nodeValue = '连点测试';
@@ -2913,6 +2936,22 @@ async function runScenario(name, cfg, expect) {
       var bar3 = { parentElement: host3, __wbxPromoLine: '' };
       var ambiguous = promoInputFor(bar3) === null;
 
+      // 1.4.11：安全模式只复制，一个字都不写
+      tn.nodeValue = '安全模式测试';
+      var copyBefore = tn.nodeValue;
+      settings.promoCopyOnly = true;
+      clickT();
+      var copyOnlyNoWrite = tn.nodeValue === copyBefore;
+      settings.promoCopyOnly = false;
+
+      // 1.4.11：X 拒绝写入时自动恢复原文，不留下半截状态
+      tn.nodeValue = '写入被拒测试';
+      var restoreBefore = tn.nodeValue;
+      document.execCommand = function () { return false; };
+      applyQuickPromo(bar, nextQuickPromoLine(''));
+      document.execCommand = origExec;
+      var refusedRestored = tn.nodeValue === restoreBefore;
+
       document.createRange = origCR; window.getSelection = origSel;
       document.execCommand = origExec; showToast = origToast;
       return { body0: body0, handBody: handBody, first: first, second: second,
@@ -2924,14 +2963,16 @@ async function runScenario(name, cfg, expect) {
                toasts: toasts, editLog: editLog,
                zw: zw, zwExpect: zwExpect,
                hadExpanded: hadExpanded, selectionFolded: selectionFolded,
-               dupStopped: dupStopped };
+               dupStopped: dupStopped,
+               copyOnlyNoWrite: copyOnlyNoWrite, refusedRestored: refusedRestored };
     })()`, contentCtx);
   } catch (e) { note('ERROR', 'promo148 runtime: ' + (e && e.stack)); }
+  if (process.env.WBX_DEBUG) console.error('promo148=' + JSON.stringify(promo148, null, 2));
 
   const promo148Checks = [
     { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
-      ok: manifestJson.version === '1.4.10' && contentJs.includes('v1.4.10') &&
-          popupHtml.includes('当前 v1.4.10') && contentJs.includes('TapePost v1.4.10') },
+      ok: manifestJson.version === '1.4.11' && contentJs.includes('v1.4.11') &&
+          popupHtml.includes('当前 v1.4.11') && contentJs.includes('TapePost v1.4.11') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -2943,8 +2984,8 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.8 右键清除推广句',
       ok: contentJs.includes("addEventListener('contextmenu'") && contentJs.includes("applyQuickPromo(bar, '')") },
     { name: '1.4.8 写回只用原生编辑命令，没有直接改 DOM 的兜底',
-      ok: contentJs.includes('function nativeReplyEdit(') && contentJs.includes("document.execCommand('delete')") &&
-          applyQuickBody.includes('nativeReplyEdit(') &&
+      ok: contentJs.includes('function rewriteReplyOnce(') &&
+          applyQuickBody.includes('rewriteReplyOnce(input, finalText)') &&
           !applyQuickBody.includes('deleteContents') && !applyQuickBody.includes('textContent =') &&
           !applyQuickBody.includes('innerText =') && !contentJs.includes('function replaceReplyTail(') },
     { name: '1.4.8 回复框按按钮所在容器实时定位，不再跨区兜底',
@@ -2959,13 +3000,13 @@ async function runScenario(name, cfg, expect) {
       ok: !popupHtml.includes('id="promoQuickCount"') && popupHtml.includes('一个 T 按钮') &&
           !popupJs.includes("getElementById('promoQuickCount')") },
     { name: '1.4.8 运行时：手写正文 → 带入 → 换句，正文只出现一次',
-      ok: !!promo148 && promo148.first === promo148.body0 + '\n' + promo148.L1 &&
-          promo148.second === promo148.body0 + '\n' + promo148.L2 &&
+      ok: !!promo148 && promo148.first === promo148.body0 + '\n\n' + promo148.L1 &&
+          promo148.second === promo148.body0 + '\n\n' + promo148.L2 &&
           promo148.L1 !== promo148.L2 &&
           promo148.second.split(promo148.body0).length - 1 === 1 &&
           promo148.second.indexOf(promo148.L1) < 0 },
     { name: '1.4.8 运行时：手工编辑的正文 / 分段 / @ / emoji 一字不动',
-      ok: !!promo148 && promo148.edited === promo148.handBody + '\n' + promo148.L3 &&
+      ok: !!promo148 && promo148.edited === promo148.handBody + '\n\n' + promo148.L3 &&
           promo148.edited.indexOf(promo148.handBody) === 0 },
     { name: '1.4.8 运行时：推广句被手工改写时停止写入，绝不删正文',
       ok: !!promo148 && promo148.rewritten === promo148.beforeRewrite &&
@@ -3004,16 +3045,17 @@ async function runScenario(name, cfg, expect) {
       ok: !contentJs.includes('input.textContent = next') &&
           !contentJs.includes('input.innerText = next') &&
           !contentJs.includes("new Ev('input'") &&
-          contentJs.includes("nativeReplyEdit(input, 'insertText', payload)") },
+          contentJs.includes('function rewriteReplyOnce(') &&
+          contentJs.includes('function replyHasRichContent(') },
     { name: '1.4.9 手工改写推广句只停手、绝不删字，也不留缓存状态',
       ok: contentJs.includes('function hasEditedPromoTail(') &&
           contentJs.includes('hasEditedPromoTail(full)') &&
           !contentJs.includes('promoLineState') },
     { name: '1.4.9 随机到当前末尾那句会自动再取一句',
-      ok: contentJs.includes('if (tail && tail === line)') &&
+      ok: contentJs.includes('if (line && tail && tail === line)') &&
           contentJs.includes('const alt = nextQuickPromoLine(tail, tail);') },
     { name: '1.4.9 运行时：手工删掉推广句后可重新带入，正文仍只有一份',
-      ok: !!promo148 && promo148.afterManualDelete === promo148.handBody + '\n' + promo148.L4 &&
+      ok: !!promo148 && promo148.afterManualDelete === promo148.handBody + '\n\n' + promo148.L4 &&
           promo148.L4 !== promo148.L3 },
     { name: '1.4.9 运行时：绑定失效只恢复到自己 host 的输入框',
       ok: !!promo148 && promo148.staleRecovered === true },
@@ -3046,19 +3088,91 @@ async function runScenario(name, cfg, expect) {
           applyQuickBody.includes('countKnownPromo(full) > 1') &&
           applyQuickBody.includes('不止一句推广句') },
     { name: '1.4.10 写后校验正文前缀一字未动',
-      ok: applyQuickBody.includes('const bodyPrefixOk =') &&
-          applyQuickBody.includes('after.indexOf(bodyBefore) === 0') },
+      ok: applyQuickBody.includes('const prefixOk =') &&
+          applyQuickBody.includes('normReplyText(after).indexOf(normReplyText(body)) === 0') },
     { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
-      ok: manifestJson.version === '1.4.10' &&
-          contentJs.includes('TapePost v1.4.10') &&
-          contentJs.includes('v1.4.10') &&
-          popupHtml.includes('当前 v1.4.10') &&
-          popupJs.includes('v1.4.10 按钮移到回复正文上方外侧') },
+      ok: manifestJson.version === '1.4.11' &&
+          contentJs.includes('TapePost v1.4.11') &&
+          contentJs.includes('v1.4.11') &&
+          popupHtml.includes('当前 v1.4.11') &&
+          popupJs.includes('v1.4.11 写回改为一次全量替换') },
     { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
       ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
     { name: '1.4.10 运行时：正文里已有两句推广句时一个字都不动',
       ok: !!promo148 && promo148.dupStopped === true },
     { name: '1.4.10 未新增 manifest 权限',
+      ok: (manifestJson.permissions || []).sort().join(',') ===
+          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+  ];
+
+  // ---- v1.4.11：一次全量替换（重复 / 不可编辑）+ AI 评论快速模式 ----
+  const nativeJs = read('grok-native.js');
+  const bridgeJs = read('grok-native-bridge.js');
+  const aiJs = read('grok.js');
+  const promo1411Checks = [
+    { name: '1.4.11 写回统一走 rewriteReplyOnce 的一次全量替换',
+      ok: contentJs.includes('function rewriteReplyOnce(') &&
+          contentJs.includes('r.selectNodeContents(input);') &&
+          applyQuickBody.includes('rewriteReplyOnce(input, finalText)') &&
+          contentJs.includes('const ok = rewriteReplyOnce(input, finalText);') },
+    { name: '1.4.11 彻底废弃跨节点局部 Range 与 delete 换句',
+      ok: !applyQuickBody.includes('selectReplyTail(') &&
+          !applyQuickBody.includes('selectReplyEnd(') &&
+          !applyQuickBody.includes('nativeReplyEdit(') },
+    { name: '1.4.11 推广句单独成段，且不再拼出字面量 undefined',
+      ok: applyQuickBody.includes("body + '\\n\\n' + line") &&
+          !applyQuickBody.includes('TapePromo.SEP') },
+    { name: '1.4.11 写后按去空白序列校验，异常自动恢复原文',
+      ok: contentJs.includes('function normReplyText(') &&
+          applyQuickBody.includes('normReplyText(after) === normReplyText(finalText)') &&
+          applyQuickBody.includes('rewriteReplyOnce(input, full);') },
+    { name: '1.4.11 含 @ / 表情 / 配图时只复制不写 DOM',
+      ok: contentJs.includes('function replyHasRichContent(') &&
+          contentJs.includes('[data-testid="emoji"]') &&
+          applyQuickBody.includes('replyHasRichContent(input)') },
+    { name: '1.4.11 提供 T 安全模式开关并接入设置读写',
+      ok: contentJs.includes('promoCopyOnly: false') &&
+          applyQuickBody.includes('settings.promoCopyOnly === true') &&
+          popupHtml.includes('id="promoCopyOnly"') &&
+          popupJs.includes('promoCopyOnly: !!(document.getElementById') },
+    { name: '1.4.11 AI 候选写回也统一为一次全量替换',
+      ok: contentJs.includes('function writeIntoReply(') &&
+          contentJs.includes("existing + '\\n\\n' + text") &&
+          !contentJs.includes("nativeReplyEdit(input, 'insertText', payload)") },
+    { name: '1.4.11 快速模式关掉并排生成与推理',
+      ok: nativeJs.includes('enableSideBySide: false') &&
+          nativeJs.includes('disableReasoning: fast !== false') &&
+          nativeJs.includes('disableDeepSearch: fast !== false') },
+    { name: '1.4.11 快速模式跳过 XVM 长提示词通道',
+      ok: nativeJs.includes('if (!fast && hasXvmGrok())') },
+    { name: '1.4.11 流式读取空闲提前收尾并有硬超时',
+      ok: nativeJs.includes('async function readStream(res, opts)') &&
+          nativeJs.includes('reader.cancel()') &&
+          nativeJs.includes('idleMs') && nativeJs.includes('hardMs') },
+    { name: '1.4.11 后台把快速模式超时压到 30 秒并把 fast 透传页面',
+      ok: backgroundJs.includes('grokFastMode: true') &&
+          backgroundJs.includes('fast: fast, timeoutMs: fast ? 30000 : 90000') &&
+          bridgeJs.includes('fast: msg.fast !== false') &&
+          nativeJs.includes('fast: d.fast !== false') },
+    { name: '1.4.11 提示词明确禁止思考并要求短评',
+      ok: aiJs.includes('不要思考、不要分析背景或查资料') && aiJs.includes('不超过 60 字') },
+    { name: '1.4.11 等待浮层文案与阶段按快速模式调整',
+      ok: contentJs.includes('settings.grokFastMode !== false') &&
+          contentJs.includes('快速模式：不思考、通常 5~15 秒') },
+    { name: '1.4.11 设置页提供快速模式开关',
+      ok: popupHtml.includes('id="grokFastMode"') &&
+          popupJs.includes('grokFastMode: (document.getElementById') },
+    { name: '1.4.11 运行时：安全模式点 T 一个字都不写',
+      ok: !!promo148 && promo148.copyOnlyNoWrite === true },
+    { name: '1.4.11 运行时：X 拒绝写入时自动恢复原文',
+      ok: !!promo148 && promo148.refusedRestored === true },
+    { name: '1.4.11 版本已同步到 manifest / 按钮 title / 弹窗 / README',
+      ok: manifestJson.version === '1.4.11' &&
+          contentJs.includes('v1.4.11') && contentJs.includes('TapePost v1.4.11') &&
+          popupHtml.includes('当前 v1.4.11') &&
+          popupJs.includes('v1.4.11 写回改为一次全量替换') &&
+          read('README.md').includes('### 1.4.11：写回链路重写') },
+    { name: '1.4.11 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') ===
           ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
   ];
@@ -3082,7 +3196,8 @@ async function runScenario(name, cfg, expect) {
     .concat(promoChecks)
     .concat(promo148Checks)
     .concat(promo149Checks)
-    .concat(promo1410Checks);
+    .concat(promo1410Checks)
+    .concat(promo1411Checks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

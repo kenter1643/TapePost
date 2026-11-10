@@ -46,7 +46,11 @@ const SETTINGS_DEFAULT = {
   promoCustomBEM: '',
   // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无关，自己写完评论也能点）
   promoQuickButtons: true,
-  promoQuickCount: 4             // 兼容旧配置；1.4.8 起固定一个按钮，不再读取
+  promoQuickCount: 4,            // 兼容旧配置；1.4.8 起固定一个按钮，不再读取
+  // 1.4.11：安全模式 —— T 只复制推广句、绝不碰 X 编辑器（100% 不会弄乱正文）
+  promoCopyOnly: false,
+  // 1.4.11：AI 评论快速模式（不思考、不并排对比、流式拿到答案就收尾）
+  grokFastMode: true
 };
 let settings = Object.assign({}, SETTINGS_DEFAULT);
 
@@ -68,7 +72,7 @@ try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync' || !changes) return;
       ['promoEnabled', 'promoTarget', 'promoCustomTapeOut', 'promoCustomBEM',
-        'promoQuickButtons', 'promoQuickCount'].forEach((k) => {
+        'promoQuickButtons', 'promoQuickCount', 'promoCopyOnly', 'grokFastMode'].forEach((k) => {
         if (changes[k]) settings[k] = changes[k].newValue;
       });
     });
@@ -1026,7 +1030,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.10';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.11';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1464,6 +1468,50 @@ function copyPromoLine(line) {
   } catch (e) { /* 剪贴板不可用时只靠提示 */ }
 }
 
+/* ==========================================================================
+ * 1.4.11：唯一的写入口 —— 一次「全量替换」，等价于用户自己按 Cmd+A 后重新输入。
+ *
+ * 真机取证（v1.4.10 仍复现）：回复框里同一句推广句粘着出现两遍、之后整个框
+ * 不可编辑。根因不是「没重载」，而是旧写法用跨文本节点的局部 Range 选中末尾
+ * 那句再 delete / insertText。X 的受控编辑器不认这种外部选区：
+ *   - insertText 退化成「在当前光标处追加」→ 换句变成叠加第二句；
+ *   - 局部删除 + 外部选区让编辑器 state 与 DOM 失步 → 之后打字没反应。
+ * 现在只做一次标准选区（selectNodeContents = 全选，用户级操作）+ 一次
+ * insertText，把「完整最终文本」先算好再写；绝不局部删改、绝不重试。
+ * ========================================================================== */
+function rewriteReplyOnce(input, finalText) {
+  try {
+    if (!input || typeof document.execCommand !== 'function') return false;
+    if (input.focus) input.focus();
+    if (typeof document.createRange !== 'function' ||
+        typeof window === 'undefined' || typeof window.getSelection !== 'function') return false;
+    const sel = window.getSelection();
+    if (!sel || !sel.removeAllRanges || !sel.addRange) return false;
+    const r = document.createRange();
+    if (!r.selectNodeContents) return false;
+    r.selectNodeContents(input);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return !!document.execCommand('insertText', false, String(finalText == null ? '' : finalText));
+  } catch (e) { return false; }
+}
+
+/* 富文本保护：正文里有 @ 提及、emoji 图片、链接卡片、配图时，全量纯文本重写
+ * 会把它们丢掉。这种时候一律降级为「只复制推广句，用户自己粘贴」。 */
+function replyHasRichContent(input) {
+  try {
+    if (!input || typeof input.querySelectorAll !== 'function') return false;
+    const sel = 'img, a[role="link"], [contenteditable="false"], [data-testid="emoji"], [data-testid^="tweetPhoto"]';
+    return input.querySelectorAll(sel).length > 0;
+  } catch (e) { return false; }
+}
+
+/* X 会把 \n 变成 <br> / 新段落，而 replyPlainText 跳过 <br>，所以比较时
+ * 统一去掉所有空白，只校验「内容字符序列」是否一字不差。 */
+function normReplyText(s) {
+  return String(s == null ? '' : s).replace(/\s+/g, '');
+}
+
 /* line 为空 = 右键清除推广句；否则 = 带入 / 换一句。 */
 function applyQuickPromo(bar, line) {
   if (!bar || bar.__wbxBusy) return;   // 连点 / 事件冒泡重复触发，一律只处理一次
@@ -1475,25 +1523,29 @@ function applyQuickPromo(bar, line) {
       showToast('没找到当前回复框：请先点开「回复」，或刷新 X 页面后重试。', 6000);
       return;
     }
-    const rawFull = replyPlainText(input);
-    const full = TapePromo.rtrim(rawFull);
-    /* 1.4.10：真机截图里同一句 TapeOut 话术在回复框里粘着出现了两遍。
-     * 只要正文里已有 >=2 句已知推广句就一律停手，不再自动追加 / 替换，
-     * 否则每点一次 T 都可能再叠一句，越点越乱。右键清除不受此限制。 */
-    if (line && countKnownPromo(full) > 1) {
-      copyPromoLine(line);
-      showToast('回复框里已经有不止一句推广句，为避免越点越乱已停止写入；请右键 T 去掉末尾那句，或手动删掉多余的一句。', 7000);
+    const full = TapePromo.rtrim(replyPlainText(input));
+    const tail = findTrailingPromo(full);                 // 精确：一字不差才认
+    const body = TapePromo.rtrim(tail ? full.slice(0, full.length - tail.length) : full);
+
+    /* 1.4.11：安全模式 / 含富文本时完全不碰编辑器，只复制 + 聚焦。
+     * 这是 100% 不会弄乱正文的退路，手动粘贴后回复框始终可编辑。 */
+    if (settings.promoCopyOnly === true || replyHasRichContent(input)) {
+      copyPromoLine(line || tail || '');
+      if (input.focus) input.focus();
+      showToast(settings.promoCopyOnly === true
+        ? '安全模式：推广句已复制，光标已回到回复框，按 Cmd/Ctrl+V 粘贴即可（不会改动你写的内容）。'
+        : '回复里有 @ / 表情 / 配图，为避免弄丢它们已停止自动写入；推广句已复制，请自行粘贴。', 6000);
       return;
     }
-    const trailingJunk = rawFull.length - full.length;  // 末尾零宽占位符不进选区
-    const tail = findTrailingPromo(full);                 // 精确：一字不差才认
-    const bodyBefore = tail ? full.slice(0, full.length - tail.length) : full;
 
-    /* 1.4.9：只按「当前文本」判断，不看缓存状态。
-     * 满屏推广句被用户手工删掉 / 整行删掉时，全文里已没有话术 → 视为首次带入，
-     * 正常追加一句新的。旧版还看 statePrev，结果用户删完再点 T 会一直提示
-     * 「已被手工改动」，看起来像坏掉了。只有「话术还在、但不在末尾或被改写」
-     * 才停手，因为那种情况无法安全定位，硬删必然弄乱正文。 */
+    /* 已有 >=2 句推广句：一律停手，绝不继续自动写，避免越点越乱。 */
+    if (line && countKnownPromo(full) > 1) {
+      copyPromoLine(line);
+      showToast('回复框里已经有不止一句推广句，已停止写入；请右键 T 去掉末尾那句，或手动删掉多余的一句。', 7000);
+      return;
+    }
+
+    /* 话术还在、但不在末尾或被手工改写：无法安全定位，停手不删任何字符。 */
     if (!tail && (fullContainsKnownPromo(full) || hasEditedPromoTail(full))) {
       copyPromoLine(line);
       showToast(line
@@ -1503,19 +1555,10 @@ function applyQuickPromo(bar, line) {
       return;
     }
 
-    if (!line) {
-      if (!tail) { showToast('当前回复框末尾没有可去掉的推广句。', 3000); return; }
-      if (!selectReplyTail(input, tail.length, trailingJunk) || !nativeReplyEdit(input, 'delete')) {
-        showToast('删除失败，未改动正文；请手动删掉推广句那一行。', 6000);
-        return;
-      }
-      bar.__wbxPromoLine = '';
-      showToast('已去掉推广句，你写的正文一个字都没动（可能留一个空行）。', 3500);
-      return;
-    }
+    if (!line && !tail) { showToast('当前回复框末尾没有可去掉的推广句。', 3000); return; }
 
-    // 随机到当前末尾那句时再取一次，保证「点一下一定换一句」，不出现点了没反应
-    if (tail && tail === line) {
+    // 随机到当前末尾那句时再取一次，保证「点一下一定换一句」
+    if (line && tail && tail === line) {
       const alt = nextQuickPromoLine(tail, tail);
       if (!alt || alt === tail) {
         showToast('话术池里只有这一句，暂时换不了；可以在设置里补充自定义话术。', 3500);
@@ -1524,39 +1567,37 @@ function applyQuickPromo(bar, line) {
       line = alt;
     }
 
-    let ok;
-    if (tail) {
-      // 换句：只选中末尾这句，用原生 insertText 一次替换
-      if (!selectReplyTail(input, tail.length, trailingJunk)) {
-        showToast('无法定位末尾推广句，已停止写入。', 5000); return;
-      }
-      ok = nativeReplyEdit(input, 'insertText', line);
-    } else {
-      // 首次带入：光标移到末尾，只追加一次（前面的 <br> / 分段全部保留）
-      const body = TapePromo.rtrim(full);
-      if (!selectReplyEnd(input)) {
-        showToast('无法定位回复框光标，已停止写入。', 5000); return;
-      }
-      ok = nativeReplyEdit(input, 'insertText', body ? '\n' + line : line);
-    }
-    if (!ok) {
-      copyPromoLine(line);
-      showToast('X 编辑器拒绝了本次写入，未改动你的正文；推广句已复制到剪贴板。', 7000);
+    // 完整最终文本：正文一个字不改，推广句单独成一段（\n\n），或右键只留正文
+    // 分隔符用本地常量：TapePromo 的共享 API 不暴露 SEP，取不到会拼出 "undefined"
+    const finalText = line ? (body ? body + '\n\n' + line : line) : body;
+    if (normReplyText(finalText) === normReplyText(full)) {
+      showToast('内容没有变化，未写入。', 2500);
       return;
     }
 
-    // 写后只读校验：异常只提示，绝不重试（重试正是重复的来源）
+    if (!rewriteReplyOnce(input, finalText)) {
+      rewriteReplyOnce(input, full);          // 尽力把原文写回去，绝不留下半截状态
+      copyPromoLine(line);
+      showToast('X 编辑器拒绝了写入，已恢复原文；推广句已复制，请手动粘贴。', 7000);
+      return;
+    }
+
+    // 写后只读校验：异常只恢复 + 提示，绝不重试（重试正是重复的来源）
     const after = TapePromo.rtrim(replyPlainText(input));
-    // 1.4.10：正文前缀必须一字不动。X 若把句子插到了中间，即便末尾看着对，
-    // 也已经打乱了用户写的内容，必须明确提示而不是当作成功。
-    const bodyPrefixOk = !bodyBefore || after.indexOf(bodyBefore) === 0;
-    const sane = bodyPrefixOk && after.slice(-line.length) === line &&
-      after.split(line).length - 1 === 1;
-    showToast(sane
-      ? '已带入推广句；再点一次 T 换一句，右键可去掉。'
-      : '写入结果与预期不一致，请目视检查回复框（已停止自动重试）。', sane ? 3000 : 7000);
+    const prefixOk = !body || normReplyText(after).indexOf(normReplyText(body)) === 0;
+    const once = !line || after.split(line).length - 1 === 1;
+    const sane = prefixOk && once && normReplyText(after) === normReplyText(finalText);
+    if (!sane) {
+      rewriteReplyOnce(input, full);
+      copyPromoLine(line);
+      showToast('写入结果不对，已恢复原文；推广句已复制到剪贴板，请手动粘贴。', 7000);
+      return;
+    }
 
     bar.__wbxPromoLine = line;
+    showToast(line
+      ? '已带入推广句（单独一段）；再点一次 T 换一句，右键可去掉。'
+      : '已去掉推广句，你写的正文一个字都没动。', 3000);
   } finally {
     collapseReplySelection();   // 成功 / 失败 / 中途停手都不留灰色选中块
     bar.__wbxBusy = false;
@@ -1580,7 +1621,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.4.10 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost v1.4.11 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
@@ -1688,27 +1729,15 @@ function resolveReplyContext(btn, scope) {
 function writeIntoReply(input, text) {
   if (!input || !text) return false;
   try {
-    if (input.focus) input.focus();
-    try {
-      const sel = (typeof window !== 'undefined' && typeof window.getSelection === 'function')
-        ? window.getSelection() : null;
-      if (sel && typeof document.createRange === 'function') {
-        const r = document.createRange();
-        if (r.selectNodeContents && r.collapse) {
-          r.selectNodeContents(input);
-          r.collapse(false);
-          if (sel.removeAllRanges) sel.removeAllRanges();
-          if (sel.addRange) sel.addRange(r);
-        }
-      }
-    } catch (e) { /* 光标定位失败不影响插入 */ }
+    /* 1.4.11：与 T 按钮统一走「一次全量替换」，不再用「折叠光标 + 追加」。
+     * 追加式 insertText 在 X 的受控编辑器里会插入半截 state，表现为文字
+     * 重复 / 之后不可编辑；含富文本时直接拒绝，交由候选面板的复制兜底。 */
+    if (replyHasRichContent(input)) return false;
     const existing = nodeText(input).trim();
-    const payload = existing ? '\n' + text : text;
-    /* 1.4.9：删掉「textContent = / innerText = + 合成 input 事件」兜底。
-     * 那条兜底会绕过 X 的受控编辑器 state，下一次用户输入就把旧文本还原回来，
-     * 表现为「写进去看着对了，一手动改就乱」。现在失败就明确失败，不改 DOM。 */
-    const ok = nativeReplyEdit(input, 'insertText', payload);
-    collapseReplySelection();   // 1.4.10：候选写回后也不留任何选中块
+    const finalText = existing ? existing + '\n\n' + text : text;
+    const ok = rewriteReplyOnce(input, finalText);
+    if (!ok) rewriteReplyOnce(input, existing);   // 失败时恢复原文
+    collapseReplySelection();
     return ok;
   } catch (e) { collapseReplySelection(); return false; }
 }
@@ -1929,7 +1958,8 @@ function showAiBusy(label) {
   const time = makeCommentEl('div', 'wbx-busy-time', '已等待 0.0 秒');
   box.appendChild(stage);
   box.appendChild(time);
-  box.appendChild(makeCommentEl('div', 'wbx-busy-hint', '通常 10~40 秒，最长约 60 秒。'));
+  box.appendChild(makeCommentEl('div', 'wbx-busy-hint',
+    settings.grokFastMode === false ? '完整模式，最长约 90 秒。' : '快速模式：不思考、通常 5~15 秒，最长约 30 秒。'));
   const cancel = makeCommentEl('button', 'wbx-busy-cancel', '关闭等待提示');
   cancel.type = 'button';
   cancel.title = '只关提示，不中断后台生成';
@@ -1943,7 +1973,14 @@ function showAiBusy(label) {
   document.body.appendChild(box);
 
   const t0 = Date.now();
-  const stages = [
+  const fast = settings.grokFastMode !== false;
+  const stages = fast ? [
+    [0, '正在连接 X 站内 Grok…'],
+    [1500, '提示词已发出，等待 Grok 回答…'],
+    [4000, 'Grok 正在写 3 条短评…'],
+    [12000, '还在等 Grok 收尾…'],
+    [24000, '接近超时，可关闭提示改用手动模式。']
+  ] : [
     [0, '正在连接 X 站内 Grok…'],
     [2500, '提示词已写入，等待 Grok 开始回答…'],
     [8000, 'Grok 正在生成 3 条候选…'],

@@ -147,7 +147,9 @@ const GROK_DEFAULTS = {
   grokProtocol: 'chat',              // chat = /chat/completions（OpenAI 兼容）；responses = /responses
   grokBaseUrl: 'https://api.x.ai/v1',
   grokModel: 'grok-4.3',             // 2026-11 官方在售；grok-3 / grok-4-fast-* 已于 2026-05-15 退役
-  grokTemperature: 0.7
+  grokTemperature: 0.7,
+  // 1.4.11：AI 评论快速模式（默认开）—— 不思考、不并排对比、拿到答案即收尾
+  grokFastMode: true
 };
 let lastGrokError = null;
 
@@ -649,8 +651,10 @@ async function handleGrokMessage(msg, sender) {
     if (mode === 'native') {
       try {
         const prompt = TapeAI.buildNativePrompt(messages, 'comments', cfg.pagePromptExtra);
+        const fast = cfg.grokFastMode !== false;
         const r = await callGrokNative(tabId, {
-          type: 'GROK_NATIVE_CALL', prompt, kind: 'comments', timeoutMs: 90000
+          type: 'GROK_NATIVE_CALL', prompt, kind: 'comments',
+          fast: fast, timeoutMs: fast ? 30000 : 90000
         });
         if (r && r.comments && r.comments.length) {
           return {
