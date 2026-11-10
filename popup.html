@@ -223,7 +223,7 @@
         <label for="promoCustomBEM">$BEM 话术</label>
         <textarea id="promoCustomBEM" spellcheck="false" placeholder="每行一句；填了就覆盖该主题的内置话术"></textarea>
       </details>
-      <p class="tiny">只作用于 X 评论 / 回复框，不改一键转发正文；T 按钮可换句（不叠加），× 去掉推广句；超过 260 字会压缩正文、保住推广句。内置话术仅作生态与技术介绍，不含价格或收益承诺；最终回复始终由你手动点发送。
+      <p class="tiny">只作用于 X 评论 / 回复框，不改一键转发正文；T 按钮只替换末尾那一句，你手工写的正文、分段、@、表情、配图一律不动；× 去掉推广句。内置话术仅作生态与技术介绍，不含价格或收益承诺；最终回复始终由你手动点发送。
         <button type="button" class="infobtn" data-info="promo">推广说明</button>
       </p>
     </div>
@@ -234,7 +234,7 @@
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
-      <b>当前 v1.4.6</b>：回复框新增多个 T 快捷推广按钮，自己写完评论点一下就带入；AI 候选仍可自动附加。重载后刷新一次 X 页面。
+      <b>当前 v1.4.7</b>：修好 T 按钮写入重复 / 手工编辑被打乱 —— 改为只替换末尾推广句，不再整体重写回复框。重载后刷新一次 X 页面。
       <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 

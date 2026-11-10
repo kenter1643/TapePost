@@ -1005,7 +1005,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.6';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.7';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1193,50 +1193,115 @@ function injectAiButton(c) {
   host.appendChild(btn);
 }
 
-/* 整体替换回复框内容：先全选再 insertText，React 受控组件能识别。
- * 快捷按钮要的是「换一句」而不是「再叠一句」，所以不能复用追加式的 writeIntoReply。 */
-function replaceReplyText(input, text) {
-  if (!input) return false;
-  try {
-    if (input.focus) input.focus();
-    try {
-      const sel = (typeof window !== 'undefined' && typeof window.getSelection === 'function')
-        ? window.getSelection() : null;
-      if (sel && typeof document.createRange === 'function') {
-        const r = document.createRange();
-        if (r.selectNodeContents) {
-          r.selectNodeContents(input);           // 全选，不 collapse
-          if (sel.removeAllRanges) sel.removeAllRanges();
-          if (sel.addRange) sel.addRange(r);
-        }
-      }
-    } catch (e) { /* 选区失败走下面的兜底 */ }
-    if (document.execCommand && document.execCommand('insertText', false, text)) {
-      // 插入后把选区收拢到末尾，避免用户接着打字时把刚写好的整段覆盖掉
-      try {
-        const sel2 = (typeof window !== 'undefined' && typeof window.getSelection === 'function')
-          ? window.getSelection() : null;
-        if (sel2 && typeof sel2.collapseToEnd === 'function') sel2.collapseToEnd();
-      } catch (e) { /* ignore */ }
-      return true;
-    }
-    const next = String(text == null ? '' : text);
-    if (input.textContent != null) input.textContent = next;
-    if (input.innerText != null) input.innerText = next;
-    try {
-      const Ev = (typeof InputEvent === 'function') ? InputEvent : Event;
-      const ev = new Ev('input', { bubbles: true, inputType: 'insertText', data: next });
-      if (input.dispatchEvent) input.dispatchEvent(ev);
-      return true;
-    } catch (e) { return false; }
-  } catch (e) { return false; }
+/* =========================================================================
+ * 1.4.7：快捷推广写回 —— 只操作「末尾那一小段」，绝不整体重写回复框。
+ *
+ * 1.4.6 的做法是 innerText 读全文 → 全选 → insertText(全文重写)，在 X 的
+ * contenteditable 受控组件里会：① 旧 state 与 DOM 不同步，正文被留下来变成重复；
+ * ② 把用户手工编辑的分段 / @ / 表情 / 附件压平成纯文本。
+ * 现在改为：定位末尾已带的推广句 → 用 Range 只选中这一小段 → 局部替换，
+ * 用户正文一个字符都不动；附件也不再需要「退回追加模式」这种叠加式兜底。
+ * ========================================================================= */
+const promoLineState = new Map();
+
+function treeWalkerSupported() {
+  return typeof document !== 'undefined' && typeof document.createTreeWalker === 'function';
 }
 
-/* 回复框里已经贴了图 / 视频时，整体替换会把附件一起清掉 */
-function replyHasMedia(input) {
-  if (!input || typeof input.querySelectorAll !== 'function') return false;
+/* 把回复框内的文本节点按文档顺序摊平，得到「字符 → (节点, 偏移)」的映射依据。
+ * 跳过插件自己注入的按钮 / 候选面板，避免把 UI 文案算进正文。 */
+function replyTextNodes(input) {
+  const out = [];
+  if (!input || !treeWalkerSupported()) return out;
   try {
-    return input.querySelectorAll('img,video,[role="img"],[data-testid="attachments"]').length > 0;
+    const w = document.createTreeWalker(input, 4 /* NodeFilter.SHOW_TEXT */, null, false);
+    let n;
+    while ((n = w.nextNode())) {
+      const t = String(n.nodeValue == null ? '' : n.nodeValue);
+      if (!t) continue;
+      const owner = n.parentElement;
+      if (owner && owner.closest &&
+          owner.closest('.wbx-promo-bar,.wbx-reply-btn,[id="wbx-comments"]')) continue;
+      out.push({ node: n, text: t });
+    }
+  } catch (e) { /* 编辑器结构异常时由调用方降级 */ }
+  return out;
+}
+
+function pointInNodes(nodes, idx) {
+  let acc = 0;
+  for (let i = 0; i < nodes.length; i++) {
+    const len = nodes[i].text.length;
+    if (idx <= acc + len) {
+      return { node: nodes[i].node, offset: Math.max(0, Math.min(len, idx - acc)) };
+    }
+    acc += len;
+  }
+  const last = nodes[nodes.length - 1];
+  return last ? { node: last.node, offset: last.text.length } : null;
+}
+
+/* 往前吃掉推广句前面的分隔空白（含 X 常用的零宽字符），让换句后不留一串空行 */
+function trailingSpaceStart(s, idx) {
+  let i = idx;
+  while (i > 0 && /[\s\u200b-\u200d\ufeff]/.test(s.charAt(i - 1))) i--;
+  return i;
+}
+
+function dispatchReplyInput(input, data) {
+  try {
+    const Ev = (typeof InputEvent === 'function') ? InputEvent : Event;
+    const ev = new Ev('input', { bubbles: true, inputType: 'insertText', data: String(data || '') });
+    if (input.dispatchEvent) input.dispatchEvent(ev);
+  } catch (e) { /* ignore */ }
+}
+
+/* 把 [startIdx, 末尾) 这一小段替换成 payload；payload 为空即删除。
+ * 关键：Range 不覆盖正文，光标与用户已有的编辑状态、光标位置都保留。 */
+function replaceReplyTail(input, nodes, startIdx, payload) {
+  if (!input || typeof document.createRange !== 'function' ||
+      typeof window === 'undefined' || typeof window.getSelection !== 'function') return false;
+  try {
+    const range = document.createRange();
+    if (!nodes.length) {
+      // 空回复框：把光标放到末尾即可
+      if (!range.selectNodeContents || !range.collapse) return false;
+      range.selectNodeContents(input);
+      range.collapse(false);
+    } else {
+      const a = pointInNodes(nodes, startIdx);
+      const b = pointInNodes(nodes, nodes.reduce((n, x) => n + x.text.length, 0));
+      if (!a || !b || !range.setStart || !range.setEnd) return false;
+      range.setStart(a.node, a.offset);
+      range.setEnd(b.node, b.offset);
+      // X 会把换行渲染成 <br>：推广句独占文本节点时把紧邻的 <br> 一起替换掉
+      if (a.offset === 0 && range.setStartBefore) {
+        let br = a.node.previousSibling;
+        if (!br && a.node.parentElement) br = a.node.parentElement.previousSibling;
+        if (br && String(br.tagName || '').toUpperCase() === 'BR') range.setStartBefore(br);
+      }
+    }
+    if (input.focus) input.focus();
+    const sel = window.getSelection();
+    if (!sel || !sel.removeAllRanges || !sel.addRange) return false;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    if (payload) {
+      if (document.execCommand && document.execCommand('insertText', false, payload)) return true;
+      if (range.deleteContents && range.insertNode && document.createTextNode) {
+        range.deleteContents();
+        range.insertNode(document.createTextNode(payload));
+        dispatchReplyInput(input, payload);
+        return true;
+      }
+      return false;
+    }
+    if (range.deleteContents) {
+      range.deleteContents();
+      dispatchReplyInput(input, '');
+      return true;
+    }
+    return false;
   } catch (e) { return false; }
 }
 
@@ -1245,33 +1310,49 @@ function applyQuickPromo(bar, line) {
   const live = findReplyComposers().find((x) => x.scope === bar.__wbxScope) || findReplyComposers()[0];
   const input = live && live.input;
   if (!input) { showToast('没找到回复框，请先点「回复」展开填写区。', 5000); return; }
-  let body = nodeText(input).replace(/\s+$/, '');
-  const last = bar.__wbxPromoLine || '';
-  if (last && body.slice(-last.length) === last) {
-    body = body.slice(0, body.length - last.length).replace(/\s+$/, '');
+
+  // 优先用真实文本节点，避免 innerText 把用户手工编辑的分段 / 附件压平
+  const nodes = replyTextNodes(input);
+  const full = nodes.length
+    ? nodes.map((x) => x.text).join('')
+    : (treeWalkerSupported() ? '' : nodeText(input));
+  const trimmed = TapePromo.rtrim(full);
+  // 状态同时记在 Map 与按钮栏上：X 重渲染会换掉 bar / input，靠模糊识别兜底
+  const prev = promoLineState.get(input) || bar.__wbxPromoLine || '';
+  const match = TapePromo.matchTail(trimmed, currentPromoCustom(), prev);
+  const bodyEnd = match ? trailingSpaceStart(trimmed, match.start) : trimmed.length;
+  const body = trimmed.slice(0, bodyEnd);
+  const payload = line ? (body ? '\n' + line : line) : '';
+
+  let ok = false;
+  if (treeWalkerSupported()) {
+    ok = replaceReplyTail(input, nodes, bodyEnd, payload);
   } else {
-    // 兼容「先选了 AI 候选（已自动带一句），再点 T 按钮换句」
-    body = TapePromo.stripPromo(body, currentPromoCustom());
+    // 极老环境 / 测试桩：仍只做「剥掉末尾旧句 + 追加」，不重写整个正文语义
+    const next = line ? (body ? body + '\n' + line : line) : body;
+    if (input.innerText != null) input.innerText = next;
+    if (input.textContent != null) input.textContent = next;
+    dispatchReplyInput(input, next);
+    ok = true;
   }
-  const next = line ? TapePromo.appendLine(body, line) : body;
-  // 有附件时退回追加模式：保住用户已贴的图 / 视频，代价是换句需手动删
-  if (line && replyHasMedia(input)) {
-    if (!writeIntoReply(input, line)) {
-      showToast('写入失败：请刷新 X 页面后重试。', 6000);
-      return;
-    }
-    bar.__wbxPromoLine = '';
-    showToast('已带入推广句（回复框里有附件，换句请先手动删掉上一句）。', 5500);
+  if (!ok) {
+    showToast('写入失败：请刷新 X 页面后重试（不会自动重复写入）。', 6000);
     return;
   }
-  if (!replaceReplyText(input, next)) {
-    showToast('写入失败：请刷新 X 页面后重试。', 6000);
-    return;
-  }
+
+  // 写后只读校验：结果异常时只提示，绝不重试插入（重试正是重复文字的来源）
+  const afterNodes = replyTextNodes(input);
+  const after = TapePromo.rtrim(afterNodes.length
+    ? afterNodes.map((x) => x.text).join('') : nodeText(input));
+  const sane = !line ||
+    (after.slice(-line.length) === line && after.split(line).length - 1 === 1);
+  showToast(!sane
+    ? '写入结果与预期不一致，请检查回复框后手动调整（已停止自动重试）。'
+    : (line ? '已带入推广句；点其它 T 按钮可换一句，× 可去掉。'
+            : '已去掉推广句，保留你自己写的正文。'), sane ? 3500 : 7000);
+
+  promoLineState.set(input, line || '');
   bar.__wbxPromoLine = line || '';
-  showToast(line
-    ? '已带入推广句；点其它 T 按钮可换一句，× 可去掉。'
-    : '已去掉推广句，保留你自己写的正文。', 3500);
 }
 
 function injectPromoBar(c) {

@@ -111,20 +111,101 @@ var TapePromo = (function () {
     return clip(text, room) + '…' + tail;   // 保住推广句，压缩正文
   }
 
+  /* 1.4.7：识别文本末尾的推广句。
+   *
+   * 旧版只做「完整字符串精确匹配」，用户手工改了一个标点、删了几个字，
+   * 或 X 把换行转成 <br> 之后就认不出来，于是换句时旧句留在正文里、新句再叠一遍。
+   * 这里做三层识别：精确 → 归一化（忽略空白与标点差异）→ 模糊（容忍少量改写）。
+   * 只在最后一段里找，且模糊匹配要求含生态特征词，避免误删用户正文。
+   *
+   * 返回 { start, end, line, raw, mode }；start/end 是相对传入 text 的索引。
+   * 找不到返回 null。 */
+  // X 的编辑器常在末尾留零宽字符 / BOM，普通 \s 清不掉，会干扰末尾匹配
+  function rtrim(s) {
+    return String(s == null ? '' : s).replace(/[\s\u200b-\u200d\ufeff]+$/, '');
+  }
+
+  function normalize(s) {
+    return String(s == null ? '' : s)
+      .replace(/[\s\u200b-\u200d\ufeff]/g, '')
+      .replace(/[，,。.！!？?；;：:、~～·•"'（）()\[\]【】]/g, '');
+  }
+
+  // 字符重合度（Dice 系数），用于容忍用户手工改写过的推广句
+  function similarity(a, b) {
+    var A = Array.from(normalize(a)), B = Array.from(normalize(b));
+    if (!A.length || !B.length) return 0;
+    var pool = B.slice(), hit = 0;
+    A.forEach(function (ch) {
+      var i = pool.indexOf(ch);
+      if (i >= 0) { hit++; pool.splice(i, 1); }
+    });
+    return (2 * hit) / (A.length + B.length);
+  }
+
+  var TAG_WORDS = /TapeOut|BEM|PoD|流片|生态导航|链上电路|门电路/i;
+
+  function matchTail(text, custom, lastLine) {
+    var t = rtrim(text);
+    if (!t) return null;
+    var p = pools(custom);
+    var known = [];
+    if (lastLine) known.push(String(lastLine));
+    p.tapeout.concat(p.bem).forEach(function (x) {
+      if (known.indexOf(x) < 0) known.push(x);
+    });
+
+    var parts = t.split(/[\r\n]+/);
+    var tail = parts[parts.length - 1];
+    if (!tail) return null;
+    var base = t.length - tail.length;
+    var i, line, score, tailEnd;
+
+    for (i = 0; i < known.length; i++) {
+      line = clip(known[i], MAX_LINE_CHARS);
+      if (line && tail === line) {
+        return { start: base, end: t.length, line: line, raw: tail, mode: 'exact' };
+      }
+    }
+    var nt = normalize(tail);
+    for (i = 0; i < known.length; i++) {
+      line = clip(known[i], MAX_LINE_CHARS);
+      if (line && nt && nt === normalize(line)) {
+        return { start: base, end: t.length, line: line, raw: tail, mode: 'norm' };
+      }
+    }
+    if (TAG_WORDS.test(tail) && tail.length >= 12) {
+      var best = null;
+      for (i = 0; i < known.length; i++) {
+        line = clip(known[i], MAX_LINE_CHARS);
+        if (!line) continue;
+        score = similarity(tail, line);
+        if (score >= 0.82 && (!best || score > best.score)) {
+          best = { score: score, line: line, raw: tail };
+        }
+        // 分隔符被手工删掉时，推广句会跟正文粘在同一段
+        if (tail.length > line.length) {
+          tailEnd = tail.slice(-line.length);
+          score = similarity(tailEnd, line);
+          if (score >= 0.86 && (!best || score > best.score)) {
+            best = { score: score, line: line, raw: tailEnd };
+          }
+        }
+      }
+      if (best) {
+        return { start: t.length - best.raw.length, end: t.length,
+          line: best.line, raw: best.raw, mode: 'fuzzy' };
+      }
+    }
+    return null;
+  }
+
   /* 手动 T 按钮换句时用：把末尾已带上的推广句剥掉，只留用户自己写的正文。
    * 同时覆盖「AI 候选已经自动附加过一句」的情况，避免点 T 按钮后叠两句。 */
   function stripPromo(text, custom) {
-    var t = String(text == null ? '' : text).replace(/\s+$/, '');
-    var p = pools(custom);
-    var known = p.tapeout.concat(p.bem);
-    for (var i = 0; i < known.length; i++) {
-      var line = clip(known[i], MAX_LINE_CHARS);
-      if (!line) continue;
-      if (t.slice(-line.length) === line) {
-        return t.slice(0, t.length - line.length).replace(/\s+$/, '');
-      }
-    }
-    return t;
+    var t = rtrim(text);
+    var m = matchTail(t, custom, '');
+    return m ? rtrim(t.slice(0, m.start)) : t;
   }
 
   function decorate(comments, opts) {
@@ -145,6 +226,10 @@ var TapePromo = (function () {
     pickLines: pickLines,
     appendLine: appendLine,
     stripPromo: stripPromo,
+    matchTail: matchTail,
+    rtrim: rtrim,
+    normalize: normalize,
+    similarity: similarity,
     decorate: decorate
   };
 })();
