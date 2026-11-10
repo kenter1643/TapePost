@@ -654,7 +654,7 @@ async function handleGrokMessage(msg, sender) {
         const fast = cfg.grokFastMode !== false;
         const r = await callGrokNative(tabId, {
           type: 'GROK_NATIVE_CALL', prompt, kind: 'comments',
-          fast: fast, timeoutMs: fast ? 30000 : 90000
+          fast: fast, timeoutMs: fast ? 40000 : 90000
         });
         if (r && r.comments && r.comments.length) {
           return {

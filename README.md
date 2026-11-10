@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.11（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.12（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,17 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.11**（写回链路重写 + AI 快速模式）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.12**（修复 AI 评论 401 与响应解析）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+
+### 1.4.12：修复 AI 评论 401 /「重试已通但没解析出候选」
+
+真机确认 Chrome 加载的是 **v1.4.11**，且 X 站内 Grok 侧栏本身可用（页面上已有 Grok 回答），所以不是账号掉登录，而是 1.4.11 的快速模式把唯一稳定的认证路径跳过了：
+
+1. **bearer 顺序反了**：会话认证实际靠 cookie(`ct0`) + `credentials: include`，bearer 只是客户端标识。1.4.11 优先用「实时 bearer / fetch 钩子捕获值」，这些常与当前会话不匹配 → 第一次请求直接 401 `code 32`；而公开 bearer 重试反而能通。现在默认就用公开 bearer。
+2. **重试复用了同一个签名**：旧版 401 后用 `lastSentTxId` 原签名重试，X 对同一 `x-client-transaction-id` 的重复 POST 会「200 但不吐 final 帧」，正是「公开 bearer 重试已通但没解析出候选」。现在每次重试都重新生成签名。
+3. **响应格式兼容太窄**：旧版只认裸 NDJSON 里的 `sender=ASSISTANT / messageTag=final`。现在兼容 SSE `data:` 前缀、`result` 再嵌一层、`message/text/content` 字段、final 帧不带 sender、以及只有增量 assistant 帧的情况；用户气泡即使带 final 标签也会被排除。解析失败时错误信息会附上真实响应片段。
+4. **去掉两个猜测字段**：`disableReasoning` / `disableDeepSearch` 并非 X 站内接口字段，可能改变响应帧结构，已移除；「不思考」只靠提示词与流式提前收尾实现。
+5. **XVM 改为兜底**：X Viral Monitor 通道是唯一从未 401 过的路径，但它自带长提示词、体感偏慢。现在只在 401 / 解析为空时兜底调用，正常路径走自有直连保持快速。
 
 ### 1.4.11：写回链路重写（重复 / 不可编辑）+ AI 评论快速模式
 

@@ -1030,7 +1030,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.11';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.12';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1621,7 +1621,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.4.11 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost v1.4.12 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });

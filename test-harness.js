@@ -1334,61 +1334,62 @@ async function runAuth401Checks() {
   const fakeXct = () => ({ generateTxId: () => Promise.resolve('fake-tx-id-1234567890') });
 
   try {
-    // A：页面里已装 XVM → 直接复用它稳定的通道，自有 fetch 完全不发
+    // A：1.4.12 正常路径走自有直连，不抢占 XVM（保持快速）
     const xvmCtx = makeNativeCtx({
       xvmGrok: (state) => ({ generate: (o) => {
         state.xvmCalls.push(o);
         return Promise.resolve(['认同并补充一点', '这个角度有意思', '想问下后续怎么走']);
-      } })
-    });
-    const borrowed = await run(xvmCtx, 'window.__tapeGrokNative.generate("【TapePost 任务开始】完整提示词", {fast:false})');
-    A('1.4.2 复用 XVM 通道并返回 3 条候选',
-      borrowed && borrowed.comments && borrowed.comments.length === 3 && borrowed.via === 'xvm-grok');
-    A('1.4.2 借用 XVM 时不再发自有直连请求', run(xvmCtx, '__testState.fetchCalls.length') === 0);
-    A('1.4.2 借用 XVM 时完整提示词原样透传',
-      /完整提示词/.test(run(xvmCtx, '__testState.xvmCalls[0].tweetText')));
-    A('1.4.2 借用 XVM 使用占位符透传模板',
-      run(xvmCtx, '__testState.xvmCalls[0].promptTemplate') === '[推文内容]');
-    A('1.4.2 状态报告能识别 XVM 通道', run(xvmCtx, 'window.__tapeGrokNative.status().hasXvmGrok') === true);
-
-    // B：XVM 抛错 → 安静回落到自有直连，仍能出结果
-    const fbCtx = makeNativeCtx({
-      xvmGrok: () => ({ generate: () => Promise.reject(new Error('XVM 未就绪')) }),
+      } }),
       xvmXct: fakeXct, fetch: () => okRes()
     });
-    const fallback = await run(fbCtx, 'window.__tapeGrokNative.generate("回落提示词", {fast:false})');
-    A('1.4.2 XVM 失败后回落自有直连', fallback && fallback.comments && fallback.comments.length === 3);
+    const direct = await run(xvmCtx, 'window.__tapeGrokNative.generate("【TapePost 任务开始】完整提示词", {fast:false})');
+    A('1.4.12 正常路径走自有直连且不调用 XVM',
+      direct && direct.comments && direct.comments.length === 3 && direct.via !== 'xvm-grok' &&
+      run(xvmCtx, '__testState.xvmCalls.length') === 0);
+    A('1.4.12 状态报告仍能识别 XVM 通道', run(xvmCtx, 'window.__tapeGrokNative.status().hasXvmGrok') === true);
 
-    // C：实时 bearer 优先级与强制公开 bearer
+    // B：HTTP 200 但解析为空 → XVM 兜底
+    const emptyRes = () => Promise.resolve({
+      ok: true, status: 200, text: () => Promise.resolve('{"result":{"messageTag":"tool"}}')
+    });
+    const xvmFb = makeNativeCtx({
+      xvmGrok: () => ({ generate: () => Promise.resolve(['兜底候选一', '兜底候选二', '兜底候选三']) }),
+      xvmXct: fakeXct, fetch: () => emptyRes()
+    });
+    const saved = await run(xvmFb, 'window.__tapeGrokNative.generate("兜底提示词", {fast:true})');
+    A('1.4.12 解析为空时 XVM 兜底返回候选',
+      saved && saved.comments && saved.comments.length === 3 && saved.via === 'xvm-grok');
+
+    // C：bearer 模式（默认公开，只有 live 才用实时值）
     const lbCtx = makeNativeCtx({ xvmNet: () => ({ getBearer: () => 'Bearer LIVE-XVM' }) });
-    const hLive = await run(lbCtx, 'window.__tapeGrokNative.buildHeaders("tx-fake-1234567890")');
-    const hPub = await run(lbCtx, 'window.__tapeGrokNative.buildHeaders("tx-fake-1234567890", true)');
-    A('1.4.2 优先使用 XVM 的实时 bearer', hLive.authorization === 'Bearer LIVE-XVM');
-    A('1.4.2 可强制切回 X 网页客户端公开 bearer', /^Bearer AAAA/.test(hPub.authorization));
-    A('1.4.2 公开 bearer 与实时 bearer 确实不同', hLive.authorization !== hPub.authorization);
+    const hPub = await run(lbCtx, 'window.__tapeGrokNative.buildHeaders("tx-fake-1234567890")');
+    const hLive = await run(lbCtx, 'window.__tapeGrokNative.buildHeaders("tx-fake-1234567890", "live")');
+    A('1.4.12 默认使用 X 网页客户端公开 bearer', /^Bearer AAAA/.test(hPub.authorization));
+    A('1.4.12 仅 live 模式才用实时 bearer', hLive.authorization === 'Bearer LIVE-XVM');
+    A('1.4.12 公开 bearer 与实时 bearer 确实不同', hLive.authorization !== hPub.authorization);
 
-    // D：真机 401 → 读出 X 错误体并用公开 bearer 自动重试成功
+    // D：真机 401 → 重新签名 + 换 bearer 重试成功
     const r401 = makeNativeCtx({ xvmXct: fakeXct, fetch: (n) => (n === 1 ? errRes() : okRes()) });
     run(r401, 'window.__tapeGrokNative._remember("https://x.com/i/api/graphql", ' +
       '{headers:{authorization:"Bearer STALE-HOOK"}})');
     const healed = await run(r401, 'window.__tapeGrokNative.generate("401 提示词", {fast:false})');
-    A('1.4.2 401 后公开 bearer 重试成功并返回候选',
-      healed && healed.comments && healed.comments.length === 3 && healed.via === 'public-bearer');
-    A('1.4.2 401 确实触发了第二次请求', run(r401, '__testState.fetchCalls.length') === 2);
-    A('1.4.2 第一次用捕获 bearer、第二次用公开 bearer',
-      run(r401, '__testState.fetchCalls[0].init.headers.authorization') === 'Bearer STALE-HOOK' &&
-      /^Bearer AAAA/.test(run(r401, '__testState.fetchCalls[1].init.headers.authorization')));
+    A('1.4.12 401 后换 bearer 重试成功并返回候选',
+      healed && healed.comments && healed.comments.length === 3 && /bearer-retry/.test(healed.via));
+    A('1.4.12 第一次用公开 bearer，不再拿过期实时 bearer 首发',
+      /^Bearer AAAA/.test(run(r401, '__testState.fetchCalls[0].init.headers.authorization')));
+    A('1.4.12 401 确实触发了第二次请求', run(r401, '__testState.fetchCalls.length') === 2);
 
-    // E：重试仍 401 → 错误里带 X 的真实返回体，不再笼统说「请重新登录」
+    // E：重试仍 401 → 错误里带 X 的真实返回体与重新签名诊断
     const r401b = makeNativeCtx({ xvmXct: fakeXct, fetch: () => errRes() });
     run(r401b, 'window.__tapeGrokNative._remember("https://x.com/i/api/graphql", ' +
       '{headers:{authorization:"Bearer STALE-HOOK"}})');
     let msg401 = '';
     try { await run(r401b, 'window.__tapeGrokNative.generate("401 提示词", {fast:false})'); }
     catch (e) { msg401 = String(e && e.message || e); }
-    A('1.4.2 401 错误带出 X 返回的真实原因', /Could not authenticate you/.test(msg401));
-    A('1.4.2 401 错误标明已尝试两种 bearer', /公开 bearer/.test(msg401) && /HTTP 401/.test(msg401));
-    A('1.4.2 401 不再用误导性的「请重新登录 X」结论', !/请重新登录 X 后刷新页面/.test(msg401));
+    A('1.4.12 401 错误带出 X 返回的真实原因', /Could not authenticate you/.test(msg401));
+    A('1.4.12 401 错误标明已换两种 bearer 并重新签名',
+      /公开 bearer/.test(msg401) && /HTTP 401/.test(msg401) && /重新签名重试/.test(msg401));
+    A('1.4.12 401 不再用误导性的「请重新登录 X」结论', !/请重新登录 X 后刷新页面/.test(msg401));
 
     // F：XVM 捕获的真实签名也能被自有链路复用
     const txCtx = makeNativeCtx({ xvmGrok: () => ({ __capturedTxId: 'xvm-captured-tx-1234567890' }) });
@@ -1430,6 +1431,35 @@ async function runNativePureChecks() {
   A('用户提示词不进入最终答案', !/我的提示词/.test(finalText));
   A('非 JSON 行被忽略', !/not-json/.test(finalText));
   A('NDJSON 直接解析出 3 条候选', (J('extractComments', ndjson) || []).length === 3);
+
+  // --- 1.4.12：新版 Grok 流格式兼容（真机 200 但解析为空的修复） ---
+  const sse = [
+    'data: ' + JSON.stringify({ result: { message: '```\nSSE候选一\n```', messageTag: 'final' } }),
+    'data: ' + JSON.stringify({ result: { result: { text: '```\nSSE候选二\n```', messageTag: 'final', sender: 'GROK' } } }),
+    'data: ' + JSON.stringify({ result: { content: '```\nSSE候选三\n```', messageTag: 'final' } }),
+    'data: [DONE]'
+  ].join('\n');
+  const sseText = J('extractFinalText', sse);
+  A('1.4.12 SSE data: 前缀与 [DONE] 能正确解析',
+    /SSE候选一/.test(sseText) && /SSE候选二/.test(sseText) && /SSE候选三/.test(sseText) &&
+    !/DONE/.test(sseText));
+  A('1.4.12 result 再嵌一层、text/content 字段、final 不带 sender 均兼容',
+    (J('extractComments', sse) || []).length === 3);
+  A('1.4.12 用户气泡即使带 final 标签也不进入答案',
+    !/我的提示词/.test(J('extractFinalText',
+      JSON.stringify({ result: { sender: 'USER', message: '我的提示词', messageTag: 'final' } }))));
+  const cumulative = [
+    JSON.stringify({ result: { sender: 'ASSISTANT', message: '第一句', messageTag: 'final' } }),
+    JSON.stringify({ result: { sender: 'ASSISTANT', message: '第一句第二句', messageTag: 'final' } })
+  ].join('\n');
+  A('1.4.12 累积式 final 帧只取最后一帧，不重复拼接',
+    J('extractFinalText', cumulative) === '第一句第二句');
+  const delta = [
+    JSON.stringify({ result: { sender: 'ASSISTANT', message: '第一句' } }),
+    JSON.stringify({ result: { sender: 'ASSISTANT', message: '第二句' } })
+  ].join('\n');
+  A('1.4.12 增量式 assistant 帧按顺序拼接',
+    J('extractFinalText', delta) === '第一句第二句');
 
   // --- 候选解析：代码块 > JSON > 列表，噪声与空回答绝不凑数 ---
   const blocks = '```\n角度一：认同并补充\n```\n```\n角度二：提个问题\n```\n```\n角度三：独立观点\n```';
@@ -2640,7 +2670,7 @@ async function runScenario(name, cfg, expect) {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.11' },
+      ok: manifestJson.version === '1.4.12' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2668,7 +2698,7 @@ async function runScenario(name, cfg, expect) {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.11' },
+      ok: manifestJson.version === '1.4.12' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -2683,7 +2713,7 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.4 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.11') && popupHtml.includes('当前 v1.4.11') }
+      ok: contentJs.includes('v1.4.12') && popupHtml.includes('当前 v1.4.12') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -2971,8 +3001,8 @@ async function runScenario(name, cfg, expect) {
 
   const promo148Checks = [
     { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
-      ok: manifestJson.version === '1.4.11' && contentJs.includes('v1.4.11') &&
-          popupHtml.includes('当前 v1.4.11') && contentJs.includes('TapePost v1.4.11') },
+      ok: manifestJson.version === '1.4.12' && contentJs.includes('v1.4.12') &&
+          popupHtml.includes('当前 v1.4.12') && contentJs.includes('TapePost v1.4.12') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -3091,10 +3121,10 @@ async function runScenario(name, cfg, expect) {
       ok: applyQuickBody.includes('const prefixOk =') &&
           applyQuickBody.includes('normReplyText(after).indexOf(normReplyText(body)) === 0') },
     { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
-      ok: manifestJson.version === '1.4.11' &&
-          contentJs.includes('TapePost v1.4.11') &&
-          contentJs.includes('v1.4.11') &&
-          popupHtml.includes('当前 v1.4.11') &&
+      ok: manifestJson.version === '1.4.12' &&
+          contentJs.includes('TapePost v1.4.12') &&
+          contentJs.includes('v1.4.12') &&
+          popupHtml.includes('当前 v1.4.12') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') },
     { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
       ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
@@ -3139,19 +3169,20 @@ async function runScenario(name, cfg, expect) {
       ok: contentJs.includes('function writeIntoReply(') &&
           contentJs.includes("existing + '\\n\\n' + text") &&
           !contentJs.includes("nativeReplyEdit(input, 'insertText', payload)") },
-    { name: '1.4.11 快速模式关掉并排生成与推理',
-      ok: nativeJs.includes('enableSideBySide: false') &&
-          nativeJs.includes('disableReasoning: fast !== false') &&
-          nativeJs.includes('disableDeepSearch: fast !== false') },
-    { name: '1.4.11 快速模式跳过 XVM 长提示词通道',
-      ok: nativeJs.includes('if (!fast && hasXvmGrok())') },
+    { name: '1.4.11 快速模式关掉并排生成（1.4.12 已移除两个猜测字段）',
+      ok: nativeJs.includes('enableSideBySide: fast !== false ? false : true') &&
+          !nativeJs.includes('disableReasoning:') && !nativeJs.includes('disableDeepSearch:') },
+    { name: '1.4.12 XVM 通道改为异常兜底，正常路径不再抢占',
+      ok: nativeJs.includes('async function tryXvm(prompt)') &&
+          !nativeJs.includes('if (!fast && hasXvmGrok())') &&
+          nativeJs.includes('var xvm2 = await tryXvm(prompt);') },
     { name: '1.4.11 流式读取空闲提前收尾并有硬超时',
       ok: nativeJs.includes('async function readStream(res, opts)') &&
           nativeJs.includes('reader.cancel()') &&
           nativeJs.includes('idleMs') && nativeJs.includes('hardMs') },
-    { name: '1.4.11 后台把快速模式超时压到 30 秒并把 fast 透传页面',
+    { name: '1.4.11 后台把快速模式超时压到 40 秒并把 fast 透传页面',
       ok: backgroundJs.includes('grokFastMode: true') &&
-          backgroundJs.includes('fast: fast, timeoutMs: fast ? 30000 : 90000') &&
+          backgroundJs.includes('fast: fast, timeoutMs: fast ? 40000 : 90000') &&
           bridgeJs.includes('fast: msg.fast !== false') &&
           nativeJs.includes('fast: d.fast !== false') },
     { name: '1.4.11 提示词明确禁止思考并要求短评',
@@ -3167,12 +3198,52 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.11 运行时：X 拒绝写入时自动恢复原文',
       ok: !!promo148 && promo148.refusedRestored === true },
     { name: '1.4.11 版本已同步到 manifest / 按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.11' &&
-          contentJs.includes('v1.4.11') && contentJs.includes('TapePost v1.4.11') &&
-          popupHtml.includes('当前 v1.4.11') &&
+      ok: manifestJson.version === '1.4.12' &&
+          contentJs.includes('v1.4.12') && contentJs.includes('TapePost v1.4.12') &&
+          popupHtml.includes('当前 v1.4.12') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') &&
           read('README.md').includes('### 1.4.11：写回链路重写') },
     { name: '1.4.11 未新增 manifest 权限',
+      ok: (manifestJson.permissions || []).sort().join(',') ===
+          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+  ];
+
+  // ---- v1.4.12：AI 评论 401 / 响应解析修复 ----
+  const promo1412Checks = [
+    { name: '1.4.12 默认 bearer 改为公开值，实时值只在 live 模式使用',
+      ok: nativeJs.includes("var bearer = (bearerMode === 'live')") &&
+          nativeJs.includes(': DEFAULT_BEARER') },
+    { name: '1.4.12 401 重试重新生成签名，不再复用 lastSentTxId',
+      ok: nativeJs.includes('async function freshTxId()') &&
+          nativeJs.includes('send(body, await freshTxId(), mode.key)') &&
+          !nativeJs.includes('send(body, lastSentTxId, true)') },
+    { name: '1.4.12 401 依次换实时 / 公开 bearer 并带响应片段诊断',
+      ok: nativeJs.includes("key: 'live'") && nativeJs.includes("key: 'public'") &&
+          nativeJs.includes('function streamSnippet()') &&
+          nativeJs.includes('已依次换用实时 / 公开 bearer 并重新签名重试') },
+    { name: '1.4.12 解析兼容 SSE / 嵌套 result / 多字段 / 增量帧',
+      ok: nativeJs.includes('function streamFrames(') && nativeJs.includes('function joinFrames(') &&
+          nativeJs.includes('/^data') &&
+          nativeJs.includes("sender === 'USER' || sender === '1'") },
+    { name: '1.4.12 解析失败时把真实响应片段附在错误里',
+      ok: nativeJs.includes('var lastRawStream') &&
+          nativeJs.includes('streamSnippet())') },
+    { name: '1.4.12 移除两个非标准服务端字段',
+      ok: !nativeJs.includes('disableReasoning:') && !nativeJs.includes('disableDeepSearch:') },
+    { name: '1.4.12 XVM 只在异常时兜底且返回 1 条也算成功',
+      ok: nativeJs.includes('async function tryXvm(prompt)') &&
+          nativeJs.includes('return list.length ? list.slice(0, 3) : null;') &&
+          nativeJs.includes('var xvm = await tryXvm(prompt);') },
+    { name: '1.4.12 后台超时放宽到 40 秒配合重试',
+      ok: backgroundJs.includes('fast ? 40000 : 90000') },
+    { name: '1.4.12 版本已同步到 manifest / 两个按钮 title / 弹窗 / README',
+      ok: manifestJson.version === '1.4.12' &&
+          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.12') &&
+          contentJs.includes('TapePost v1.4.12') &&
+          popupHtml.includes('当前 v1.4.12') &&
+          popupJs.includes('v1.4.12 修好 AI 评论 401') &&
+          read('README.md').includes('### 1.4.12：修复 AI 评论 401') },
+    { name: '1.4.12 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') ===
           ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
   ];
@@ -3197,7 +3268,8 @@ async function runScenario(name, cfg, expect) {
     .concat(promo148Checks)
     .concat(promo149Checks)
     .concat(promo1410Checks)
-    .concat(promo1411Checks);
+    .concat(promo1411Checks)
+    .concat(promo1412Checks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);
