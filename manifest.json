@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.4.12",
+  "version": "1.4.13",
   "author": "TapeOut 社区 · 昆哥",
   "minimum_chrome_version": "116",
   "description": "7 站点一键转发到 X（去水印）；AI 评论直连 X 自带 Grok 接口生成 3 条候选并写回回复框（免 API Key、免外挂标签，失败自动降级页面模式）；TapeOut 生态面板内置 295 条导航收录清单，绿标分级 + 链接真伪核验。",
@@ -21,7 +21,9 @@
     "downloads",
     "clipboardWrite",
     "offscreen",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://weibo.com/*",
@@ -49,7 +51,9 @@
     "https://twitter.com/*",
     "https://*.twitter.com/*",
     "https://*.twimg.com/*",
-    "https://api.x.ai/*"
+    "https://api.x.ai/*",
+    "https://api-tapeout.firsto.ai/*",
+    "https://api.dexscreener.com/*"
   ],
   "optional_host_permissions": [
     "https://*/*"
@@ -81,6 +85,7 @@
         "account.js",
         "sites.js",
         "promo.js",
+        "price-alert.js",
         "content.js",
         "grok-page.js",
         "grok-native-bridge.js"

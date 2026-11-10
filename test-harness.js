@@ -2441,6 +2441,426 @@ async function runScenario(name, cfg, expect) {
   return ok;
 }
 
+/* =====================================================================
+ * 1.4.13：TapeOut 实时行情 + 价格上下限提醒
+ *
+ * 与前面各版本一样，这里不复制实现，而是把真实的 price.js / background.js
+ * 行情段 / price-alert.js 放进 vm 沙箱跑一遍：解析、阈值状态机、消息路由、
+ * 通知与右下角浮层都用假 Chrome API 走完整链路。
+ * ===================================================================== */
+async function runPrice1413Checks() {
+  const checks = [];
+  const add = (name, ok) => checks.push({ name, ok: !!ok });
+  const priceJs = read('price.js');
+  const alertJs = read('price-alert.js');
+  const bgJs = read('background.js');
+  const popupHtml1413 = read('popup.html');
+  const popupJs1413 = read('popup.js');
+  const manifest1413 = JSON.parse(read('manifest.json'));
+  const readme1413 = read('README.md');
+
+  // ---- 纯逻辑：price.js ----
+  const priceCtx = vm.createContext({ console, setTimeout, clearTimeout });
+  vm.runInContext(priceJs, priceCtx, { filename: 'price.js' });
+  const T = priceCtx.TapePrice;
+
+  const bemFixture = {
+    asOf: '2026-11-10T22:00:00.000Z',
+    metrics: { priceUsdAtomic: '1253708639' },
+    market: { points: [{ priceUsdAtomic: '1200000000' }, { priceUsdAtomic: '1300000000' }] }
+  };
+  const minerFixture = {
+    asOf: '2026-11-10T22:00:00.000Z',
+    series: [
+      { all: { dailyCapacityPriceWei: null }, tapeout: { dailyCapacityPriceWei: null } },
+      { all: { dailyCapacityPriceWei: '9000000000000000000' } },
+      { all: { dailyCapacityPriceWei: null }, tapeout: { dailyCapacityPriceWei: '8350000000000000000' } }
+    ]
+  };
+  const upFixture = {
+    pairs: [
+      { baseToken: { symbol: 'UP' }, priceUsd: '0.1000', priceChange: { h24: 9 }, liquidity: { usd: 100 } },
+      { baseToken: { symbol: 'UP' }, priceUsd: '0.2955', priceChange: { h24: -2.95 }, liquidity: { usd: 213821 } },
+      { baseToken: { symbol: 'BEM' }, priceUsd: '99', priceChange: { h24: 1 }, liquidity: { usd: 999999 } }
+    ]
+  };
+  const bem = T.parseBem(bemFixture);
+  const miner = T.parseMiner(minerFixture);
+  const up = T.parseUp(upFixture);
+
+  add('1.4.13 BEM 8 位定点价换算正确（$12.53708639）',
+    bem && Math.abs(bem.value - 12.53708639) < 1e-8 && bem.key === 'bem');
+  add('1.4.13 BEM 24h 涨跌取当日首个有效点',
+    bem && Math.abs(bem.changePct - (12.53708639 - 12) / 12 * 100) < 1e-6);
+  add('1.4.13 矿机日产价按 wei/1e18 换算，且 all 为空时回退 tapeout',
+    miner && Math.abs(miner.value - 8.35) < 1e-9 && Math.abs(miner.changePct + 7.2222222) < 1e-4);
+  add('1.4.13 TapeUP 只认 UP 主池且取流动性最深报价',
+    up && up.value === 0.2955 && up.changePct === -2.95);
+  add('1.4.13 三个解析器遇到空/坏数据都返回 null 而不抛错',
+    T.parseBem({}) === null && T.parseMiner({ series: [] }) === null &&
+    T.parseUp({ pairs: [] }) === null && T.parseUp({}) === null);
+  add('1.4.13 单位文案与官网一致（BNB，非臆造的 BNB/(BEM·日)）',
+    T.META.miner.unit === 'BNB' && !priceJs.includes('BNB/(BEM'));
+  add('1.4.13 格式化：前缀 / 小数位 / 涨跌正负号 / 空值',
+    T.format('up', 0.2955) === '$0.2955' && T.format('miner', 8.35) === '8.350' &&
+    T.format('bem', 12.537) === '$12.54' && T.format('bem', null) === '—' &&
+    T.formatChange(1.2) === '+1.20%' && T.formatChange(-2.95) === '-2.95%' &&
+    T.isUp(1) === true && T.isDown(-1) === true && T.isUp(0) === false);
+  add('1.4.13 三个交易所跳转地址都是 Firsto 官方真实路由',
+    T.linkFor('up') === 'https://firsto.ai/data' &&
+    T.linkFor('miner') === 'https://firsto.ai/data/circuits' &&
+    T.linkFor('bem') === 'https://firsto.ai/data/bem' &&
+    firstoBundleIncludes('/data/circuits'));
+  add('1.4.13 打开链接做了白名单，恶意地址回落到首页',
+    T.safeLink('https://evil.com/steal') === 'https://firsto.ai/' &&
+    T.safeLink('javascript:alert(1)') === 'https://firsto.ai/' &&
+    T.safeLink('https://api-tapeout.firsto.ai/v1/analytics/bem?range=24h')
+      .indexOf('https://api-tapeout.firsto.ai/') === 0);
+  add('1.4.13 三个数据源均为公开只读域名，无需 Key',
+    T.ENDPOINTS.bem.indexOf('https://api-tapeout.firsto.ai/v1/analytics/bem') === 0 &&
+    T.ENDPOINTS.miner.indexOf('https://api-tapeout.firsto.ai/v1/analytics/circuits') === 0 &&
+    T.ENDPOINTS.up.indexOf('https://api.dexscreener.com/latest/dex/tokens/') === 0);
+
+  // ---- 设置归一化 ----
+  const def = T.normalizeSettings(null);
+  const bad = T.normalizeSettings({
+    pollMinutes: 7, cooldownMinutes: 999, toast: false, notify: false,
+    bounds: { up: { min: '10', max: '5' }, miner: { min: '-3', max: 'abc' }, bem: { min: '1.5', max: '9' } }
+  });
+  add('1.4.13 默认设置：开提醒 / 5 分钟轮询 / 30 分钟冷却 / 双层提醒',
+    def.enabled === true && def.pollMinutes === 5 && def.cooldownMinutes === 30 &&
+    def.toast === true && def.notify === true && def.bounds.bem.min === '');
+  add('1.4.13 无效阈值（下限≥上限 / 负数 / 非数字）被丢弃而非误报',
+    bad.bounds.up.min === '' && bad.bounds.up.max === '' &&
+    bad.bounds.miner.min === '' && bad.bounds.miner.max === '' &&
+    bad.bounds.bem.min === '1.5' && bad.bounds.bem.max === '9');
+  add('1.4.13 非法轮询 / 冷却间隔回落到默认值',
+    bad.pollMinutes === 5 && bad.cooldownMinutes === 30 && bad.toast === false && bad.notify === false);
+
+  // ---- 阈值状态机 ----
+  const snap = (over) => ({ items: Object.assign({
+    up: { value: 0.2955, stale: false },
+    miner: { value: 8.35, stale: false },
+    bem: { value: 12.5, stale: false }
+  }, over || {}) });
+  const now = 1800000000000;
+  const cfgAbove = T.normalizeSettings({ bounds: { bem: { min: '10', max: '12' } } });
+  const ev1 = T.evaluateAlerts(snap(), cfgAbove, {}, now);
+  const ev2 = T.evaluateAlerts(snap(), cfgAbove, ev1.state, now + 60000);
+  const ev3 = T.evaluateAlerts(snap({ bem: { value: 11, stale: false } }), cfgAbove, ev2.state, now + 120000);
+  const ev4 = T.evaluateAlerts(snap(), cfgAbove, ev3.state, now + 31 * 60000);
+  const evStale = T.evaluateAlerts(snap({ bem: { value: 99, stale: true } }), cfgAbove, {}, now);
+  const evOff = T.evaluateAlerts(snap(), T.normalizeSettings({
+    enabled: false, bounds: { bem: { min: '10', max: '12' } } }), {}, now);
+  const evBelow = T.evaluateAlerts(snap({ bem: { value: 0.8, stale: false } }),
+    T.normalizeSettings({ bounds: { bem: { min: '1', max: '' } } }), {}, now);
+  const evBlank = T.evaluateAlerts(snap(), T.normalizeSettings(null), {}, now);
+
+  add('1.4.13 价格从区间内跨到区间外才提醒一次', ev1.alerts.length === 1 && ev1.alerts[0].kind === 'above');
+  add('1.4.13 一直停在阈值外不会每轮重复弹（状态机）', ev2.alerts.length === 0);
+  add('1.4.13 回到区间内不提醒，且状态复位', ev3.alerts.length === 0 && ev3.state.bem.kind === 'none');
+  add('1.4.13 再次越界需过冷却期才提醒', ev4.alerts.length === 1 && ev4.alerts[0].kind === 'above');
+  add('1.4.13 缓存/陈旧价格不会误触发提醒', evStale.alerts.length === 0);
+  add('1.4.13 关掉提醒总开关后完全不触发', evOff.alerts.length === 0);
+  add('1.4.13 跌破下限单独触发，文案与跳转页正确',
+    evBelow.alerts.length === 1 && evBelow.alerts[0].kind === 'below' &&
+    /跌破下限/.test(evBelow.alerts[0].title) &&
+    evBelow.alerts[0].url === 'https://firsto.ai/data/bem' &&
+    /Firsto/.test(evBelow.alerts[0].message));
+  add('1.4.13 未填任何阈值时零提醒', evBlank.alerts.length === 0);
+  add('1.4.13 提醒文案带上现价与阈值，不夹杂 undefined',
+    !/undefined|NaN/.test(ev1.alerts[0].message) && /12\.50/.test(ev1.alerts[0].message));
+  add('1.4.13 测试提醒可无条件发出且带 demo 标记',
+    T.demoAlert().demo === true && T.demoAlert().url.indexOf('https://firsto.ai/') === 0);
+
+  // ---- 抓取：并发 / 单项失败降级 / 陈旧缓存 ----
+  const fixtures = {};
+  fixtures[T.ENDPOINTS.bem] = bemFixture;
+  fixtures[T.ENDPOINTS.miner] = minerFixture;
+  fixtures[T.ENDPOINTS.up] = upFixture;
+  const mkFetch = (state) => (url) => {
+    state.calls.push(url);
+    const key = Object.keys(fixtures).find((k) => url.indexOf(k) === 0);
+    if (!key) return Promise.reject(new Error('unexpected url ' + url));
+    if (state.fail.indexOf(key) >= 0) return Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({}) });
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(JSON.parse(JSON.stringify(fixtures[key]))) });
+  };
+  const fs1 = { calls: [], fail: [] };
+  const allSnap = await T.fetchSnapshot(mkFetch(fs1), null);
+  add('1.4.13 一轮抓三个接口，互不牵连', fs1.calls.length === 3 &&
+    allSnap.items.bem.value > 0 && allSnap.items.miner.value > 0 && allSnap.items.up.value > 0);
+
+  const fs2 = { calls: [], fail: [T.ENDPOINTS.miner] };
+  const partial = await T.fetchSnapshot(mkFetch(fs2), null);
+  add('1.4.13 单个接口挂了只影响那一项，其它两项照常显示',
+    partial.items.bem.value > 0 && partial.items.up.value > 0 &&
+    partial.items.miner.value === null && partial.items.miner.stale === true &&
+    partial.errors.length === 1);
+
+  const fs3 = { calls: [], fail: [T.ENDPOINTS.miner] };
+  const withCache = await T.fetchSnapshot(mkFetch(fs3), allSnap);
+  add('1.4.13 接口失败时沿用上次缓存并打 stale 标记',
+    Math.abs(withCache.items.miner.value - allSnap.items.miner.value) < 1e-9 &&
+    withCache.items.miner.stale === true && withCache.items.bem.stale === false);
+  add('1.4.13 陈旧缓存不会触发提醒',
+    T.evaluateAlerts(withCache, T.normalizeSettings({
+      bounds: { miner: { min: '', max: '0.001' } } }), {}, now).alerts.length === 0);
+
+  const noFetch = await T.fetchSnapshot(null, null);
+  add('1.4.13 没有 fetch 的环境优雅降级，不抛异常',
+    noFetch.stale === true && noFetch.errors.length === 1);
+
+  // ---- 后台源码段：真实消息链路 ----
+  const marker = '/* =====================================================================\n * 1.4.13';
+  const bgPriceSrc = bgJs.slice(bgJs.indexOf(marker));
+  let syncStore = { priceSettings: T.normalizeSettings(null) };
+  let localStore = {};
+  const bgListeners = [], clickedListeners = [], alarmListeners = [];
+  const notifs = [], cleared = [], toasts = [], opened = [], alarmsCreated = [], bgErrors = [];
+  const bgFetchState = { calls: [], fail: [] };
+  const bgChrome = {
+    runtime: {
+      lastError: undefined,
+      onMessage: { addListener: (fn) => bgListeners.push(fn) },
+      onInstalled: { addListener: () => {} },
+      onStartup: { addListener: () => {} }
+    },
+    storage: {
+      sync: {
+        get: (keys, cb) => {
+          const out = {};
+          (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in syncStore) out[k] = syncStore[k]; });
+          cb(out);
+        }
+      },
+      local: {
+        get: (keys, cb) => {
+          const out = {};
+          (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in localStore) out[k] = localStore[k]; });
+          cb(out);
+        },
+        set: (obj, cb) => { Object.assign(localStore, obj); if (cb) cb(); }
+      }
+    },
+    alarms: {
+      create: (name, info) => alarmsCreated.push({ name, info }),
+      onAlarm: { addListener: (fn) => alarmListeners.push(fn) }
+    },
+    notifications: {
+      create: (id, opts, cb) => { notifs.push({ id, opts }); if (cb) cb(id); },
+      onClicked: { addListener: (fn) => clickedListeners.push(fn) },
+      clear: (id, cb) => { cleared.push(id); if (cb) cb(true); }
+    },
+    tabs: {
+      query: (q, cb) => cb([{ id: 1, url: 'https://x.com/home' }, { id: 2, url: 'chrome://extensions' }]),
+      sendMessage: (id, msg, cb) => { toasts.push({ id, msg }); if (cb) cb(); },
+      create: (o) => { opened.push(o.url); return Promise.resolve({ id: 99 }); }
+    }
+  };
+  const bgPriceCtx = vm.createContext({
+    TapePrice: T, chrome: bgChrome, fetch: mkFetch(bgFetchState),
+    console, setTimeout, clearTimeout
+  });
+  try { vm.runInContext(bgPriceSrc, bgPriceCtx, { filename: 'background.js#price' }); }
+  catch (e) { bgErrors.push('vm: ' + (e && e.message)); }
+
+  const bgCall = (msg) => new Promise((resolve) => {
+    let done = false;
+    const sr = (v) => { if (!done) { done = true; resolve(v); } };
+    bgListeners.forEach((fn) => {
+      try { fn(msg, { id: 'fake-ext' }, sr); } catch (e) { bgErrors.push(msg.type + ': ' + (e && e.message)); }
+    });
+    setTimeout(() => { if (!done) resolve(null); }, 250);
+  });
+  const tick = () => new Promise((r) => setTimeout(r, 20));
+
+  const rGet = await bgCall({ type: 'PRICE_GET' });
+  add('1.4.13 后台 PRICE_GET 返回三项行情与默认设置',
+    !bgErrors.length && rGet && rGet.ok === true && rGet.snapshot &&
+    rGet.snapshot.items.bem.value > 0 && rGet.snapshot.items.miner.value > 0 &&
+    rGet.snapshot.items.up.value > 0 && rGet.settings.pollMinutes === 5);
+  const callsAfterGet = bgFetchState.calls.length;
+  await bgCall({ type: 'PRICE_GET' });
+  add('1.4.13 2 分钟内缓存直接给面板，不重复打接口',
+    bgFetchState.calls.length === callsAfterGet);
+  const rRefresh = await bgCall({ type: 'PRICE_REFRESH' });
+  add('1.4.13 ↻ 强制刷新会重新抓三个接口',
+    rRefresh && rRefresh.ok === true && bgFetchState.calls.length === callsAfterGet + 3);
+
+  // 配置一个必然越界的阈值，验证「通知 + 右下角浮层」双层提醒
+  syncStore.priceSettings = T.normalizeSettings({
+    bounds: { bem: { min: '', max: '1' } }, pollMinutes: 15, cooldownMinutes: 30
+  });
+  localStore.tapePriceAlertState = {};
+  await bgCall({ type: 'PRICE_SETTINGS' });
+  add('1.4.13 保存设置后清空状态机并按新间隔重注册闹钟',
+    Object.keys(localStore.tapePriceAlertState).length === 0 &&
+    alarmsCreated.length > 0 && alarmsCreated[alarmsCreated.length - 1].info.periodInMinutes === 15);
+  const nBefore = notifs.length, tBefore = toasts.length;
+  await bgCall({ type: 'PRICE_REFRESH' });
+  add('1.4.13 越界时发出系统通知 + 给网页广播右下角浮层',
+    notifs.length === nBefore + 1 && toasts.length === tBefore + 1 &&
+    toasts[toasts.length - 1].id === 1 &&
+    toasts[toasts.length - 1].msg.type === 'PRICE_ALERT_TOAST' &&
+    /Firsto/.test(notifs[notifs.length - 1].opts.contextMessage));
+  add('1.4.13 广播只发给 http(s) 标签，跳过 chrome:// 页',
+    toasts.every((t) => t.id === 1));
+  await bgCall({ type: 'PRICE_REFRESH' });
+  add('1.4.13 后台层同样不会每轮重复轰炸',
+    notifs.length === nBefore + 1);
+  const alertId = notifs[notifs.length - 1].id;
+  add('1.4.13 通知 id → 交易所链接映射已落本地',
+    localStore.tapePriceNotifLinks && localStore.tapePriceNotifLinks[alertId] === 'https://firsto.ai/data/bem');
+  clickedListeners.forEach((fn) => fn(alertId));
+  await tick();
+  add('1.4.13 点击系统通知打开 Firsto 对应数据页并清掉通知',
+    opened[opened.length - 1] === 'https://firsto.ai/data/bem' && cleared.indexOf(alertId) >= 0);
+
+  const nTest = notifs.length, tTest = toasts.length;
+  const rTest = await bgCall({ type: 'PRICE_TEST_ALERT' });
+  add('1.4.13 「测试弹窗」无条件发出两种提醒',
+    rTest && rTest.ok === true && notifs.length === nTest + 1 && toasts.length === tTest + 1 &&
+    toasts[toasts.length - 1].msg.alert.demo === true);
+  await bgCall({ type: 'OPEN_PRICE_LINK', url: 'https://evil.com/fake' });
+  add('1.4.13 点浮层带恶意链接时被拦回落，不会打开钓鱼站',
+    opened[opened.length - 1] === 'https://firsto.ai/');
+  await bgCall({ type: 'OPEN_PRICE_LINK', url: 'https://firsto.ai/data/circuits' });
+  add('1.4.13 点浮层正常打开矿机日产数据页',
+    opened[opened.length - 1] === 'https://firsto.ai/data/circuits');
+  add('1.4.13 后台行情链路全程无异常', bgErrors.length === 0);
+
+  // 缺 alarms / notifications 的旧环境：只应静默跳过，不能抛错
+  const bareChrome = {
+    runtime: { onMessage: { addListener: () => {} }, onInstalled: { addListener: () => {} }, onStartup: { addListener: () => {} } },
+    storage: {
+      sync: { get: (k, cb) => cb({}) },
+      local: { get: (k, cb) => cb({}), set: (o, cb) => { if (cb) cb(); } }
+    }
+  };
+  let bareOk = true;
+  try {
+    vm.runInContext(bgPriceSrc, vm.createContext({
+      TapePrice: T, chrome: bareChrome, fetch: mkFetch({ calls: [], fail: [] }),
+      console, setTimeout, clearTimeout
+    }), { filename: 'background.js#price-bare' });
+  } catch (e) { bareOk = false; }
+  add('1.4.13 旧版 Chrome 缺 alarms/notifications 时静默跳过，不影响原有链路', bareOk);
+
+  // ---- 右下角浮层：真实 price-alert.js + 轻量 DOM ----
+  class ToastNode {
+    constructor(tag) {
+      this.tagName = tag; this.children = []; this.style = {}; this.textContent = '';
+      this.parentNode = null; this.attrs = {}; this._handlers = {};
+    }
+    get firstChild() { return this.children[0]; }
+    appendChild(n) { n.parentNode = this; this.children.push(n); return n; }
+    removeChild(n) {
+      const i = this.children.indexOf(n);
+      if (i >= 0) this.children.splice(i, 1);
+      n.parentNode = null; return n;
+    }
+    setAttribute(k, v) { this.attrs[k] = v; }
+    addEventListener(t, fn) { this._handlers[t] = fn; }
+    click(ev) { if (this._handlers.click) this._handlers.click(ev || { stopPropagation() {} }); }
+  }
+  const bodyNode = new ToastNode('body');
+  const toastDoc = {
+    body: bodyNode, documentElement: bodyNode,
+    getElementById: (id) => bodyNode.children.filter((n) => n.id === id)[0] || null,
+    createElement: (tag) => new ToastNode(tag)
+  };
+  const toastMsgs = [], toastListeners = [];
+  const toastChrome = {
+    runtime: {
+      onMessage: { addListener: (fn) => toastListeners.push(fn) },
+      sendMessage: (msg, cb) => { toastMsgs.push(msg); if (cb) cb(); },
+      lastError: undefined
+    }
+  };
+  const toastCtx = vm.createContext({
+    window: {}, document: toastDoc, chrome: toastChrome,
+    console, setTimeout: () => 1, clearTimeout: () => {}
+  });
+  vm.runInContext(alertJs, toastCtx, { filename: 'price-alert.js' });
+  vm.runInContext(alertJs, toastCtx, { filename: 'price-alert.js#again' });
+  add('1.4.13 浮层脚本重复注入只注册一个监听器', toastListeners.length === 1);
+  const demoMsg = { type: 'PRICE_ALERT_TOAST', alert: T.demoAlert() };
+  toastListeners.forEach((fn) => fn(demoMsg));
+  const root = toastDoc.getElementById('tape-post-price-toast-root');
+  add('1.4.13 浮层固定在右下角且不遮挡页面点击',
+    !!root && root.style.position === 'fixed' && root.style.right === '18px' &&
+    root.style.bottom === '18px' && root.style.pointerEvents === 'none');
+  const card = root && root.children[0];
+  const cardText = card ? card.children.map((n) => n.textContent).join('|') : '';
+  add('1.4.13 浮层显示标题 / 正文 / 点进交易所提示',
+    /TapePost/.test(cardText) && /测试提醒/.test(cardText) && /Firsto/.test(cardText));
+  add('1.4.13 浮层文字全用 textContent，不拼 HTML（防注入）',
+    !alertJs.includes('innerHTML') && alertJs.includes('el.textContent'));
+  card.click({ stopPropagation() {} });
+  add('1.4.13 点浮层发 OPEN_PRICE_LINK 并自动收起',
+    toastMsgs.length === 1 && toastMsgs[0].type === 'OPEN_PRICE_LINK' &&
+    toastMsgs[0].url.indexOf('https://firsto.ai/') === 0 && root.children.length === 0);
+  for (let i = 0; i < 5; i++) toastListeners.forEach((fn) => fn(demoMsg));
+  add('1.4.13 浮层最多叠 3 张，不会刷屏', root.children.length === 3);
+  const closeBtn = root.children[0].children[0].children[1];
+  closeBtn.click({ stopPropagation() {} });
+  add('1.4.13 关闭按钮只收卡片、不触发跳转',
+    root.children.length === 2 && toastMsgs.length === 1);
+
+  // ---- 静态接线 ----
+  const perms = (manifest1413.permissions || []).slice().sort();
+  const hosts = manifest1413.host_permissions || [];
+  add('1.4.13 manifest 升到 1.4.13 且只新增 alarms / notifications',
+    manifest1413.version === '1.4.13' &&
+    perms.join(',') === ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads',
+      'notifications', 'offscreen', 'storage'].join(','));
+  add('1.4.13 只新增两个只读行情域名，没有申请通配域名',
+    hosts.indexOf('https://api-tapeout.firsto.ai/*') >= 0 &&
+    hosts.indexOf('https://api.dexscreener.com/*') >= 0 &&
+    !hosts.includes('https://*/*'));
+  add('1.4.13 price-alert.js 注入 ISOLATED world，不污染 MAIN world',
+    (manifest1413.content_scripts[0].js || []).indexOf('price-alert.js') >= 0 &&
+    !manifest1413.content_scripts[0].world &&
+    (manifest1413.content_scripts[1].js || []).indexOf('price-alert.js') < 0);
+  add('1.4.13 面板顶端有三张行情卡片 + 刷新按钮 + 更新时间',
+    ['pricePanel', 'priceUpdated', 'priceRefresh', 'priceValueUp', 'priceValueMiner',
+      'priceValueBem', 'priceChangeUp', 'priceChangeMiner', 'priceChangeBem']
+      .every((id) => popupHtml1413.includes('id="' + id + '"')) &&
+    popupHtml1413.includes('data-price-key="bem"'));
+  add('1.4.13 上下限设置区含三项 6 个输入框与保存/测试按钮',
+    ['priceUpMin', 'priceUpMax', 'priceMinerMin', 'priceMinerMax', 'priceBemMin', 'priceBemMax',
+      'priceEnabled', 'pricePollMinutes', 'priceCooldownMinutes', 'priceToast', 'priceNotify',
+      'priceSave', 'priceTest', 'priceStatus'].every((id) => popupHtml1413.includes('id="' + id + '"')));
+  add('1.4.13 popup 引入 price.js 并接上四类消息',
+    popupHtml1413.includes('<script src="price.js"></script>') &&
+    ['PRICE_GET', 'PRICE_REFRESH', 'PRICE_SETTINGS', 'PRICE_TEST_ALERT']
+      .every((t) => popupJs1413.includes("'" + t + "'")) &&
+    popupJs1413.includes('savePriceSettings') && popupJs1413.includes('collectPriceSettings'));
+  add('1.4.13 popup 保存设置同步读取 lastError，不产生未检查错误',
+    /chrome\.storage\.sync\.set\(payload, \(\) => \{[\s\S]{0,200}lastError/.test(popupJs1413));
+  add('1.4.13 后台行情段用 importScripts 加载共享层并注册独立 listener',
+    bgPriceSrc.includes("importScripts('price.js')") &&
+    bgPriceSrc.includes('chrome.runtime.onMessage.addListener') &&
+    bgPriceSrc.includes('lastError'));
+  add('1.4.13 提醒链接做白名单，通知点击不会打开任意站点',
+    bgPriceSrc.includes('TapePrice.safeLink(a.url)') && bgPriceSrc.includes('TapePrice.safeLink(url)'));
+  add('1.4.13 版本说明 / README / 按钮 title 均同步到 1.4.13',
+    read('content.js').includes('v1.4.13') && popupHtml1413.includes('当前 v1.4.13') &&
+    popupJs1413.includes('v1.4.13 面板顶端新增') && readme1413.includes('### 1.4.13：'));
+
+  return checks;
+}
+
+/* 官方前端 bundle 里确实存在 /data/circuits 等路由，避免把跳转地址写成猜测值。
+ * 缓存文件由脚本预先抓到 /tmp，取不到时不影响其它断言（只这一条降级为 true）。 */
+function firstoBundleIncludes(path) {
+  try {
+    const p = '/tmp/firsto.js';
+    if (!fs.existsSync(p)) return true;
+    return fs.readFileSync(p, 'utf8').includes('"' + path + '"');
+  } catch (e) { return true; }
+}
+
 (async () => {
   console.log('=== 微博一键转发插件 · 端到端回归测试 ===\n');
   const cases = [];
@@ -2670,7 +3090,7 @@ async function runScenario(name, cfg, expect) {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.12' },
+      ok: manifestJson.version === '1.4.13' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2689,8 +3109,8 @@ async function runScenario(name, cfg, expect) {
       ok: ['tmpAutoDownload','tmpCleanup','tmpKeepMinutes','tmpCleanNow','tmpStatus'].every((id) => popupHtml.includes('id="' + id + '"')) },
     { name: '1.4.3 设置读写接入新键',
       ok: popupJs.includes('autoDownloadBackup: !!(document.getElementById') && popupJs.includes('tmpKeepMinutes: Number(') && popupJs.includes('refreshTmpStatus()') },
-    { name: '1.4.3 未新增 manifest 权限',
-      ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
+    { name: '1.4.3 权限集合与当前版本一致',
+      ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
     { name: '1.4.3 不再出现旧的「全部下载」按钮',
       ok: !contentJs.includes("dl.textContent = '全部下载'") }
   ];
@@ -2698,7 +3118,7 @@ async function runScenario(name, cfg, expect) {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.12' },
+      ok: manifestJson.version === '1.4.13' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -2710,10 +3130,10 @@ async function runScenario(name, cfg, expect) {
       ok: ["sendBg({ type: 'GROK_TEST' }", "sendBg({ type: 'GROK_PAGE_RESET' }", "sendBg({ type: 'DIAG' }", "sendBg({ type: 'TMP_CLEAN' }"].every((s) => popupJs.includes(s)) },
     { name: '1.4.4 托盘清理回调读取 lastError',
       ok: contentJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') && contentJs.includes('!err && r && r.ok') },
-    { name: '1.4.4 未新增 manifest 权限',
-      ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
+    { name: '1.4.4 权限集合与当前版本一致',
+      ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.12') && popupHtml.includes('当前 v1.4.12') }
+      ok: contentJs.includes('v1.4.13') && popupHtml.includes('当前 v1.4.13') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -2805,9 +3225,9 @@ async function runScenario(name, cfg, expect) {
           promoRuntime.on.enabled === true && promoRuntime.on.texts.length === 3 &&
           promoRuntime.on.texts.every((t) => t.indexOf('\n\n') > 0) &&
           promoRuntime.off.enabled === false && promoRuntime.off.texts.join('|') === '甲|乙|丙' },
-    { name: '1.4.5 未新增 manifest 权限',
+    { name: '1.4.5 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
   ];
 
   // ---- v1.4.8：单个 T 按钮 + 原生编辑命令写回（真机反馈「重复 / 会乱」修复） ----
@@ -3001,8 +3421,8 @@ async function runScenario(name, cfg, expect) {
 
   const promo148Checks = [
     { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
-      ok: manifestJson.version === '1.4.12' && contentJs.includes('v1.4.12') &&
-          popupHtml.includes('当前 v1.4.12') && contentJs.includes('TapePost v1.4.12') },
+      ok: manifestJson.version === '1.4.13' && contentJs.includes('v1.4.13') &&
+          popupHtml.includes('当前 v1.4.13') && contentJs.includes('TapePost v1.4.13') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -3052,9 +3472,9 @@ async function runScenario(name, cfg, expect) {
       ok: !!promo148 && promo148.noCross === true },
     { name: '1.4.8 保留 stripPromo 供 AI 候选使用',
       ok: stripped === '我自己写的评论' && P.stripPromo('纯正文', {}) === '纯正文' },
-    { name: '1.4.8 未新增 manifest 权限',
+    { name: '1.4.8 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
   ];
 
   // ---- v1.4.9：全页唯一按钮 + 精准回写（真机「很多按钮 / 写错框 / 手动改就乱」） ----
@@ -3091,9 +3511,9 @@ async function runScenario(name, cfg, expect) {
       ok: !!promo148 && promo148.staleRecovered === true },
     { name: '1.4.9 运行时：一个容器里两个输入框时不敢猜、直接停手',
       ok: !!promo148 && promo148.ambiguous === true },
-    { name: '1.4.9 未新增 manifest 权限',
+    { name: '1.4.9 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
   ];
 
   // ---- v1.4.10：按钮不压正文 + 写回后收拢选区 + 多句停手（真机截图复盘） ----
@@ -3121,18 +3541,18 @@ async function runScenario(name, cfg, expect) {
       ok: applyQuickBody.includes('const prefixOk =') &&
           applyQuickBody.includes('normReplyText(after).indexOf(normReplyText(body)) === 0') },
     { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
-      ok: manifestJson.version === '1.4.12' &&
-          contentJs.includes('TapePost v1.4.12') &&
-          contentJs.includes('v1.4.12') &&
-          popupHtml.includes('当前 v1.4.12') &&
+      ok: manifestJson.version === '1.4.13' &&
+          contentJs.includes('TapePost v1.4.13') &&
+          contentJs.includes('v1.4.13') &&
+          popupHtml.includes('当前 v1.4.13') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') },
     { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
       ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
     { name: '1.4.10 运行时：正文里已有两句推广句时一个字都不动',
       ok: !!promo148 && promo148.dupStopped === true },
-    { name: '1.4.10 未新增 manifest 权限',
+    { name: '1.4.10 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
   ];
 
   // ---- v1.4.11：一次全量替换（重复 / 不可编辑）+ AI 评论快速模式 ----
@@ -3198,14 +3618,14 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.11 运行时：X 拒绝写入时自动恢复原文',
       ok: !!promo148 && promo148.refusedRestored === true },
     { name: '1.4.11 版本已同步到 manifest / 按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.12' &&
-          contentJs.includes('v1.4.12') && contentJs.includes('TapePost v1.4.12') &&
-          popupHtml.includes('当前 v1.4.12') &&
+      ok: manifestJson.version === '1.4.13' &&
+          contentJs.includes('v1.4.13') && contentJs.includes('TapePost v1.4.13') &&
+          popupHtml.includes('当前 v1.4.13') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') &&
           read('README.md').includes('### 1.4.11：写回链路重写') },
-    { name: '1.4.11 未新增 manifest 权限',
+    { name: '1.4.11 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
   ];
 
   // ---- v1.4.12：AI 评论 401 / 响应解析修复 ----
@@ -3237,15 +3657,15 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.12 后台超时放宽到 40 秒配合重试',
       ok: backgroundJs.includes('fast ? 40000 : 90000') },
     { name: '1.4.12 版本已同步到 manifest / 两个按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.12' &&
-          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.12') &&
-          contentJs.includes('TapePost v1.4.12') &&
-          popupHtml.includes('当前 v1.4.12') &&
+      ok: manifestJson.version === '1.4.13' &&
+          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.13') &&
+          contentJs.includes('TapePost v1.4.13') &&
+          popupHtml.includes('当前 v1.4.13') &&
           popupJs.includes('v1.4.12 修好 AI 评论 401') &&
           read('README.md').includes('### 1.4.12：修复 AI 评论 401') },
-    { name: '1.4.12 未新增 manifest 权限',
+    { name: '1.4.12 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
   ];
 
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
@@ -3269,7 +3689,8 @@ async function runScenario(name, cfg, expect) {
     .concat(promo149Checks)
     .concat(promo1410Checks)
     .concat(promo1411Checks)
-    .concat(promo1412Checks);
+    .concat(promo1412Checks)
+    .concat(await runPrice1413Checks());
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

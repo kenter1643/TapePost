@@ -1025,3 +1025,177 @@ chrome.runtime.onInstalled.addListener(() => { installRefererRules(); purgeTmp(f
 chrome.runtime.onStartup.addListener(() => { installRefererRules(); purgeTmp(false).catch(() => {}); });
 installRefererRules();
 purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一次过期临时文件
+
+/* =====================================================================
+ * 1.4.13：TapeOut 行情卡片 + 价格上下限提醒
+ *
+ *  · 定时（chrome.alarms）抓 Firsto 官方 analytics + DexScreener 公开行情；
+ *  · 价格越过设定的上/下限时，发系统通知 + 给所有标签页广播右下角浮层；
+ *  · 通知点击直接打开 Firsto 交易所对应数据页；
+ *  · 只有「从区间内跨到区间外」提醒一次，不会每分钟重复轰炸（见 price.js）。
+ * 所有新 API 都做存在性判断：老版本 Chrome / 测试沙箱缺 API 时静默跳过，
+ * 不影响原有的转发与 Grok 链路。
+ * ===================================================================== */
+(function () {
+  'use strict';
+  try {
+    if (typeof TapePrice === 'undefined' && typeof importScripts === 'function') importScripts('price.js');
+  } catch (e) { /* 独立测试环境没有 importScripts */ }
+  if (typeof TapePrice === 'undefined') return;
+
+  var SNAP_KEY = 'tapePriceSnapshot';      // storage.local：最近一次行情
+  var STATE_KEY = 'tapePriceAlertState';    // storage.local：上下限状态机
+  var SET_KEY = 'priceSettings';            // storage.sync：用户设置
+  var LINK_KEY = 'tapePriceNotifLinks';     // storage.local：通知 id → 交易所链接
+  var ALARM = 'tapePricePoll';
+  var busy = null;
+
+  function syncGet(key) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.sync.get(key, function (o) { resolve(o && o[key] != null ? o[key] : null); }); }
+      catch (e) { resolve(null); }
+    });
+  }
+  function localGet(key, fallback) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.local.get(key, function (o) { resolve(o && o[key] != null ? o[key] : fallback); }); }
+      catch (e) { resolve(fallback); }
+    });
+  }
+  function localSet(obj) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.local.set(obj, function () { resolve(true); }); }
+      catch (e) { resolve(false); }
+    });
+  }
+  function readSettings() { return syncGet(SET_KEY).then(function (v) { return TapePrice.normalizeSettings(v); }); }
+
+  function refresh() {
+    if (busy) return busy;   // 弹窗刷新 + alarm 同时到时只发一轮请求
+    busy = (async function () {
+      var prev = await localGet(SNAP_KEY, null);
+      var snap = await TapePrice.fetchSnapshot(fetch, prev);
+      var out = {}; out[SNAP_KEY] = snap;
+      await localSet(out);
+      var cfg = await readSettings();
+      var state = await localGet(STATE_KEY, {});
+      var ev = TapePrice.evaluateAlerts(snap, cfg, state, Date.now());
+      var st = {}; st[STATE_KEY] = ev.state;
+      await localSet(st);
+      if (ev.alerts.length) await fire(ev.alerts, cfg);
+      return snap;
+    })().catch(function (e) {
+      console.warn('[bg][price] 刷新失败: ' + String(e && e.message || e));
+      return null;
+    }).then(function (v) { busy = null; return v; });
+    return busy;
+  }
+
+  async function fire(alerts, cfg) {
+    for (var i = 0; i < alerts.length; i++) {
+      var a = alerts[i];
+      var id = 'tapeprice-' + Date.now() + '-' + i + '-' + a.key;
+      var links = await localGet(LINK_KEY, {});
+      links[id] = TapePrice.safeLink(a.url);
+      var lm = {}; lm[LINK_KEY] = links;
+      await localSet(lm);
+      if (cfg.notify !== false && chrome.notifications && chrome.notifications.create) {
+        try {
+          chrome.notifications.create(id, {
+            type: 'basic', iconUrl: 'icons/icon128.png',
+            title: a.title, message: a.message,
+            contextMessage: '点击打开 Firsto 交易所 · TapePost',
+            priority: 2
+          }, function () { void (chrome.runtime && chrome.runtime.lastError); });
+        } catch (e) {}
+      }
+      if (cfg.toast !== false) broadcast(a);
+    }
+  }
+
+  function broadcast(alert) {
+    if (!chrome.tabs || !chrome.tabs.query) return;
+    try {
+      chrome.tabs.query({}, function (tabs) {
+        (tabs || []).forEach(function (t) {
+          if (!t || !t.id || !/^https?:/i.test(t.url || '')) return;
+          try {
+            chrome.tabs.sendMessage(t.id, { type: 'PRICE_ALERT_TOAST', alert: alert }, function () {
+              void (chrome.runtime && chrome.runtime.lastError); // 同步读取，杜绝 Unchecked lastError
+            });
+          } catch (e) {}
+        });
+      });
+    } catch (e) {}
+  }
+
+  function openLink(url) {
+    var u = TapePrice.safeLink(url);
+    try { chrome.tabs.create({ url: u, active: true }); } catch (e) {}
+  }
+
+  if (chrome.notifications && chrome.notifications.onClicked) {
+    chrome.notifications.onClicked.addListener(function (id) {
+      if (!/^tapeprice-/.test(String(id || ''))) return;
+      localGet(LINK_KEY, {}).then(function (map) {
+        openLink(map[id]);
+        try { chrome.notifications.clear(id, function () { void (chrome.runtime && chrome.runtime.lastError); }); }
+        catch (e) {}
+      });
+    });
+  }
+
+  function ensureAlarm() {
+    if (!chrome.alarms || !chrome.alarms.create) return Promise.resolve();
+    // 返回 Promise：保存设置后必须等闹钟真正重注册完再回包，
+    // 否则用户改了间隔、面板显示「已保存」，后台却还在按旧周期跑。
+    return readSettings().then(function (cfg) {
+      try { chrome.alarms.create(ALARM, { delayInMinutes: 1, periodInMinutes: cfg.pollMinutes }); }
+      catch (e) { /* Chrome < 120 不允许小于 1 分钟的周期，这里最小也是 1 */ }
+    });
+  }
+  if (chrome.alarms && chrome.alarms.onAlarm) {
+    chrome.alarms.onAlarm.addListener(function (a) {
+      if (a && a.name === ALARM) refresh().catch(function () {});
+    });
+  }
+
+  // 独立 listener：不与原有 CROSSPOST / GROK_* 路由耦合，回归风险最低
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || !/^(PRICE_|OPEN_PRICE_LINK)/.test(String(msg.type || ''))) return false;
+    (async function () {
+      if (msg.type === 'PRICE_GET') {
+        var cached = await localGet(SNAP_KEY, null);
+        var age = cached ? (Date.now() - Date.parse(cached.updatedAt)) : Infinity;
+        // 2 分钟内的缓存直接给面板，避免每次点开弹窗都打三个接口
+        var snap = (age < 120000) ? cached : await refresh();
+        sendResponse({ ok: true, snapshot: snap, settings: await readSettings() });
+      } else if (msg.type === 'PRICE_REFRESH') {
+        sendResponse({ ok: true, snapshot: await refresh() });
+      } else if (msg.type === 'PRICE_SETTINGS') {
+        // 阈值改过就清空状态机：新阈值应立即生效，不能被旧状态压住
+        var clr = {}; clr[STATE_KEY] = {};
+        await localSet(clr);
+        await ensureAlarm();
+        sendResponse({ ok: true });
+      } else if (msg.type === 'PRICE_TEST_ALERT') {
+        var cfg = await readSettings();
+        // 测试按钮无条件展示两种提醒，方便确认右下角浮层与系统通知是否都正常
+        await fire([TapePrice.demoAlert()], Object.assign({}, cfg, { notify: true, toast: true }));
+        sendResponse({ ok: true });
+      } else if (msg.type === 'OPEN_PRICE_LINK') {
+        openLink(msg.url);
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ ok: false, error: 'unknown price message' });
+      }
+    })().catch(function (e) {
+      try { sendResponse({ ok: false, error: String(e && e.message || e) }); } catch (e2) {}
+    });
+    return true; // 保持消息通道，异步回包
+  });
+
+  chrome.runtime.onInstalled.addListener(function () { ensureAlarm().catch(function () {}); refresh().catch(function () {}); });
+  chrome.runtime.onStartup.addListener(function () { ensureAlarm().catch(function () {}); refresh().catch(function () {}); });
+  ensureAlarm().catch(function () {});
+})();

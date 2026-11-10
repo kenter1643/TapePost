@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.12（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.13（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,18 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.12**（修复 AI 评论 401 与响应解析）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.13**（新增 TapeOut 实时行情与价格上下限提醒）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（新增只读行情请求与通知用途）后再上传新包。
+
+### 1.4.13：面板顶端实时行情 + 价格上下限提醒
+
+在 TapePost 面板最上方加了一排行情卡片，并可给每项设上下限，越界时右下角弹窗、点击直达 Firsto 交易所。
+
+1. **三项数据都有公开只读来源**：`$BEM` 与「矿机日产能价」取 Firsto 官方 analytics（`/v1/analytics/bem`、`/v1/analytics/circuits`，后者取 24h 内最近一个有效 `dailyCapacityPriceWei`，按官网图表口径 `BigInt/1e18` 换算为 BNB）；`TapeUP $UP` 取 DexScreener 按流动性最深池子的报价。全部免登录、免 API Key、不上传任何本机数据。
+2. **卡片可点**：TapeUP → `firsto.ai/data`，矿机日产 → `firsto.ai/data/circuits`，BEM → `firsto.ai/data/bem`；涨红跌绿，显示 24h 变化、更新时间，↻ 可立即刷新。点开面板读 2 分钟内缓存，后台默认每 5 分钟查一次（可设 1/5/15/30 分钟）。
+3. **上下限提醒**：每项可分别填下限 / 上限，留空即不监控该方向。判定用状态机，只有「从区间内跨到区间外」那一次提醒，不会每分钟重复弹；另有 5~60 分钟冷却兜底。改完阈值点保存会清空状态机，新阈值立即生效。
+4. **双层提醒**：`price-alert.js` 在已打开的支持站点右下角画浮层（不改动页面原有 DOM，文字全用 `textContent`，20 秒自动消失，最多叠 3 条）；同时发一条系统通知，没开网页也能收到。点浮层 / 点通知都会打开 Firsto 对应数据页；通知 id → 链接映射存本地，Service Worker 重启后仍能正确跳转。
+5. **失败降级**：三个接口并发、互不牵连；某项失败或最近 24h 无成交样本时沿用上一次缓存并标「缓存」，且**不拿旧值触发提醒**。设置面板提供「🔔 测试弹窗」一键验证两种提醒是否都正常。
+6. **权限**：新增 `alarms`（定时检查）、`notifications`（系统通知）与两个只读行情域名 `api-tapeout.firsto.ai`、`api.dexscreener.com`；没有申请通配域名。行情仅供参考，不构成投资建议，插件不会替你下单。
 
 ### 1.4.12：修复 AI 评论 401 /「重试已通但没解析出候选」
 

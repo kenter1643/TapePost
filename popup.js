@@ -504,6 +504,7 @@ const INFO = {
   versions: {
     title: '版本说明',
     lines: [
+      'v1.4.13 面板顶端新增 TapeUP / 矿机日产价 / BEM 实时行情，可设上下限，越界右下角弹窗 + 系统通知，点击直达 Firsto 交易所。',
       'v1.4.12 修好 AI 评论 401：默认公开 bearer、重试重新签名、兼容新版 Grok 流格式；XVM 改为异常兜底。',
       'v1.4.11 写回改为一次全量替换，修掉文字重复与回复框不可编辑；新增 T 安全模式与 AI 评论快速模式。',
       'v1.4.10 按钮移到回复正文上方外侧不再压字；写回后收拢选区不留灰色高亮；已有两句以上推广句时停手不叠加。',
@@ -582,6 +583,19 @@ const INFO = {
       '只有 API 模式才由后台直连 xAI，费用自行承担。',
       '插件不调用任何发布接口，不替你发推或回复。'
     ]
+  },
+  price: {
+    title: '行情与提醒说明',
+    lines: [
+      '三项数据：TapeUP（$UP）、矿机日产能价（BNB）、$BEM。',
+      'BEM 与矿机日产价取自 Firsto 官方 analytics；$UP 取自 DexScreener 公开行情。',
+      '都是公开只读接口：不登录、不需要 API Key、不发送任何本机数据。',
+      '点开面板会读 2 分钟内的缓存；点 ↻ 可立即刷新，后台默认每 5 分钟查一次。',
+      '设好上下限并保存后，只在价格「从区间内跨到区间外」时提醒一次。',
+      '网页右下角浮层只在已打开的支持站点出现；系统通知不受此限制。',
+      '点卡片、点浮层、点通知都会打开 Firsto 交易所对应数据页。',
+      '行情仅供参考，不构成投资建议；插件不会替你下单。'
+    ]
   }
 };
 
@@ -641,3 +655,133 @@ document.addEventListener('keydown', function (e) {
 
 load();
 refreshTmpStatus();
+
+/* =====================================================================
+ * 1.4.13：面板顶端行情卡片 + 价格上下限提醒设置
+ * 价格抓取 / 判定 / 通知全在后台，popup 只负责展示与读写设置，
+ * 这样关掉弹窗也不会影响后台定时提醒。
+ * ===================================================================== */
+const PRICE_SET_KEY = 'priceSettings';
+const PRICE_BOUND_IDS = {
+  up:    { min: 'priceUpMin',    max: 'priceUpMax' },
+  miner: { min: 'priceMinerMin', max: 'priceMinerMax' },
+  bem:   { min: 'priceBemMin',   max: 'priceBemMax' }
+};
+const priceApi = (typeof TapePrice !== 'undefined') ? TapePrice : null;
+const priceEl = (id) => document.getElementById(id);
+const priceText = (id, v) => { const el = priceEl(id); if (el) el.textContent = v; };
+const priceField = (id) => { const el = priceEl(id); return el ? String(el.value || '').trim() : ''; };
+const priceCap = (k) => k.charAt(0).toUpperCase() + k.slice(1);
+
+function priceStatus(text, good) {
+  const el = priceEl('priceStatus');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = good === false ? '#b91c1c' : (good === true ? '#15803d' : '#999');
+}
+
+function renderPriceSnapshot(snap) {
+  if (!priceApi || !snap || !snap.items) { priceText('priceUpdated', '暂无数据'); return; }
+  priceApi.KEYS.forEach((k) => {
+    const item = snap.items[k] || {};
+    const vEl = priceEl('priceValue' + priceCap(k));
+    const cEl = priceEl('priceChange' + priceCap(k));
+    if (vEl) vEl.textContent = priceApi.format(k, item.value);
+    if (cEl) {
+      cEl.textContent = priceApi.formatChange(item.changePct) + (item.stale ? ' · 缓存' : '');
+      cEl.className = 'pc-change' + (priceApi.isUp(item.changePct) ? ' up'
+        : (priceApi.isDown(item.changePct) ? ' down' : ''));
+    }
+  });
+  const t = Date.parse(snap.updatedAt);
+  const up = priceEl('priceUpdated');
+  priceText('priceUpdated', isNaN(t) ? '刚刚更新'
+    : '更新 ' + new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+  if (up) up.title = (snap.errors && snap.errors.length) ? snap.errors.join('；') : '点 ↻ 立即刷新';
+}
+
+function loadPrices(force) {
+  if (!priceApi) { priceText('priceUpdated', '行情模块未加载'); return; }
+  priceText('priceUpdated', force ? '刷新中…' : '读取中…');
+  sendBg({ type: force ? 'PRICE_REFRESH' : 'PRICE_GET' }, (r, err) => {
+    if (err || !r || !r.ok) {
+      priceText('priceUpdated', '读取失败');
+      priceStatus('行情读取失败：请到 chrome://extensions 重新加载扩展。', false);
+      return;
+    }
+    renderPriceSnapshot(r.snapshot);
+  });
+}
+
+function fillPriceSettings(raw) {
+  if (!priceApi) return;
+  const s = priceApi.normalizeSettings(raw);
+  const set = (id, v) => { const el = priceEl(id); if (el) el.value = v; };
+  const chk = (id, v) => { const el = priceEl(id); if (el) el.checked = !!v; };
+  chk('priceEnabled', s.enabled);
+  chk('priceToast', s.toast);
+  chk('priceNotify', s.notify);
+  set('pricePollMinutes', String(s.pollMinutes));
+  set('priceCooldownMinutes', String(s.cooldownMinutes));
+  priceApi.KEYS.forEach((k) => {
+    const b = s.bounds[k] || {};
+    set(PRICE_BOUND_IDS[k].min, b.min || '');
+    set(PRICE_BOUND_IDS[k].max, b.max || '');
+  });
+}
+
+function collectPriceSettings() {
+  const bounds = {};
+  priceApi.KEYS.forEach((k) => {
+    bounds[k] = { min: priceField(PRICE_BOUND_IDS[k].min), max: priceField(PRICE_BOUND_IDS[k].max) };
+  });
+  return priceApi.normalizeSettings({
+    enabled: !!(priceEl('priceEnabled') || {}).checked,
+    toast: !!(priceEl('priceToast') || {}).checked,
+    notify: !!(priceEl('priceNotify') || {}).checked,
+    pollMinutes: Number(priceField('pricePollMinutes') || 5),
+    cooldownMinutes: Number(priceField('priceCooldownMinutes') || 30),
+    bounds: bounds
+  });
+}
+
+function savePriceSettings() {
+  if (!priceApi) return;
+  const cfg = collectPriceSettings();
+  const payload = {}; payload[PRICE_SET_KEY] = cfg;
+  try {
+    chrome.storage.sync.set(payload, () => {
+      const er = chrome.runtime && chrome.runtime.lastError; // 同步读取，避免 Unchecked lastError
+      if (er) { priceStatus('保存失败：' + er.message, false); return; }
+      // 后台清空状态机并按新的检查间隔重注册闹钟
+      sendBg({ type: 'PRICE_SETTINGS' }, () => {});
+      priceStatus('已保存 ✓ 阈值立即生效，后台按新间隔检查。', true);
+      setTimeout(() => priceStatus(''), 3500);
+    });
+  } catch (e) { priceStatus('保存失败：' + String(e && e.message || e), false); }
+}
+
+if (priceApi) {
+  bind('priceSave', savePriceSettings);
+  bind('priceRefresh', () => loadPrices(true));
+  bind('priceTest', () => {
+    sendBg({ type: 'PRICE_TEST_ALERT' }, (r, err) => {
+      priceStatus(err ? '测试失败：连不上后台，请重新加载扩展。'
+        : '已发送测试提醒：看网页右下角浮层 / 系统通知。', !err);
+    });
+  });
+  document.querySelectorAll('[data-price-key]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-price-key');
+      try { chrome.tabs.create({ url: priceApi.linkFor(key), active: true }); }
+      catch (e) { priceStatus('打开交易所失败：' + String(e && e.message || e), false); }
+    });
+  });
+  try {
+    chrome.storage.sync.get(PRICE_SET_KEY, (o) => {
+      void (chrome.runtime && chrome.runtime.lastError);
+      fillPriceSettings(o && o[PRICE_SET_KEY]);
+    });
+  } catch (e) { /* 存储不可用时用默认设置 */ }
+  loadPrices(false);
+}
