@@ -32,9 +32,9 @@ const DEFAULTS = Object.assign({
   promoTarget: 'both',        // both | tapeout | bem
   promoCustomTapeOut: '',     // 每行一句；留空用内置话术
   promoCustomBEM: '',
-  // 1.4.6：回复框右侧的 T 快捷按钮（与 AI 评论无关，默认开启）
+  // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无关，默认开启）
   promoQuickButtons: true,
-  promoQuickCount: 4
+  promoQuickCount: 4             // 兼容旧配置，1.4.8 起不再使用
 }, PAGE_DEFAULTS);
 
 // 页面模式的文本配置项；选择器全部可改，X 改版时不用升版本
@@ -176,11 +176,9 @@ function load() {
     document.getElementById('domain').value = s.xDomain || 'x.com';
     const ai = document.getElementById('aiComment');
     if (ai) ai.checked = s.enableAiComment !== false;
-    // 1.4.5 / 1.4.6：评论末尾推广（自动附加 + 手动 T 按钮）
+    // 1.4.5 / 1.4.8：评论末尾推广（自动附加 + 单个 T 按钮）
     const quickOn = document.getElementById('promoQuickButtons');
     if (quickOn) quickOn.checked = s.promoQuickButtons !== false;
-    const quickCount = document.getElementById('promoQuickCount');
-    if (quickCount) quickCount.value = String(s.promoQuickCount || 4);
     const promoOn = document.getElementById('promoEnabled');
     if (promoOn) promoOn.checked = s.promoEnabled === true;
     const promoTarget = document.getElementById('promoTarget');
@@ -252,7 +250,7 @@ function save() {
     promoCustomTapeOut: (document.getElementById('promoCustomTapeOut') || {}).value || '',
     promoCustomBEM: (document.getElementById('promoCustomBEM') || {}).value || '',
     promoQuickButtons: (document.getElementById('promoQuickButtons') || { checked: true }).checked !== false,
-    promoQuickCount: Number((document.getElementById('promoQuickCount') || {}).value || 4),
+    promoQuickCount: 4,            // 1.4.8 起固定一个 T 按钮，保留键兼容旧配置
     replyInputSelector: (document.getElementById('replyInputSelector') || {}).value || '',
     commentPrompt: promptToStore('commentPrompt'),
     verifyPrompt: promptToStore('verifyPrompt'),
@@ -496,7 +494,8 @@ const INFO = {
   versions: {
     title: '版本说明',
     lines: [
-      'v1.4.7 修好 T 按钮写入重复 / 手工编辑被打乱：只替换末尾推广句，不动正文。',
+      'v1.4.8 只留一个 T 按钮，点击随机换句不重复；写回改用原生编辑命令，正文绝不被重写。',
+      'v1.4.7 尝试只替换末尾推广句（仍有索引偏差，1.4.8 已重写）。',
       'v1.4.6 回复框新增多个 T 快捷按钮，手写评论也能点一下带入推广句。',
       'v1.4.5 可勾选「评论末尾推广」，随机附一句 TapeOut / $BEM 介绍。',
       'v1.4.4 修好重载后 popup 的消息端口报错。',
@@ -533,16 +532,16 @@ const INFO = {
   promo: {
     title: '评论末尾推广',
     lines: [
-      '两种用法，互不依赖：T 快捷按钮（默认开）与 AI 候选自动附加（默认关）。',
-      '自己写完评论后，点回复框右侧的 T1 / T2… 就把对应那句带到末尾。',
-      '再点别的 T 按钮是「换一句」，只替换末尾那一句，不会叠加。',
-      '1.4.7 起不再整体重写回复框：手工编辑的正文、分段、@、表情、已贴的图都原样保留。',
-      '× 去掉推广句只留正文；改写过的推广句也能识别，不会残留半句。',
-      '↻ 随机换一句；按钮数量与主题都能在设置里改。',
+      '两种用法，互不依赖：单个 T 按钮（默认开）与 AI 候选自动附加（默认关）。',
+      '自己写完评论后点一下回复框右侧的 T，随机带入一句推广；再点换一句，不会重复也不会叠加。',
+      '右键点 T 可去掉末尾推广句，只留你自己写的正文。',
+      '1.4.8 只发浏览器原生编辑命令：不整体重写、不直改 DOM、不模糊猜句子。',
+      '你手工写的分段、@、表情、已贴的图，以及光标位置全部原样保留。',
+      '如果推广句被你手动改过，插件会停止写入并复制新句，绝不弄乱正文。',
+      '写入后会校验结果；异常时只提示、不自动重试，避免越点越重复。',
       'AI 候选则是 3 条各随机附一句，候选面板可「🎲 换一批」。',
       '可自定义话术：每行一句，按 TapeOut / $BEM 分开填。',
-      '内置话术只讲生态与技术，不提价格、收益或买入建议。',
-      '写入后会校验结果；异常时只提示、不自动重试，避免越点越重复。'
+      '内置话术只讲生态与技术，不提价格、收益或买入建议。'
     ]
   },
   tmp: {

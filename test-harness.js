@@ -2601,7 +2601,7 @@ async function runScenario(name, cfg, expect) {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.7' },
+      ok: manifestJson.version === '1.4.8' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2629,7 +2629,7 @@ async function runScenario(name, cfg, expect) {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.7' },
+      ok: manifestJson.version === '1.4.8' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -2644,7 +2644,7 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.4 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.7') && popupHtml.includes('当前 v1.4.7') }
+      ok: contentJs.includes('v1.4.8') && popupHtml.includes('当前 v1.4.8') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -2741,48 +2741,36 @@ async function runScenario(name, cfg, expect) {
           ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
   ];
 
-  // ---- v1.4.6：T 快捷按钮（AI / 非 AI 通用，自己写完评论点一下带入） ----
+  // ---- v1.4.8：单个 T 按钮 + 原生编辑命令写回（真机反馈「重复 / 会乱」修复） ----
+  // 模拟 X 的 contenteditable：文本节点 + Range + Selection + execCommand
   const stripped = P.stripPromo('我自己写的评论\n\n' + P.LINES.tapeout[0], {});
+  const T0 = P.LINES.tapeout[0];
   const applyQuickBody = (contentJs.match(/function applyQuickPromo\([\s\S]*?\n\}/) || [''])[0];
-  let quickRuntime = null;
+  let promo148 = null;
   try {
-    quickRuntime = vm.runInContext(`(function () {
-      var input = document.createElement('div');
-      input.innerText = '我自己写的评论';
-      input.textContent = '我自己写的评论';
-      var bar = { __wbxScope: {}, __wbxPromoLine: '' };
-      var origFind = findReplyComposers, origToast = showToast;
-      findReplyComposers = function () { return [{ input: input, scope: bar.__wbxScope, host: {} }]; };
-      showToast = function () {};
-      // 这个桩没有 TreeWalker，会走 1.4.7 的字符串降级路径；下方另有真实文本节点 mock
-      var lines = quickPromoLines();
-      applyQuickPromo(bar, lines[0].line);
-      var first = nodeText(input);
-      applyQuickPromo(bar, lines[1].line);
-      var second = nodeText(input);
-      applyQuickPromo(bar, '');
-      var cleared = nodeText(input);
-      findReplyComposers = origFind; showToast = origToast;
-      return {
-        count: lines.length, bem0: lines[0].bem, bem1: lines[1].bem,
-        l0: lines[0].line, l1: lines[1].line,
-        first: first, second: second, cleared: cleared
-      };
-    })()`, contentCtx);
-  } catch (e) { note('ERROR', 'quick runtime: ' + (e && e.message)); }
-
-  // ---- v1.4.7：真机反馈「写入重复 / 手工编辑就乱」修复 ----
-  // 模拟真实 contenteditable：一个文本节点 + Range + Selection + insertText 替换选区
-  let tailRuntime = null;
-  try {
-    tailRuntime = vm.runInContext(`(function () {
+    promo148 = vm.runInContext(`(function () {
+      var NL = String.fromCharCode(10);
       var toasts = [];
-      var tn = { nodeType: 3, nodeValue: '我自己写的评论', parentElement: null, previousSibling: null };
-      var input = {
-        nodeType: 1, tagName: 'DIV', childNodes: [tn], parentElement: null, previousSibling: null,
-        focus: function () {}, dispatchEvent: function () { return true; },
-        querySelectorAll: function () { return []; }
+      var tn = { nodeType: 3, nodeValue: '', parentElement: null, previousSibling: null };
+      var host = {
+        tagName: 'DIV', className: '', children: [], childNodes: [],
+        appendChild: function (n) { this.children.push(n); this.childNodes.push(n); n.parentElement = this; },
+        querySelectorAll: function (sel) {
+          if (String(sel).indexOf('textbox') >= 0) return [input];
+          return [];
+        },
+        querySelector: function (sel) { return this.querySelectorAll(sel)[0] || null; }
       };
+      var input = {
+        nodeType: 1, tagName: 'DIV', parentElement: host,
+        childNodes: [tn], children: [], className: '', id: '',
+        focus: function () {}, dispatchEvent: function () { return true; },
+        getAttribute: function () { return 'textbox'; },
+        closest: function () { return null; },
+        querySelectorAll: function () { return []; },
+        appendChild: function () {}
+      };
+      host.childNodes.push(input); host.children.push(input);
       Object.defineProperty(input, 'innerText', {
         get: function () { return tn.nodeValue; }, set: function (v) { tn.nodeValue = String(v); }
       });
@@ -2791,152 +2779,133 @@ async function runScenario(name, cfg, expect) {
       });
       tn.parentElement = input;
       var currentRange = null;
-      var origTW = document.createTreeWalker, origCR = document.createRange,
-          origSel = window.getSelection, origExec = document.execCommand,
-          origCTN = document.createTextNode, origFind = findReplyComposers, origToast = showToast;
-
-      document.createTreeWalker = function (root) {
-        var list = (root.childNodes || []).filter(function (n) { return n.nodeType === 3; });
-        var i = 0;
-        return { nextNode: function () { return i < list.length ? list[i++] : null; } };
-      };
+      var origCR = document.createRange, origSel = window.getSelection,
+          origExec = document.execCommand, origToast = showToast;
       document.createRange = function () {
         return {
           _s: { n: tn, o: 0 }, _e: { n: tn, o: tn.nodeValue.length },
           selectNodeContents: function () { this._s = { n: tn, o: 0 }; this._e = { n: tn, o: tn.nodeValue.length }; },
-          collapse: function (toEnd) { var p = toEnd ? this._e : this._s; this._s = { n: p.n, o: p.o }; this._e = { n: p.n, o: p.o }; },
+          // DOM Range.collapse(toStart)：false = 折叠到末尾（这里别把语义写反）
+          collapse: function (toStart) { var p = toStart ? this._s : this._e; this._s = { n: p.n, o: p.o }; this._e = { n: p.n, o: p.o }; },
           setStart: function (n, o) { this._s = { n: n, o: o }; },
-          setEnd: function (n, o) { this._e = { n: n, o: o }; },
-          setStartBefore: function () {},
-          deleteContents: function () {
-            tn.nodeValue = tn.nodeValue.slice(0, this._s.o) + tn.nodeValue.slice(this._e.o);
-            this._e = { n: tn, o: this._s.o };
-          },
-          insertNode: function (n) {
-            tn.nodeValue = tn.nodeValue.slice(0, this._s.o) + String(n.nodeValue || '') + tn.nodeValue.slice(this._s.o);
-          }
+          setEnd: function (n, o) { this._e = { n: n, o: o }; }
         };
       };
+      var editLog = [];
       window.getSelection = function () {
-        return { removeAllRanges: function () {}, addRange: function (r) { currentRange = r; } };
+        return { removeAllRanges: function () {},
+          addRange: function (r) { currentRange = r; editLog.push({ op: 'addRange', s: r._s.o, e: r._e.o }); } };
       };
+      // 浏览器原生编辑命令：替换当前选区（delete 就是插入空串）
       document.execCommand = function (cmd, ui, text) {
-        if (cmd !== 'insertText' || !currentRange) return false;
-        var s = currentRange._s.o, e = currentRange._e.o, v = String(text);
+        if (!currentRange) return false;
+        var s = currentRange._s.o, e = currentRange._e.o;
+        var v = (cmd === 'delete') ? '' : String(text);
+        editLog.push({ op: cmd, s: s, e: e, len: v.length });
         tn.nodeValue = tn.nodeValue.slice(0, s) + v + tn.nodeValue.slice(e);
         currentRange._s = { n: tn, o: s + v.length };
         currentRange._e = { n: tn, o: s + v.length };
         return true;
       };
-      document.createTextNode = function (v) { return { nodeType: 3, nodeValue: String(v) }; };
-      findReplyComposers = function () { return [{ input: input, scope: {}, host: {} }]; };
       showToast = function (m) { toasts.push(String(m)); };
 
-      var bar = { __wbxScope: {}, __wbxPromoLine: '' };
-      var lines = quickPromoLines(), L0 = lines[0].line, L1 = lines[1].line;
-      applyQuickPromo(bar, L0);                 var first = tn.nodeValue;
-      applyQuickPromo(bar, L1);                 var second = tn.nodeValue;
-      // 用户手工编辑：加一行、@、emoji，推广句仍留在末尾
-      var NL = String.fromCharCode(10);
-      var handBody = '我自己写的评论' + NL + '第二行手工加的 @某人 😀';
-      tn.nodeValue = handBody + NL + L1;
-      applyQuickPromo(bar, L0);                 var edited = tn.nodeValue;
-      // 用户把推广句标点改了，仍应整句替换而不是残留半句
-      tn.nodeValue = handBody + NL + L0.replace(/。/g, '！');
-      applyQuickPromo(bar, L1);                 var rewritten = tn.nodeValue;
-      applyQuickPromo(bar, '');                 var cleared = tn.nodeValue;
+      var bar = { parentElement: host, __wbxPromoLine: '' };
+      var clickT = function () { applyQuickPromo(bar, nextQuickPromoLine(bar.__wbxPromoLine || '')); };
+      var rightT = function () { applyQuickPromo(bar, ''); };
 
-      document.createTreeWalker = origTW; document.createRange = origCR;
-      window.getSelection = origSel; document.execCommand = origExec;
-      document.createTextNode = origCTN; findReplyComposers = origFind; showToast = origToast;
-      return { first: first, second: second, edited: edited, rewritten: rewritten,
-               cleared: cleared, handBody: handBody, L0: L0, L1: L1, toasts: toasts };
+      var body0 = '我自己写的评论' + NL + '第二行 @某人 😀';
+      tn.nodeValue = body0;
+      clickT();  var first = tn.nodeValue, L1 = bar.__wbxPromoLine;
+      clickT();  var second = tn.nodeValue, L2 = bar.__wbxPromoLine;
+
+      // 手工在正文里加一行，推广句仍留在末尾
+      var handBody = body0 + NL + '第三行手工加的';
+      tn.nodeValue = handBody + NL + L2;
+      clickT();  var edited = tn.nodeValue, L3 = bar.__wbxPromoLine;
+
+      // 手工把推广句标点改了：必须停止写入，一个字都不动
+      var beforeRewrite = handBody + NL + L3.replace(/。/g, '！');
+      tn.nodeValue = beforeRewrite;
+      clickT();  var rewritten = tn.nodeValue;
+
+      // 恢复标准句后右键清除
+      tn.nodeValue = handBody + NL + L3;
+      rightT();  var cleared = tn.nodeValue;
+
+      // 连点 20 次：相邻两句不能相同，正文不能出现两份
+      tn.nodeValue = '连点测试';
+      var seq = [];
+      for (var i = 0; i < 20; i++) { clickT(); seq.push(bar.__wbxPromoLine); }
+      var adjacentSame = seq.some(function (x, i) { return i > 0 && x === seq[i - 1]; });
+      var clickBodyTimes = tn.nodeValue.split('连点测试').length - 1;
+
+      // 按钮只能定位到自己所在的回复框，绝不跨评论区
+      var input2 = { nodeType: 1, tagName: 'DIV', childNodes: [], closest: function () { return null; } };
+      var host2 = { querySelectorAll: function () { return [input2]; } };
+      var bar2 = { parentElement: host2, __wbxPromoLine: '' };
+      var noCross = (promoInputFor(bar2) === input2 && promoInputFor(bar) === input);
+
+      document.createRange = origCR; window.getSelection = origSel;
+      document.execCommand = origExec; showToast = origToast;
+      return { body0: body0, handBody: handBody, first: first, second: second,
+               edited: edited, rewritten: rewritten, beforeRewrite: beforeRewrite,
+               cleared: cleared, L1: L1, L2: L2, L3: L3, seq: seq,
+               adjacentSame: adjacentSame, clickBodyTimes: clickBodyTimes,
+               noCross: noCross, toasts: toasts, editLog: editLog };
     })()`, contentCtx);
-  } catch (e) { note('ERROR', 'tail runtime: ' + (e && e.message)); }
+  } catch (e) { note('ERROR', 'promo148 runtime: ' + (e && e.stack)); }
 
-  const T0 = P.LINES.tapeout[0];
-  const tailChecks = [
-    { name: '1.4.7 manifest / UI 版本号为 1.4.7',
-      ok: manifestJson.version === '1.4.7' && contentJs.includes('v1.4.7') && popupHtml.includes('当前 v1.4.7') },
-    { name: '1.4.7 用文本节点映射做局部 Range 替换，不再整体重写',
-      ok: contentJs.includes('function replyTextNodes(') && contentJs.includes('function replaceReplyTail(') &&
-          contentJs.includes('replaceReplyTail(input, nodes, bodyEnd, payload)') &&
-          !contentJs.includes('function replaceReplyText(') },
-    { name: '1.4.7 状态同时记在 Map 与按钮栏，重渲染不丢',
-      ok: contentJs.includes('const promoLineState = new Map()') && contentJs.includes('promoLineState.get(input)') },
-    { name: '1.4.7 写后只读校验，异常不自动重试',
-      ok: contentJs.includes('写后只读校验') && contentJs.includes('不会自动重复写入') &&
-          contentJs.includes('after.split(line).length - 1 === 1') },
-    { name: '1.4.7 设置说明与弹窗口径同步',
-      ok: popupHtml.includes('不再整体重写回复框') && popupJs.includes('v1.4.7 修好 T 按钮写入重复') },
-    { name: '1.4.7 matchTail 精确 / 归一化 / 模糊三层识别',
-      ok: (() => {
-        const exact = P.matchTail('正文\n\n' + T0, {});
-        const norm = P.matchTail('正文\n\n' + T0.replace(/[，。：、]/g, ''), {});
-        const fuzzy = P.matchTail('正文\n\n' + T0.slice(0, -4) + '挺有意思', {});
-        return exact && exact.mode === 'exact' && norm && fuzzy;
-      })() },
-    { name: '1.4.7 matchTail 不误判用户正文',
-      ok: P.matchTail('刚看完这场比赛，防守强度确实拉满了', {}) === null &&
-          P.matchTail('TapeOut 不错', {}) === null &&
-          P.stripPromo('纯正文', {}) === '纯正文' },
-    { name: '1.4.7 stripPromo 能剥掉手工改过标点的推广句',
-      ok: P.stripPromo('正文\n\n' + T0.replace(/。/g, '！'), {}) === '正文' },
-    { name: '1.4.7 X 编辑器末尾零宽字符不干扰识别',
-      ok: P.matchTail('正文\u200b\n\n' + T0 + '\u200b', {}) !== null &&
-          P.stripPromo('正文\n\n' + T0 + '\u200b', {}) === '正文' },
-    { name: '1.4.7 运行时：正文只出现一次、换句不叠加',
-      ok: !!tailRuntime &&
-          tailRuntime.first === '我自己写的评论\n' + tailRuntime.L0 &&
-          tailRuntime.second === '我自己写的评论\n' + tailRuntime.L1 &&
-          tailRuntime.first.split('我自己写的评论').length - 1 === 1 &&
-          tailRuntime.second.split('我自己写的评论').length - 1 === 1 },
-    { name: '1.4.7 运行时：手工编辑的正文 / 分段 / @ / emoji 一字不动',
-      ok: !!tailRuntime && tailRuntime.edited === tailRuntime.handBody + '\n' + tailRuntime.L0 &&
-          tailRuntime.edited.indexOf(tailRuntime.L1) < 0 },
-    { name: '1.4.7 运行时：改写过的推广句整句替换、× 只留正文',
-      ok: !!tailRuntime && tailRuntime.rewritten === tailRuntime.handBody + '\n' + tailRuntime.L1 &&
-          tailRuntime.rewritten.indexOf('！') < 0 &&
-          tailRuntime.cleared === tailRuntime.handBody },
-    { name: '1.4.7 未新增 manifest 权限',
-      ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
-  ];
-
-  const quickChecks = [
-    { name: '1.4.7 manifest / UI 版本均为 1.4.7',
-      ok: manifestJson.version === '1.4.7' && contentJs.includes('v1.4.7') && popupHtml.includes('当前 v1.4.7') },
-    { name: '1.4.6 回复框注入独立的 T 按钮组',
-      ok: contentJs.includes('function injectPromoBar(') && contentJs.includes('wbx-promo-bar') &&
-          contentJs.includes('wbx-promo-btn') && contentJs.includes("['wbx-reply-btn', 'wbx-promo-bar']") },
-    { name: '1.4.6 关掉 AI 评论后 T 按钮仍独立存在',
-      ok: contentJs.includes('if (!aiOn && !quickOn) return;') && contentJs.includes('if (quickOn) injectPromoBar(c);') },
-    { name: '1.4.6 手动带入不依赖自动附加开关',
-      ok: applyQuickBody.length > 0 && applyQuickBody.indexOf('promoEnabled') < 0 },
-    { name: '1.4.7 不再整体重写回复框，改为末尾 Range 局部替换',
-      ok: contentJs.includes('function replaceReplyTail(') && contentJs.includes('function replyTextNodes(') &&
-          !contentJs.includes('r.selectNodeContents(input);           // 全选') &&
-          !contentJs.includes('function replaceReplyText(') },
-    { name: '1.4.7 移除会叠加的附件追加兜底',
-      ok: !contentJs.includes('function replyHasMedia(') && !contentJs.includes('replyHasMedia(input)') },
-    { name: '1.4.6 ↻ 与 × 按钮仍在',
-      ok: contentJs.includes("rnd.textContent = '↻'") && contentJs.includes("clear.textContent = '×'") },
-    { name: '1.4.6 按钮数量与主题可在设置里改',
-      ok: ['promoQuickButtons', 'promoQuickCount'].every((id) => popupHtml.includes('id="' + id + '"')) &&
-          popupJs.includes('promoQuickButtons: true') && popupJs.includes('promoQuickCount: 4') &&
-          popupJs.includes('promoQuickCount: Number(') },
-    { name: '1.4.6 stripPromo 能剥掉 AI 已附加的推广句',
+  const promo148Checks = [
+    { name: '1.4.8 manifest / UI 版本均为 1.4.8',
+      ok: manifestJson.version === '1.4.8' && contentJs.includes('v1.4.8') && popupHtml.includes('当前 v1.4.8') },
+    { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
+      ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
+          contentJs.includes("b.textContent = 'T'") &&
+          !contentJs.includes("'T' + (i + 1)") && !contentJs.includes("rnd.textContent = '↻'") &&
+          !contentJs.includes("clear.textContent = '×'") && !contentJs.includes('function quickPromoLines(') },
+    { name: '1.4.8 左键随机换句且排除上一句',
+      ok: contentJs.includes('function nextQuickPromoLine(') && contentJs.includes('x !== prev') &&
+          contentJs.includes('nextQuickPromoLine(bar.__wbxPromoLine') },
+    { name: '1.4.8 右键清除推广句',
+      ok: contentJs.includes("addEventListener('contextmenu'") && contentJs.includes("applyQuickPromo(bar, '')") },
+    { name: '1.4.8 写回只用原生编辑命令，没有直接改 DOM 的兜底',
+      ok: contentJs.includes('function nativeReplyEdit(') && contentJs.includes("document.execCommand('delete')") &&
+          applyQuickBody.includes('nativeReplyEdit(') &&
+          !applyQuickBody.includes('deleteContents') && !applyQuickBody.includes('textContent =') &&
+          !applyQuickBody.includes('innerText =') && !contentJs.includes('function replaceReplyTail(') },
+    { name: '1.4.8 回复框按按钮所在容器实时定位，不再跨区兜底',
+      ok: contentJs.includes('function promoInputFor(') && applyQuickBody.includes('promoInputFor(bar)') &&
+          !applyQuickBody.includes('findReplyComposers') },
+    { name: '1.4.8 末尾只做精确识别，认不出就停手并复制',
+      ok: contentJs.includes('function findTrailingPromo(') && applyQuickBody.includes('findTrailingPromo(full)') &&
+          !applyQuickBody.includes('matchTail(') && applyQuickBody.includes('copyPromoLine(line)') },
+    { name: '1.4.8 连点有 busy 锁、写后只读校验不重试',
+      ok: contentJs.includes('bar.__wbxBusy') && applyQuickBody.includes('after.split(line).length - 1 === 1') },
+    { name: '1.4.8 设置页移除「T 按钮数量」控件',
+      ok: !popupHtml.includes('id="promoQuickCount"') && popupHtml.includes('一个 T 按钮') &&
+          !popupJs.includes("getElementById('promoQuickCount')") },
+    { name: '1.4.8 运行时：手写正文 → 带入 → 换句，正文只出现一次',
+      ok: !!promo148 && promo148.first === promo148.body0 + '\n' + promo148.L1 &&
+          promo148.second === promo148.body0 + '\n' + promo148.L2 &&
+          promo148.L1 !== promo148.L2 &&
+          promo148.second.split(promo148.body0).length - 1 === 1 &&
+          promo148.second.indexOf(promo148.L1) < 0 },
+    { name: '1.4.8 运行时：手工编辑的正文 / 分段 / @ / emoji 一字不动',
+      ok: !!promo148 && promo148.edited === promo148.handBody + '\n' + promo148.L3 &&
+          promo148.edited.indexOf(promo148.handBody) === 0 },
+    { name: '1.4.8 运行时：推广句被手工改写时停止写入，绝不删正文',
+      ok: !!promo148 && promo148.rewritten === promo148.beforeRewrite &&
+          promo148.rewritten.indexOf(promo148.handBody) === 0 },
+    { name: '1.4.8 运行时：右键清除只留正文',
+      ok: !!promo148 && promo148.cleared.replace(/\s+$/, '') === promo148.handBody },
+    { name: '1.4.8 运行时：连点 20 次相邻不重复、正文始终只有一份',
+      ok: !!promo148 && !promo148.adjacentSame && promo148.seq.length === 20 &&
+          promo148.clickBodyTimes === 1 },
+    { name: '1.4.8 运行时：按钮只写自己所在的评论区',
+      ok: !!promo148 && promo148.noCross === true },
+    { name: '1.4.8 保留 stripPromo 供 AI 候选使用',
       ok: stripped === '我自己写的评论' && P.stripPromo('纯正文', {}) === '纯正文' },
-    { name: '1.4.6 运行时：手写评论点 T 带入 → 换句不叠加 → × 还原',
-      ok: !!quickRuntime && quickRuntime.count === 4 &&
-          quickRuntime.bem0 === false && quickRuntime.bem1 === true &&
-          quickRuntime.first.endsWith(quickRuntime.l0) &&
-          quickRuntime.second.endsWith(quickRuntime.l1) &&
-          quickRuntime.second.indexOf(quickRuntime.l0) < 0 &&
-          quickRuntime.cleared === '我自己写的评论' },
-    { name: '1.4.6 快捷按钮不碰一键转发正文',
-      ok: contentJs.includes('const text = withSource(withSignature(cleaned), card);') && !contentJs.includes('withPromo(') },
-    { name: '1.4.6 未新增 manifest 权限',
+    { name: '1.4.8 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') ===
           ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
   ];
@@ -2958,8 +2927,7 @@ async function runScenario(name, cfg, expect) {
     .concat(tmpChecks)
     .concat(portChecks)
     .concat(promoChecks)
-    .concat(quickChecks)
-    .concat(tailChecks);
+    .concat(promo148Checks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);
