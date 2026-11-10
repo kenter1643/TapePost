@@ -2832,6 +2832,12 @@ async function runScenario(name, cfg, expect) {
       tn.nodeValue = handBody + NL + L3;
       rightT();  var cleared = tn.nodeValue;
 
+      // X 常在末尾留零宽占位符：换句仍要整句替换，不能残留半个字
+      var zwLine = nextQuickPromoLine(L3);
+      tn.nodeValue = '零宽测试' + NL + L3 + '\u200b';
+      applyQuickPromo(bar, zwLine);
+      var zw = tn.nodeValue, zwExpect = '零宽测试' + NL + zwLine + '\u200b';
+
       // 连点 20 次：相邻两句不能相同，正文不能出现两份
       tn.nodeValue = '连点测试';
       var seq = [];
@@ -2851,7 +2857,8 @@ async function runScenario(name, cfg, expect) {
                edited: edited, rewritten: rewritten, beforeRewrite: beforeRewrite,
                cleared: cleared, L1: L1, L2: L2, L3: L3, seq: seq,
                adjacentSame: adjacentSame, clickBodyTimes: clickBodyTimes,
-               noCross: noCross, toasts: toasts, editLog: editLog };
+               noCross: noCross, toasts: toasts, editLog: editLog,
+               zw: zw, zwExpect: zwExpect };
     })()`, contentCtx);
   } catch (e) { note('ERROR', 'promo148 runtime: ' + (e && e.stack)); }
 
@@ -2901,6 +2908,8 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.8 运行时：连点 20 次相邻不重复、正文始终只有一份',
       ok: !!promo148 && !promo148.adjacentSame && promo148.seq.length === 20 &&
           promo148.clickBodyTimes === 1 },
+    { name: '1.4.8 运行时：末尾零宽占位符不会残留半句',
+      ok: !!promo148 && promo148.zw === promo148.zwExpect },
     { name: '1.4.8 运行时：按钮只写自己所在的评论区',
       ok: !!promo148 && promo148.noCross === true },
     { name: '1.4.8 保留 stripPromo 供 AI 候选使用',

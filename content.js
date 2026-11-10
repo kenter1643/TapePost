@@ -1326,14 +1326,17 @@ function selectReplyEnd(input) {
   } catch (e) { return false; }
 }
 
-/* 只选中末尾 count 个字符（换句 / 清除用），绝不碰 <br>、绝不覆盖正文 */
-function selectReplyTail(input, count) {
+/* 只选中末尾 count 个字符（换句 / 清除用），绝不碰 <br>、绝不覆盖正文。
+ * trailingJunk：X 常在末尾放零宽占位符，识别时已 rtrim 掉，这里要把它们
+ * 排除在选区之外，否则会少选推广句的最后一个字、留下半句。 */
+function selectReplyTail(input, count, trailingJunk) {
   try {
     const nodes = replyTextNodes(input);
     const total = nodes.reduce((n, x) => n + x.text.length, 0);
-    if (!count || total < count || typeof document.createRange !== 'function') return false;
-    const a = pointInNodes(nodes, total - count);
-    const b = pointInNodes(nodes, total);
+    const end = total - (trailingJunk || 0);
+    if (!count || end < count || typeof document.createRange !== 'function') return false;
+    const a = pointInNodes(nodes, end - count);
+    const b = pointInNodes(nodes, end);
     if (!a || !b) return false;
     const r = document.createRange();
     if (!r.setStart || !r.setEnd) return false;
@@ -1373,7 +1376,9 @@ function applyQuickPromo(bar, line) {
       showToast('没找到当前回复框：请先点开「回复」，或刷新 X 页面后重试。', 6000);
       return;
     }
-    const full = replyPlainText(input);
+    const rawFull = replyPlainText(input);
+    const full = TapePromo.rtrim(rawFull);
+    const trailingJunk = rawFull.length - full.length;  // 末尾零宽占位符不进选区
     const tail = findTrailingPromo(full);                 // 精确：一字不差才认
     const statePrev = promoLineState.get(input) || bar.__wbxPromoLine || '';
 
@@ -1390,7 +1395,7 @@ function applyQuickPromo(bar, line) {
 
     if (!line) {
       if (!tail) { showToast('当前回复框末尾没有可去掉的推广句。', 3000); return; }
-      if (!selectReplyTail(input, tail.length) || !nativeReplyEdit(input, 'delete')) {
+      if (!selectReplyTail(input, tail.length, trailingJunk) || !nativeReplyEdit(input, 'delete')) {
         showToast('删除失败，未改动正文；请手动删掉推广句那一行。', 6000);
         return;
       }
@@ -1408,7 +1413,7 @@ function applyQuickPromo(bar, line) {
     let ok;
     if (tail) {
       // 换句：只选中末尾这句，用原生 insertText 一次替换
-      if (!selectReplyTail(input, tail.length)) {
+      if (!selectReplyTail(input, tail.length, trailingJunk)) {
         showToast('无法定位末尾推广句，已停止写入。', 5000); return;
       }
       ok = nativeReplyEdit(input, 'insertText', line);
