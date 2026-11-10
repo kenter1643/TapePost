@@ -2618,7 +2618,7 @@ async function runScenario(name, cfg, expect) {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.9' },
+      ok: manifestJson.version === '1.4.10' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2646,7 +2646,7 @@ async function runScenario(name, cfg, expect) {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.9' },
+      ok: manifestJson.version === '1.4.10' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -2661,7 +2661,7 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.4 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.9') && popupHtml.includes('当前 v1.4.9') }
+      ok: contentJs.includes('v1.4.10') && popupHtml.includes('当前 v1.4.10') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -2809,10 +2809,19 @@ async function runScenario(name, cfg, expect) {
         };
       };
       var editLog = [];
-      window.getSelection = function () {
-        return { removeAllRanges: function () {},
-          addRange: function (r) { currentRange = r; editLog.push({ op: 'addRange', s: r._s.o, e: r._e.o }); } };
+      /* 1.4.10：mock 出完整的 Selection（rangeCount / getRangeAt），
+       * 才能验证写回结束后的 collapseReplySelection 真的把选区收成光标。 */
+      var selection = {
+        _ranges: [], rangeCount: 0,
+        getRangeAt: function (i) { return this._ranges[i]; },
+        removeAllRanges: function () { this._ranges = []; this.rangeCount = 0; },
+        addRange: function (r) {
+          this._ranges = [r]; this.rangeCount = 1;
+          currentRange = r;
+          editLog.push({ op: 'addRange', s: r._s.o, e: r._e.o });
+        }
       };
+      window.getSelection = function () { return selection; };
       // 浏览器原生编辑命令：替换当前选区（delete 就是插入空串）
       document.execCommand = function (cmd, ui, text) {
         if (!currentRange) return false;
@@ -2867,6 +2876,25 @@ async function runScenario(name, cfg, expect) {
       var adjacentSame = seq.some(function (x, i) { return i > 0 && x === seq[i - 1]; });
       var clickBodyTimes = tn.nodeValue.split('连点测试').length - 1;
 
+      // 1.4.10：换句会先选中末尾整句（非折叠选区），写回结束必须收成光标
+      var swapLine = nextQuickPromoLine(L3);
+      tn.nodeValue = '选区测试' + NL + L3;
+      var logMark = editLog.length;
+      applyQuickPromo(bar, swapLine);
+      var tailLog = editLog.slice(logMark);
+      var hadExpanded = tailLog.some(function (x) { return x.op === 'addRange' && x.s !== x.e; });
+      var lastAdd = null;
+      tailLog.forEach(function (x) { if (x.op === 'addRange') lastAdd = x; });
+      var selectionFolded = !!lastAdd && lastAdd.s === lastAdd.e;
+
+      // 1.4.10：正文里已经叠了两句推广句时停手，一个字都不动
+      var dupBefore = '重复测试' + NL + L3 + NL + L2;
+      tn.nodeValue = dupBefore;
+      var toastMark = toasts.length;
+      clickT();
+      var dupStopped = tn.nodeValue === dupBefore &&
+        toasts.slice(toastMark).join('|').indexOf('不止一句') >= 0;
+
       // 1.4.9：按钮绑定的输入框优先，绝不跨评论区，也不在多输入框容器里乱猜
       var input2 = { nodeType: 1, tagName: 'DIV', childNodes: [], closest: function () { return null; } };
       var host2 = { querySelectorAll: function () { return [input2]; } };
@@ -2894,14 +2922,16 @@ async function runScenario(name, cfg, expect) {
                adjacentSame: adjacentSame, clickBodyTimes: clickBodyTimes,
                noCross: noCross, staleRecovered: staleRecovered, ambiguous: ambiguous,
                toasts: toasts, editLog: editLog,
-               zw: zw, zwExpect: zwExpect };
+               zw: zw, zwExpect: zwExpect,
+               hadExpanded: hadExpanded, selectionFolded: selectionFolded,
+               dupStopped: dupStopped };
     })()`, contentCtx);
   } catch (e) { note('ERROR', 'promo148 runtime: ' + (e && e.stack)); }
 
   const promo148Checks = [
-    { name: '1.4.9 manifest / UI / 按钮 title 版本均为 1.4.9',
-      ok: manifestJson.version === '1.4.9' && contentJs.includes('v1.4.9') &&
-          popupHtml.includes('当前 v1.4.9') && contentJs.includes('TapePost v1.4.9') },
+    { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
+      ok: manifestJson.version === '1.4.10' && contentJs.includes('v1.4.10') &&
+          popupHtml.includes('当前 v1.4.10') && contentJs.includes('TapePost v1.4.10') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -2974,7 +3004,7 @@ async function runScenario(name, cfg, expect) {
       ok: !contentJs.includes('input.textContent = next') &&
           !contentJs.includes('input.innerText = next') &&
           !contentJs.includes("new Ev('input'") &&
-          contentJs.includes("return nativeReplyEdit(input, 'insertText', payload);") },
+          contentJs.includes("nativeReplyEdit(input, 'insertText', payload)") },
     { name: '1.4.9 手工改写推广句只停手、绝不删字，也不留缓存状态',
       ok: contentJs.includes('function hasEditedPromoTail(') &&
           contentJs.includes('hasEditedPromoTail(full)') &&
@@ -2990,6 +3020,45 @@ async function runScenario(name, cfg, expect) {
     { name: '1.4.9 运行时：一个容器里两个输入框时不敢猜、直接停手',
       ok: !!promo148 && promo148.ambiguous === true },
     { name: '1.4.9 未新增 manifest 权限',
+      ok: (manifestJson.permissions || []).sort().join(',') ===
+          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+  ];
+
+  // ---- v1.4.10：按钮不压正文 + 写回后收拢选区 + 多句停手（真机截图复盘） ----
+  const promo1410Checks = [
+    { name: '1.4.10 两个回复区按钮都移到正文上方外侧（top:-26px）',
+      ok: contentJs.includes('top:-26px !important;right:6px') &&
+          contentJs.includes('top:-26px !important;right:76px') &&
+          !/\.wbx-comment-btn\.wbx-reply-btn\{[^}]*top:2px/.test(contentJs) &&
+          !/\.wbx-promo-bar\{[^}]*top:2px/.test(contentJs) },
+    { name: '1.4.10 只在宿主裁剪溢出时放开 overflow，不无条件改 X 布局',
+      ok: contentJs.includes('function allowReplyToolsOutside(') &&
+          contentJs.includes('allowReplyToolsOutside(host);') &&
+          contentJs.includes('.wbx-reply-tools-host{overflow:visible !important;}') &&
+          contentJs.includes("String(cs.overflow || '').indexOf('hidden')") },
+    { name: '1.4.10 写回结束统一收拢选区，不留灰色选中块',
+      ok: contentJs.includes('function collapseReplySelection(') &&
+          applyQuickBody.includes('collapseReplySelection();') &&
+          (contentJs.match(/collapseReplySelection\(\)/g) || []).length >= 3 &&
+          contentJs.includes("r.collapse(false);                       // 收拢到选区末尾") },
+    { name: '1.4.10 正文已有两句以上推广句时停手不叠加',
+      ok: contentJs.includes('function countKnownPromo(') &&
+          applyQuickBody.includes('countKnownPromo(full) > 1') &&
+          applyQuickBody.includes('不止一句推广句') },
+    { name: '1.4.10 写后校验正文前缀一字未动',
+      ok: applyQuickBody.includes('const bodyPrefixOk =') &&
+          applyQuickBody.includes('after.indexOf(bodyBefore) === 0') },
+    { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
+      ok: manifestJson.version === '1.4.10' &&
+          contentJs.includes('TapePost v1.4.10') &&
+          contentJs.includes('v1.4.10') &&
+          popupHtml.includes('当前 v1.4.10') &&
+          popupJs.includes('v1.4.10 按钮移到回复正文上方外侧') },
+    { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
+      ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
+    { name: '1.4.10 运行时：正文里已有两句推广句时一个字都不动',
+      ok: !!promo148 && promo148.dupStopped === true },
+    { name: '1.4.10 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') ===
           ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
   ];
@@ -3012,7 +3081,8 @@ async function runScenario(name, cfg, expect) {
     .concat(portChecks)
     .concat(promoChecks)
     .concat(promo148Checks)
-    .concat(promo149Checks);
+    .concat(promo149Checks)
+    .concat(promo1410Checks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

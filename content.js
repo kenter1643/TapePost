@@ -123,18 +123,24 @@ function injectStyle() {
   }
   .wbx-comment-btn:hover{background:#7c56d6;}
   .wbx-comment-btn:disabled{opacity:.6;cursor:default;}
-  /* 1.3.1：AI 评论按钮挂在 X 回复填写区右侧，不再是推文正文右上角的并排按钮 */
+  /* 1.4.10：两个回复区按钮都移到「编辑区上方外侧」。
+   * 1.3.1~1.4.9 用 top:2px，按钮直接压在回复正文第一行右侧（真机截图里
+   * 橙 T / 紫 AI 评论盖住「…逻辑门搬到画布上」那几个字），用户点按钮时
+   * 还容易先碰到文字、把光标挪到正文中间，之后写入就错位 / 重复。 */
   .wbx-comment-btn.wbx-reply-btn{
-    position:absolute !important;top:2px !important;right:6px !important;z-index:30 !important;
+    position:absolute !important;top:-26px !important;right:6px !important;z-index:30 !important;
     height:20px !important;padding:0 8px !important;font-size:11px !important;line-height:20px !important;
     box-shadow:0 1px 4px rgba(107,70,193,.5) !important;
     user-select:none !important;-webkit-user-select:none !important;
   }
-  /* 1.4.9：全页只有一个 T 按钮，贴着 AI 评论按钮左侧；不依赖 AI，手写的评论也能点 */
+  /* 1.4.10：全页只有一个 T 按钮，贴着 AI 评论按钮左侧，同样在正文上方外侧 */
   .wbx-promo-bar{
-    position:absolute !important;top:2px !important;right:76px !important;z-index:30 !important;
+    position:absolute !important;top:-26px !important;right:76px !important;z-index:30 !important;
     display:inline-flex !important;align-items:center;gap:2px;
   }
+  /* 只在宿主真的裁剪溢出时才放开：X 的编辑区容器若 overflow:hidden 会把
+   * 上移后的按钮整条裁掉。没裁剪时绝不改 X 的布局。 */
+  .wbx-reply-tools-host{overflow:visible !important;}
   .wbx-promo-btn.wbx-promo-single{
     display:inline-flex !important;align-items:center;justify-content:center;
     min-width:24px;height:20px;padding:0 7px;box-sizing:border-box;
@@ -937,6 +943,23 @@ function ensureRelative(el) {
   }
 }
 
+/* 1.4.10：按钮已上移到编辑区上方外侧，若宿主正好 overflow:hidden 会被整条裁掉。
+ * 只在真的检测到裁剪时才放开，没裁剪时一个样式都不碰，避免破坏 X 的布局。 */
+function allowReplyToolsOutside(host) {
+  try {
+    if (!host || !host.style || typeof getComputedStyle !== 'function') return;
+    const cs = getComputedStyle(host);
+    if (!cs) return;
+    const clipped = String(cs.overflow || '').indexOf('hidden') !== -1 ||
+      String(cs.overflowY || '').indexOf('hidden') !== -1;
+    if (!clipped) return;
+    if (host.classList && host.classList.add) host.classList.add('wbx-reply-tools-host');
+    else if (typeof host.style.setProperty === 'function') {
+      host.style.setProperty('overflow', 'visible', 'important');
+    }
+  } catch (e) { /* 取不到样式就不动 X 的布局 */ }
+}
+
 function markNativeRepost(card) {
   const bar = card.querySelector('[node-type="feed_list_options"], .card-act, footer');
   const scope = bar || card;
@@ -1003,7 +1026,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.9';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.10';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1289,6 +1312,36 @@ function fullContainsKnownPromo(full) {
   return knownPromoLines().some((l) => full.indexOf(l) >= 0);
 }
 
+/* 1.4.10：数一数回复框里到底有几句已知推广句。
+ * 真机截图里同一句「顺带一提：TapeOut 把 NAND…」出现了两遍并粘在一起，
+ * 之后每点一次 T 都可能再叠一句。只要已经多于一律停手，绝不继续自动写。 */
+function countKnownPromo(full) {
+  if (!full) return 0;
+  let n = 0;
+  knownPromoLines().forEach((l) => {
+    if (!l) return;
+    let i = full.indexOf(l);
+    while (i >= 0) { n++; i = full.indexOf(l, i + l.length); }
+  });
+  return n;
+}
+
+/* 1.4.10：写回结束（成功、失败、中途停手）都必须把选区收成一个光标点。
+ * selectReplyTail 会选中末尾整句；如果 execCommand 被 X 吃掉或用户中途点了别处，
+ * 那段字会一直保持灰色选中态，下一次输入从选区开始替换 → 正文重复、手动改就乱。 */
+function collapseReplySelection() {
+  try {
+    if (typeof window === 'undefined' || typeof window.getSelection !== 'function') return;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || typeof sel.getRangeAt !== 'function') return;
+    const r = sel.getRangeAt(0);
+    if (!r || typeof r.collapse !== 'function') return;
+    r.collapse(false);                       // 收拢到选区末尾
+    if (sel.removeAllRanges) sel.removeAllRanges();
+    if (sel.addRange) sel.addRange(r);       // 保留一个折叠的光标，别让编辑器失焦
+  } catch (e) { /* 测试桩 / 老环境没有完整 Selection 就跳过 */ }
+}
+
 /* 1.4.9：末尾那句是否被用户手工改写过 —— 只用于「停手」，绝不用于删除。
  * 1.4.8 只做全文精确包含判断：用户改了一个标点就认不出来，插件会把改过的
  * 推广句当成普通正文再叠一句新的，看起来就是「手动改就乱」。
@@ -1424,8 +1477,17 @@ function applyQuickPromo(bar, line) {
     }
     const rawFull = replyPlainText(input);
     const full = TapePromo.rtrim(rawFull);
+    /* 1.4.10：真机截图里同一句 TapeOut 话术在回复框里粘着出现了两遍。
+     * 只要正文里已有 >=2 句已知推广句就一律停手，不再自动追加 / 替换，
+     * 否则每点一次 T 都可能再叠一句，越点越乱。右键清除不受此限制。 */
+    if (line && countKnownPromo(full) > 1) {
+      copyPromoLine(line);
+      showToast('回复框里已经有不止一句推广句，为避免越点越乱已停止写入；请右键 T 去掉末尾那句，或手动删掉多余的一句。', 7000);
+      return;
+    }
     const trailingJunk = rawFull.length - full.length;  // 末尾零宽占位符不进选区
     const tail = findTrailingPromo(full);                 // 精确：一字不差才认
+    const bodyBefore = tail ? full.slice(0, full.length - tail.length) : full;
 
     /* 1.4.9：只按「当前文本」判断，不看缓存状态。
      * 满屏推广句被用户手工删掉 / 整行删掉时，全文里已没有话术 → 视为首次带入，
@@ -1485,13 +1547,18 @@ function applyQuickPromo(bar, line) {
 
     // 写后只读校验：异常只提示，绝不重试（重试正是重复的来源）
     const after = TapePromo.rtrim(replyPlainText(input));
-    const sane = after.slice(-line.length) === line && after.split(line).length - 1 === 1;
+    // 1.4.10：正文前缀必须一字不动。X 若把句子插到了中间，即便末尾看着对，
+    // 也已经打乱了用户写的内容，必须明确提示而不是当作成功。
+    const bodyPrefixOk = !bodyBefore || after.indexOf(bodyBefore) === 0;
+    const sane = bodyPrefixOk && after.slice(-line.length) === line &&
+      after.split(line).length - 1 === 1;
     showToast(sane
       ? '已带入推广句；再点一次 T 换一句，右键可去掉。'
       : '写入结果与预期不一致，请目视检查回复框（已停止自动重试）。', sane ? 3000 : 7000);
 
     bar.__wbxPromoLine = line;
   } finally {
+    collapseReplySelection();   // 成功 / 失败 / 中途停手都不留灰色选中块
     bar.__wbxBusy = false;
   }
 }
@@ -1513,7 +1580,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.4.9 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost v1.4.10 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
@@ -1594,6 +1661,7 @@ function injectIntoReplyComposers() {
       (x) => String(x.className || '').indexOf(cls) !== -1);
     for (let i = 1; i < mine.length; i++) { if (mine[i].remove) mine[i].remove(); }
   });
+  allowReplyToolsOutside(host);        // 只在宿主裁剪溢出时放开，避免上移后的按钮被裁掉
   if (aiOn) injectAiButton(target);
   if (quickOn) injectPromoBar(target);
 }
@@ -1639,8 +1707,10 @@ function writeIntoReply(input, text) {
     /* 1.4.9：删掉「textContent = / innerText = + 合成 input 事件」兜底。
      * 那条兜底会绕过 X 的受控编辑器 state，下一次用户输入就把旧文本还原回来，
      * 表现为「写进去看着对了，一手动改就乱」。现在失败就明确失败，不改 DOM。 */
-    return nativeReplyEdit(input, 'insertText', payload);
-  } catch (e) { return false; }
+    const ok = nativeReplyEdit(input, 'insertText', payload);
+    collapseReplySelection();   // 1.4.10：候选写回后也不留任何选中块
+    return ok;
+  } catch (e) { collapseReplySelection(); return false; }
 }
 
 function applyCommentToReply(text, btn) {

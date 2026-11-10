@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.9（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.10（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,25 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.9**（全页一个 T 按钮 + 精准回写）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.10**（按钮不压正文 + 写回后收拢选区）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。要把新版发到商店，需同步更新 `store/listing.json` 与隐私政策后再上传新包。
+
+### 1.4.10：按钮不再压住回复正文，写回后不留灰色选中块（真机截图复盘）
+
+用户发来 X 回复弹窗截图：橙色 T 与紫色「AI 评论」两个按钮盖在正文第一行右侧；回复框里同一句「顺带一提：TapeOut 把 NAND、LATCH …」粘着出现两遍，整段还处于灰色选中态，手动改就乱。真机复核时 Chrome 里加载的仍是 **1.4.8**（按钮 title 为 `v1.4.8`），1.4.9 尚未重载；但截图里有两处是 1.4.9 也没有覆盖的：
+
+1. **按钮压正文**：1.3.1 起 `.wbx-reply-btn` / `.wbx-promo-bar` 用 `position:absolute; top:2px`，宿主是编辑区容器，按钮必然落在正文第一行右侧。点按钮时容易先碰到文字把光标挪到正文中间，后续写入就错位。
+2. **选区残留**：`selectReplyTail()` 选中末尾整句后，若 `execCommand` 被 X 吃掉或用户中途点了别处，那段字会一直保持选中；下一次输入从选区开始替换 → 重复、乱序。
+3. **越点越乱**：正文里已经叠了两句推广句时，旧逻辑仍会继续追加 / 替换，每点一次 T 都可能再多一句。
+
+1.4.10 的做法：
+
+- 两个回复区按钮统一上移到 `top:-26px`，落在编辑区上方右侧空白处，**一个字都不压**；只在宿主真的 `overflow:hidden` 时才放开裁剪（`allowReplyToolsOutside()`），否则不碰 X 的布局。
+- 新增 `collapseReplySelection()`：`applyQuickPromo()` 的 `finally` 与 `writeIntoReply()` 结束后都把选区收成一个折叠光标，成功、失败、中途停手都不留灰色高亮。
+- 新增 `countKnownPromo()`：写入前若正文里已有两句以上已知推广句，一律停手并复制新句，不继续叠加；右键清除不受限制，仍可去掉末尾那句。
+- 写后校验追加「正文前缀一字未动」：X 若把句子插到了中间，即便末尾看着对也明确提示，而不是当作成功。
+- **未新增任何 manifest 权限**。把鼠标悬在 T 按钮上看到 `v1.4.10`，即确认重载生效。
+
+下载：`store/TapePost_1.4.10_store.zip`。
 
 ### 1.4.9：全页只有一个 T 按钮，写回只认当前回复框（真机反馈修复）
 
