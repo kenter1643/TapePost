@@ -2600,8 +2600,8 @@ async function runScenario(name, cfg, expect) {
   const offscreenJs = read('offscreen.js');
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
-    { name: '1.4.5 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.5' },
+    { name: '1.4.6 manifest 版本号持续升级',
+      ok: manifestJson.version === '1.4.6' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -2629,7 +2629,7 @@ async function runScenario(name, cfg, expect) {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.5' },
+      ok: manifestJson.version === '1.4.6' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -2643,8 +2643,8 @@ async function runScenario(name, cfg, expect) {
       ok: contentJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') && contentJs.includes('!err && r && r.ok') },
     { name: '1.4.4 未新增 manifest 权限',
       ok: (manifestJson.permissions || []).sort().join(',') === ['clipboardWrite','declarativeNetRequest','downloads','offscreen','storage'].join(',') },
-    { name: '1.4.4 UI 版本号同步升级到 1.4.5',
-      ok: contentJs.includes('v1.4.5') && popupHtml.includes('当前 v1.4.5') }
+    { name: '1.4.4 UI 版本号同步升级到 1.4.6',
+      ok: contentJs.includes('v1.4.6') && popupHtml.includes('当前 v1.4.6') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -2741,6 +2741,77 @@ async function runScenario(name, cfg, expect) {
           ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
   ];
 
+  // ---- v1.4.6：T 快捷按钮（AI / 非 AI 通用，自己写完评论点一下带入） ----
+  const stripped = P.stripPromo('我自己写的评论\n\n' + P.LINES.tapeout[0], {});
+  const applyQuickBody = (contentJs.match(/function applyQuickPromo\([\s\S]*?\n\}/) || [''])[0];
+  let quickRuntime = null;
+  try {
+    quickRuntime = vm.runInContext(`(function () {
+      var input = document.createElement('div');
+      input.innerText = '我自己写的评论';
+      input.textContent = '我自己写的评论';
+      var bar = { __wbxScope: {}, __wbxPromoLine: '' };
+      var origFind = findReplyComposers, origToast = showToast, origExec = document.execCommand;
+      findReplyComposers = function () { return [{ input: input, scope: bar.__wbxScope, host: {} }]; };
+      showToast = function () {};
+      // 全选 + insertText 在真实 DOM 里是「替换」，harness 默认 mock 是「追加」，这里按替换语义模拟
+      document.execCommand = function (cmd, ui, text) {
+        if (cmd !== 'insertText') return false;
+        input.innerText = String(text);
+        input.textContent = String(text);
+        return true;
+      };
+      var lines = quickPromoLines();
+      applyQuickPromo(bar, lines[0].line);
+      var first = nodeText(input);
+      applyQuickPromo(bar, lines[1].line);
+      var second = nodeText(input);
+      applyQuickPromo(bar, '');
+      var cleared = nodeText(input);
+      findReplyComposers = origFind; showToast = origToast; document.execCommand = origExec;
+      return {
+        count: lines.length, bem0: lines[0].bem, bem1: lines[1].bem,
+        l0: lines[0].line, l1: lines[1].line,
+        first: first, second: second, cleared: cleared
+      };
+    })()`, contentCtx);
+  } catch (e) { note('ERROR', 'quick runtime: ' + (e && e.message)); }
+
+  const quickChecks = [
+    { name: '1.4.6 manifest / UI 版本均为 1.4.6',
+      ok: manifestJson.version === '1.4.6' && contentJs.includes('v1.4.6') && popupHtml.includes('当前 v1.4.6') },
+    { name: '1.4.6 回复框注入独立的 T 按钮组',
+      ok: contentJs.includes('function injectPromoBar(') && contentJs.includes('wbx-promo-bar') &&
+          contentJs.includes('wbx-promo-btn') && contentJs.includes("['wbx-reply-btn', 'wbx-promo-bar']") },
+    { name: '1.4.6 关掉 AI 评论后 T 按钮仍独立存在',
+      ok: contentJs.includes('if (!aiOn && !quickOn) return;') && contentJs.includes('if (quickOn) injectPromoBar(c);') },
+    { name: '1.4.6 手动带入不依赖自动附加开关',
+      ok: applyQuickBody.length > 0 && applyQuickBody.indexOf('promoEnabled') < 0 },
+    { name: '1.4.6 提供整体替换写回 / 随机 / 清除',
+      ok: contentJs.includes('function replaceReplyText(') && contentJs.includes("rnd.textContent = '↻'") &&
+          contentJs.includes("clear.textContent = '×'") && contentJs.includes('collapseToEnd') },
+    { name: '1.4.6 回复框有附件时不整体替换，保住已贴的图 / 视频',
+      ok: contentJs.includes('function replyHasMedia(') && contentJs.includes('if (line && replyHasMedia(input))') },
+    { name: '1.4.6 按钮数量与主题可在设置里改',
+      ok: ['promoQuickButtons', 'promoQuickCount'].every((id) => popupHtml.includes('id="' + id + '"')) &&
+          popupJs.includes('promoQuickButtons: true') && popupJs.includes('promoQuickCount: 4') &&
+          popupJs.includes('promoQuickCount: Number(') },
+    { name: '1.4.6 stripPromo 能剥掉 AI 已附加的推广句',
+      ok: stripped === '我自己写的评论' && P.stripPromo('纯正文', {}) === '纯正文' },
+    { name: '1.4.6 运行时：手写评论点 T 带入 → 换句不叠加 → × 还原',
+      ok: !!quickRuntime && quickRuntime.count === 4 &&
+          quickRuntime.bem0 === false && quickRuntime.bem1 === true &&
+          quickRuntime.first.endsWith(quickRuntime.l0) &&
+          quickRuntime.second.endsWith(quickRuntime.l1) &&
+          quickRuntime.second.indexOf(quickRuntime.l0) < 0 &&
+          quickRuntime.cleared === '我自己写的评论' },
+    { name: '1.4.6 快捷按钮不碰一键转发正文',
+      ok: contentJs.includes('const text = withSource(withSignature(cleaned), card);') && !contentJs.includes('withPromo(') },
+    { name: '1.4.6 未新增 manifest 权限',
+      ok: (manifestJson.permissions || []).sort().join(',') ===
+          ['clipboardWrite', 'declarativeNetRequest', 'downloads', 'offscreen', 'storage'].join(',') }
+  ];
+
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
   const aiChecks = runTapeAIChecks()
     .concat(await runCommentButtonChecks())
@@ -2757,7 +2828,8 @@ async function runScenario(name, cfg, expect) {
     .concat(conciseChecks)
     .concat(tmpChecks)
     .concat(portChecks)
-    .concat(promoChecks);
+    .concat(promoChecks)
+    .concat(quickChecks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

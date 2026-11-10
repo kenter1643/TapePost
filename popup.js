@@ -31,7 +31,10 @@ const DEFAULTS = Object.assign({
   promoEnabled: false,
   promoTarget: 'both',        // both | tapeout | bem
   promoCustomTapeOut: '',     // 每行一句；留空用内置话术
-  promoCustomBEM: ''
+  promoCustomBEM: '',
+  // 1.4.6：回复框右侧的 T 快捷按钮（与 AI 评论无关，默认开启）
+  promoQuickButtons: true,
+  promoQuickCount: 4
 }, PAGE_DEFAULTS);
 
 // 页面模式的文本配置项；选择器全部可改，X 改版时不用升版本
@@ -173,7 +176,11 @@ function load() {
     document.getElementById('domain').value = s.xDomain || 'x.com';
     const ai = document.getElementById('aiComment');
     if (ai) ai.checked = s.enableAiComment !== false;
-    // 1.4.5：评论末尾推广
+    // 1.4.5 / 1.4.6：评论末尾推广（自动附加 + 手动 T 按钮）
+    const quickOn = document.getElementById('promoQuickButtons');
+    if (quickOn) quickOn.checked = s.promoQuickButtons !== false;
+    const quickCount = document.getElementById('promoQuickCount');
+    if (quickCount) quickCount.value = String(s.promoQuickCount || 4);
     const promoOn = document.getElementById('promoEnabled');
     if (promoOn) promoOn.checked = s.promoEnabled === true;
     const promoTarget = document.getElementById('promoTarget');
@@ -244,6 +251,8 @@ function save() {
     promoTarget: (document.getElementById('promoTarget') || {}).value || 'both',
     promoCustomTapeOut: (document.getElementById('promoCustomTapeOut') || {}).value || '',
     promoCustomBEM: (document.getElementById('promoCustomBEM') || {}).value || '',
+    promoQuickButtons: (document.getElementById('promoQuickButtons') || { checked: true }).checked !== false,
+    promoQuickCount: Number((document.getElementById('promoQuickCount') || {}).value || 4),
     replyInputSelector: (document.getElementById('replyInputSelector') || {}).value || '',
     commentPrompt: promptToStore('commentPrompt'),
     verifyPrompt: promptToStore('verifyPrompt'),
@@ -487,6 +496,7 @@ const INFO = {
   versions: {
     title: '版本说明',
     lines: [
+      'v1.4.6 回复框新增多个 T 快捷按钮，手写评论也能点一下带入推广句。',
       'v1.4.5 可勾选「评论末尾推广」，随机附一句 TapeOut / $BEM 介绍。',
       'v1.4.4 修好重载后 popup 的消息端口报错。',
       'v1.4.3 默认不落盘；临时文件到期自动清理。',
@@ -522,13 +532,14 @@ const INFO = {
   promo: {
     title: '评论末尾推广',
     lines: [
-      '默认关闭，勾上后只对「AI 评论」的 3 条候选生效。',
-      '每条候选随机附一句；选「交替随机」时两个主题都会出现。',
+      '两种用法，互不依赖：T 快捷按钮（默认开）与 AI 候选自动附加（默认关）。',
+      '自己写完评论后，点回复框右侧的 T1 / T2… 就把对应那句带到末尾。',
+      '再点别的 T 按钮是「换一句」，不会叠加；× 去掉推广句只留正文。',
+      '↻ 随机换一句；按钮数量与主题都能在设置里改。',
+      'AI 候选则是 3 条各随机附一句，候选面板可「🎲 换一批」。',
       '可自定义话术：每行一句，按 TapeOut / $BEM 分开填。',
       '内置话术只讲生态与技术，不提价格、收益或买入建议。',
-      '附带后超过 260 字会压缩正文，保证推广句完整。',
-      '插件只把文字写回回复框，最后仍由你手动点「回复」。',
-      '在候选面板点「🎲 换一批」可不重新生成评论就换推广句。'
+      '超过 260 字会压缩正文、保住推广句；最后仍由你手动点「回复」。'
     ]
   },
   tmp: {

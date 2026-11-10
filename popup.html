@@ -188,11 +188,22 @@
     </div>
 
     <div class="promptbox" id="promoBox">
-      <h2>📣 评论末尾推广（可选，默认关闭）</h2>
-      <p>勾选后，3 条 AI 评论候选各随机附一句 TapeOut / $BEM 生态介绍。</p>
+      <h2>📣 评论末尾推广（TapeOut / $BEM）</h2>
+      <p>两种用法：AI 候选自动随机附一句；或自己写完评论，点回复框右侧的 T 按钮带入。</p>
+      <div class="row" style="margin:7px 0">
+        <input type="checkbox" id="promoQuickButtons" />
+        <label for="promoQuickButtons" style="margin:0;font-weight:400">回复框右侧显示 T 快捷按钮（默认开启，与 AI 评论无关）</label>
+      </div>
+      <label for="promoQuickCount">T 按钮数量（每个按钮对应一句，点哪个带哪句）</label>
+      <select id="promoQuickCount">
+        <option value="2">2 个</option>
+        <option value="3">3 个</option>
+        <option value="4">4 个（推荐）</option>
+        <option value="6">6 个</option>
+      </select>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoEnabled" />
-        <label for="promoEnabled" style="margin:0;font-weight:400">在评论末尾附带推广句</label>
+        <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的 3 条候选自动随机附一句（默认关闭）</label>
       </div>
       <label for="promoTarget">推广主题</label>
       <select id="promoTarget">
@@ -212,7 +223,7 @@
         <label for="promoCustomBEM">$BEM 话术</label>
         <textarea id="promoCustomBEM" spellcheck="false" placeholder="每行一句；填了就覆盖该主题的内置话术"></textarea>
       </details>
-      <p class="tiny">只作用于「AI 评论」候选，不改一键转发正文；超过 260 字会压缩正文、保住推广句。内置话术仅作生态与技术介绍，不含价格或收益承诺；最终回复始终由你手动点发送。
+      <p class="tiny">只作用于 X 评论 / 回复框，不改一键转发正文；T 按钮可换句（不叠加），× 去掉推广句；超过 260 字会压缩正文、保住推广句。内置话术仅作生态与技术介绍，不含价格或收益承诺；最终回复始终由你手动点发送。
         <button type="button" class="infobtn" data-info="promo">推广说明</button>
       </p>
     </div>
@@ -223,7 +234,7 @@
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
-      <b>当前 v1.4.5</b>：新增「评论末尾推广」勾选（默认关闭）；站内直连 X 自带 Grok，免 Key、无需配置。重载后刷新一次 X 页面。
+      <b>当前 v1.4.6</b>：回复框新增多个 T 快捷推广按钮，自己写完评论点一下就带入；AI 候选仍可自动附加。重载后刷新一次 X 页面。
       <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 

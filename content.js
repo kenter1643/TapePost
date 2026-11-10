@@ -43,7 +43,10 @@ const SETTINGS_DEFAULT = {
   promoEnabled: false,
   promoTarget: 'both',           // both | tapeout | bem
   promoCustomTapeOut: '',
-  promoCustomBEM: ''
+  promoCustomBEM: '',
+  // 1.4.6：回复框右侧的「T」快捷推广按钮（与 AI 评论无关，自己写完评论也能点）
+  promoQuickButtons: true,
+  promoQuickCount: 4             // 显示几个 T 按钮（2 / 3 / 4 / 6）
 };
 let settings = Object.assign({}, SETTINGS_DEFAULT);
 
@@ -64,7 +67,8 @@ try {
   if (chrome.storage && chrome.storage.onChanged && chrome.storage.onChanged.addListener) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync' || !changes) return;
-      ['promoEnabled', 'promoTarget', 'promoCustomTapeOut', 'promoCustomBEM'].forEach((k) => {
+      ['promoEnabled', 'promoTarget', 'promoCustomTapeOut', 'promoCustomBEM',
+        'promoQuickButtons', 'promoQuickCount'].forEach((k) => {
         if (changes[k]) settings[k] = changes[k].newValue;
       });
     });
@@ -125,6 +129,23 @@ function injectStyle() {
     height:20px !important;padding:0 8px !important;font-size:11px !important;line-height:20px !important;
     box-shadow:0 1px 4px rgba(107,70,193,.5) !important;
   }
+  /* 1.4.6：T 快捷推广按钮组，贴着 AI 评论按钮左侧；不依赖 AI，手写的评论也能点 */
+  .wbx-promo-bar{
+    position:absolute !important;top:2px !important;right:76px !important;z-index:30 !important;
+    display:inline-flex !important;align-items:center;gap:2px;
+  }
+  .wbx-promo-btn{
+    display:inline-flex !important;align-items:center;justify-content:center;
+    min-width:20px;height:20px;padding:0 3px;box-sizing:border-box;
+    border:none;border-radius:6px;cursor:pointer;
+    background:#ff7800;color:#fff;font-size:9px;font-weight:700;line-height:20px;
+    box-shadow:0 1px 3px rgba(255,120,0,.45);white-space:nowrap;
+  }
+  .wbx-promo-btn:hover{background:#ff8c1a;}
+  .wbx-promo-btn.wbx-promo-alt{background:#0f766e;}
+  .wbx-promo-btn.wbx-promo-alt:hover{background:#0d9488;}
+  .wbx-promo-btn.wbx-promo-clear{background:#94a3b8;}
+  .wbx-promo-btn.wbx-promo-clear:hover{background:#64748b;}
   /* AI 评论候选卡片：与图片托盘同级的强可见浮层，不抢 X 的焦点 */
   #wbx-comments{
     position:fixed !important;right:20px !important;bottom:20px !important;
@@ -984,7 +1005,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.5';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.6';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1110,55 +1131,230 @@ function injectedReplyButtons() {
   catch (e) { return []; }
 }
 
-function injectIntoReplyComposers() {
-  if (!SITE || SITE.id !== 'x') return;
-  const enabled = settings.enableAiComment !== false;
-  // 关掉开关时把已注入的按钮清掉（只清自己的，不动页面上其它插件的按钮）
-  if (!enabled) {
-    injectedReplyButtons().forEach((n) => { if (n.remove) n.remove(); });
+function injectedPromoBars() {
+  try { return Array.from(document.querySelectorAll('.wbx-promo-bar')); }
+  catch (e) { return []; }
+}
+
+/* 1.4.6：T 快捷按钮的话术 —— 每个按钮固定对应一句，点哪个带哪句。
+ * both 模式按 TapeOut / $BEM 交替取，让一排按钮同时覆盖两个主题。 */
+function currentPromoCustom() {
+  return {
+    tapeout: settings.promoCustomTapeOut || '',
+    bem: settings.promoCustomBEM || ''
+  };
+}
+
+function quickPromoLines() {
+  if (typeof TapePromo === 'undefined') return [];
+  const p = TapePromo.pools(currentPromoCustom());
+  const target = settings.promoTarget || 'both';
+  const n = Math.max(1, Math.min(8, Number(settings.promoQuickCount) || 4));
+  let src;
+  if (target === 'tapeout') src = p.tapeout.slice();
+  else if (target === 'bem') src = p.bem.slice();
+  else {
+    src = [];
+    const max = Math.max(p.tapeout.length, p.bem.length);
+    for (let i = 0; i < max; i++) {
+      if (i < p.tapeout.length) src.push(p.tapeout[i]);
+      if (i < p.bem.length) src.push(p.bem[i]);
+    }
+  }
+  return src.slice(0, n).map((line, i) => ({
+    line: line,
+    bem: target === 'bem' || (target === 'both' && i % 2 === 1)
+  }));
+}
+
+function injectAiButton(c) {
+  const host = c.host;
+  if (!host || !host.appendChild) return;
+  // 内容不变时一律早退：注入按钮本身会触发 MutationObserver，删了重建会自触发死循环
+  const exists = Array.prototype.some.call(host.children || [],
+    (n) => String(n.className || '').indexOf('wbx-reply-btn') !== -1);
+  if (exists) return;
+  ensureRelative(host);
+  const btn = document.createElement('button');
+  btn.className = 'wbx-comment-btn wbx-reply-btn';
+  btn.type = 'button';
+  btn.textContent = 'AI 评论';
+  btn.title = 'TapePost · 生成 3 条回复候选，手动发送';
+  btn.__wbxReply = true;
+  btn.__wbxScope = c.scope;
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // 点击瞬间实时定位，避免 X 重渲染后闭包里拿到旧的回复框
+    const live = findReplyComposers().find((x) => x.scope === btn.__wbxScope) || findReplyComposers()[0];
+    const ctx = resolveReplyContext(btn, live && live.scope);
+    return onAiComment(ctx, btn);
+  });
+  host.appendChild(btn);
+}
+
+/* 整体替换回复框内容：先全选再 insertText，React 受控组件能识别。
+ * 快捷按钮要的是「换一句」而不是「再叠一句」，所以不能复用追加式的 writeIntoReply。 */
+function replaceReplyText(input, text) {
+  if (!input) return false;
+  try {
+    if (input.focus) input.focus();
+    try {
+      const sel = (typeof window !== 'undefined' && typeof window.getSelection === 'function')
+        ? window.getSelection() : null;
+      if (sel && typeof document.createRange === 'function') {
+        const r = document.createRange();
+        if (r.selectNodeContents) {
+          r.selectNodeContents(input);           // 全选，不 collapse
+          if (sel.removeAllRanges) sel.removeAllRanges();
+          if (sel.addRange) sel.addRange(r);
+        }
+      }
+    } catch (e) { /* 选区失败走下面的兜底 */ }
+    if (document.execCommand && document.execCommand('insertText', false, text)) {
+      // 插入后把选区收拢到末尾，避免用户接着打字时把刚写好的整段覆盖掉
+      try {
+        const sel2 = (typeof window !== 'undefined' && typeof window.getSelection === 'function')
+          ? window.getSelection() : null;
+        if (sel2 && typeof sel2.collapseToEnd === 'function') sel2.collapseToEnd();
+      } catch (e) { /* ignore */ }
+      return true;
+    }
+    const next = String(text == null ? '' : text);
+    if (input.textContent != null) input.textContent = next;
+    if (input.innerText != null) input.innerText = next;
+    try {
+      const Ev = (typeof InputEvent === 'function') ? InputEvent : Event;
+      const ev = new Ev('input', { bubbles: true, inputType: 'insertText', data: next });
+      if (input.dispatchEvent) input.dispatchEvent(ev);
+      return true;
+    } catch (e) { return false; }
+  } catch (e) { return false; }
+}
+
+/* 回复框里已经贴了图 / 视频时，整体替换会把附件一起清掉 */
+function replyHasMedia(input) {
+  if (!input || typeof input.querySelectorAll !== 'function') return false;
+  try {
+    return input.querySelectorAll('img,video,[role="img"],[data-testid="attachments"]').length > 0;
+  } catch (e) { return false; }
+}
+
+function applyQuickPromo(bar, line) {
+  if (typeof TapePromo === 'undefined') return;
+  const live = findReplyComposers().find((x) => x.scope === bar.__wbxScope) || findReplyComposers()[0];
+  const input = live && live.input;
+  if (!input) { showToast('没找到回复框，请先点「回复」展开填写区。', 5000); return; }
+  let body = nodeText(input).replace(/\s+$/, '');
+  const last = bar.__wbxPromoLine || '';
+  if (last && body.slice(-last.length) === last) {
+    body = body.slice(0, body.length - last.length).replace(/\s+$/, '');
+  } else {
+    // 兼容「先选了 AI 候选（已自动带一句），再点 T 按钮换句」
+    body = TapePromo.stripPromo(body, currentPromoCustom());
+  }
+  const next = line ? TapePromo.appendLine(body, line) : body;
+  // 有附件时退回追加模式：保住用户已贴的图 / 视频，代价是换句需手动删
+  if (line && replyHasMedia(input)) {
+    if (!writeIntoReply(input, line)) {
+      showToast('写入失败：请刷新 X 页面后重试。', 6000);
+      return;
+    }
+    bar.__wbxPromoLine = '';
+    showToast('已带入推广句（回复框里有附件，换句请先手动删掉上一句）。', 5500);
     return;
   }
+  if (!replaceReplyText(input, next)) {
+    showToast('写入失败：请刷新 X 页面后重试。', 6000);
+    return;
+  }
+  bar.__wbxPromoLine = line || '';
+  showToast(line
+    ? '已带入推广句；点其它 T 按钮可换一句，× 可去掉。'
+    : '已去掉推广句，保留你自己写的正文。', 3500);
+}
+
+function injectPromoBar(c) {
+  const host = c.host;
+  if (!host || !host.appendChild) return;
+  const sig = [settings.promoQuickCount, settings.promoTarget,
+    settings.promoCustomTapeOut || '', settings.promoCustomBEM || ''].join('|');
+  let bar = Array.prototype.filter.call(host.children || [],
+    (n) => String(n.className || '').indexOf('wbx-promo-bar') !== -1)[0];
+  if (bar && bar.dataset && bar.dataset.wbxSig === sig) return; // 内容不变早退，避免自激循环
+  if (bar && bar.remove) bar.remove();
+  ensureRelative(host);
+  bar = document.createElement('div');
+  bar.className = 'wbx-promo-bar';
+  bar.dataset.wbxSig = sig;
+  bar.__wbxScope = c.scope;
+  bar.__wbxPromoLine = '';
+  quickPromoLines().forEach((it, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'wbx-promo-btn' + (it.bem ? ' wbx-promo-alt' : '');
+    b.textContent = 'T' + (i + 1);
+    b.title = `T${i + 1} · ${it.bem ? '$BEM' : 'TapeOut'}：${it.line}\n点击把这句带到当前评论末尾`;
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyQuickPromo(bar, it.line);
+    });
+    bar.appendChild(b);
+  });
+  // ↻ 随机换一句；× 去掉末尾推广句
+  const rnd = document.createElement('button');
+  rnd.type = 'button';
+  rnd.className = 'wbx-promo-btn wbx-promo-alt';
+  rnd.textContent = '↻';
+  rnd.title = '随机换一句推广话术';
+  rnd.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof TapePromo === 'undefined') return;
+    const line = TapePromo.pickLines(settings.promoTarget || 'both', currentPromoCustom(), 1)[0] || '';
+    applyQuickPromo(bar, line);
+  });
+  bar.appendChild(rnd);
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'wbx-promo-btn wbx-promo-clear';
+  clear.textContent = '×';
+  clear.title = '去掉末尾推广句，只保留自己写的正文';
+  clear.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    applyQuickPromo(bar, '');
+  });
+  bar.appendChild(clear);
+  host.appendChild(bar);
+}
+
+function injectIntoReplyComposers() {
+  if (!SITE || SITE.id !== 'x') return;
+  const aiOn = settings.enableAiComment !== false;
+  const quickOn = settings.promoQuickButtons !== false;
+  // 关掉开关时只清自己那一类，不动页面上其它插件的按钮
+  if (!aiOn) injectedReplyButtons().forEach((n) => { if (n.remove) n.remove(); });
+  if (!quickOn) injectedPromoBars().forEach((n) => { if (n.remove) n.remove(); });
+  if (!aiOn && !quickOn) return;
   const composers = findReplyComposers();
   const hosts = composers.map((c) => c.host).filter(Boolean);
   /* 1.3.4 关键修复：host.children 是 HTMLCollection，没有 .filter！
-   * 上一版写成 `(host.children || []).filter ? ... : null`，判断永远为 false，
-   * 于是每轮 MutationObserver 扫描都往回复框里再塞一个「AI 评论」，
-   * 真机上累积到 33 个，按钮文字被当成推文正文发给 Grok。 */
-  // 1) 清掉父节点已被 X 重渲染换掉的孤儿按钮
-  injectedReplyButtons().forEach((n) => {
-    if (hosts.indexOf(n.parentElement) === -1 && n.remove) n.remove();
+   * 每轮扫描都往回复框里再塞按钮会累积到 33 个，按钮文字还会被当成推文正文。 */
+  [injectedReplyButtons(), injectedPromoBars()].forEach((list) => {
+    list.forEach((n) => { if (hosts.indexOf(n.parentElement) === -1 && n.remove) n.remove(); });
   });
-  // 2) 同一个 host 只保留一个，多余的清掉
   hosts.forEach((host) => {
-    const mine = Array.prototype.filter.call(host.children || [],
-      (c) => String(c.className || '').indexOf('wbx-reply-btn') !== -1);
-    for (let i = 1; i < mine.length; i++) { if (mine[i].remove) mine[i].remove(); }
-  });
-
-  composers.forEach((c) => {
-    const host = c.host;
-    if (!host || !host.appendChild) return;
-    // 内容不变时一律早退：注入按钮本身会触发 MutationObserver，删了重建会自触发死循环
-    const exists = Array.prototype.some.call(host.children || [],
-      (n) => String(n.className || '').indexOf('wbx-reply-btn') !== -1);
-    if (exists) return;
-    ensureRelative(host);
-    const btn = document.createElement('button');
-    btn.className = 'wbx-comment-btn wbx-reply-btn';
-    btn.type = 'button';
-    btn.textContent = 'AI 评论';
-    btn.title = 'TapePost · 生成 3 条回复候选，手动发送';
-    btn.__wbxReply = true;
-    btn.__wbxScope = c.scope;
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // 点击瞬间实时定位，避免 X 重渲染后闭包里拿到旧的回复框
-      const live = findReplyComposers().find((x) => x.scope === btn.__wbxScope) || findReplyComposers()[0];
-      const ctx = resolveReplyContext(btn, live && live.scope);
-      return onAiComment(ctx, btn);
+    ['wbx-reply-btn', 'wbx-promo-bar'].forEach((cls) => {
+      const mine = Array.prototype.filter.call(host.children || [],
+        (x) => String(x.className || '').indexOf(cls) !== -1);
+      for (let i = 1; i < mine.length; i++) { if (mine[i].remove) mine[i].remove(); }
     });
-    host.appendChild(btn);
+  });
+  composers.forEach((c) => {
+    if (aiOn) injectAiButton(c);
+    if (quickOn) injectPromoBar(c);
   });
 }
 

@@ -111,6 +111,22 @@ var TapePromo = (function () {
     return clip(text, room) + '…' + tail;   // 保住推广句，压缩正文
   }
 
+  /* 手动 T 按钮换句时用：把末尾已带上的推广句剥掉，只留用户自己写的正文。
+   * 同时覆盖「AI 候选已经自动附加过一句」的情况，避免点 T 按钮后叠两句。 */
+  function stripPromo(text, custom) {
+    var t = String(text == null ? '' : text).replace(/\s+$/, '');
+    var p = pools(custom);
+    var known = p.tapeout.concat(p.bem);
+    for (var i = 0; i < known.length; i++) {
+      var line = clip(known[i], MAX_LINE_CHARS);
+      if (!line) continue;
+      if (t.slice(-line.length) === line) {
+        return t.slice(0, t.length - line.length).replace(/\s+$/, '');
+      }
+    }
+    return t;
+  }
+
   function decorate(comments, opts) {
     opts = opts || {};
     var list = (comments || []).map(function (c) { return String(c == null ? '' : c); });
@@ -128,6 +144,7 @@ var TapePromo = (function () {
     pools: pools,
     pickLines: pickLines,
     appendLine: appendLine,
+    stripPromo: stripPromo,
     decorate: decorate
   };
 })();
