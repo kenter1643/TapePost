@@ -39,7 +39,7 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 11 日（新增 1.4.13 行情只读接口与提醒权限说明、1.4.14 签名帧本机处理说明）　｜　适用版本：1.4.2 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 11 日（新增 1.4.13 行情只读接口与提醒权限说明、1.4.14 签名帧本机处理说明；1.4.15 仅调整本机响应流解析与错误诊断，数据流向与权限不变）　｜　适用版本：1.4.2 及以上　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
     <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」模式并填写自己的 Key 时，接收方才改为 xAI。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。
@@ -73,10 +73,10 @@
   <p><strong>AI 链路（仅主动使用时）：</strong>见下节。</p>
   <p><strong>1.4.13 行情链路（后台定时，纯只读）：</strong>为在面板顶端显示三项公开行情，扩展后台默认每 5 分钟（可设 1 / 5 / 15 / 30 分钟，也可手动点 ↻ 立即刷新）向以下两个<strong>公开只读接口</strong>发起 GET 请求：</p>
   <ul>
-    <li><code>https://api-tapeout.firsto.ai/v1/analytics/bem?range=24h</code> 与 <code>/v1/analytics/circuits?range=24h</code>：$BEM 现价与 TapeOut 矿机日产能价；</li>
-    <li><code>https://api.dexscreener.com/latest/dex/tokens/0xEd99…CD2F</code>：TapeUP $UP 公开报价。</li>
+    <li><code>https://api-tapeout.firsto.ai/v1/analytics/bem?range=24h</code> 与 <code>/v1/analytics/circuits?range=24h</code>：$BEM 现价与 TapeOut 矿机日产能价（后台 GET）；</li>
   </ul>
-  <p>请求仅携带 <code>Accept: application/json</code> 与 <code>cache: no-store</code>，<strong>不携带 Cookie、认证头、API Key、页面内容、推文正文、用户标识或任何本机数据</strong>；接口不要求登录，响应只含公开行情数字。点行情卡片或点提醒弹窗时，浏览器会打开 <code>https://firsto.ai/data</code>（或 <code>/data/bem</code>、<code>/data/circuits</code>）这个普通网页，该页面由 Firsto 运营，其后产生的访问遵循 Firsto 自己的隐私政策；扩展不会替你登录、下单或提交任何表单。链接经本机白名单校验，只放行 <code>firsto.ai</code> 及其子域。</p>
+  <p><strong>1.4.16 TapeUP $UP 内盘价（内容脚本采集，非后台 GET）：</strong>tapeup.io 整站 Cloudflare 防护，后台直接 <code>fetch</code> 会被拦，因此 TapeUP $UP 的内盘价（TAPELIQUID UP/USDT 现货对，来自 <code>https://tapeup.io/zh/trade/token?id=1</code>）改由扩展的<strong>内容脚本</strong>在你已通过 CF 的浏览器会话里读取页面显示的内盘价，再回传后台缓存。扩展仅在 <code>tapeup.io</code> 注入内容脚本读取该页显示的价格数字，<strong>不读取页面外数据、不发送任何本机数据、不在该域发起额外网络请求</strong>。</p>
+  <p>请求仅携带 <code>Accept: application/json</code> 与 <code>cache: no-store</code>，<strong>不携带 Cookie、认证头、API Key、页面内容、推文正文、用户标识或任何本机数据</strong>；接口不要求登录，响应只含公开行情数字。点行情卡片或点提醒弹窗时，浏览器会打开 <code>https://firsto.ai/data</code>（或 <code>/data/bem</code>、<code>/data/circuits</code>）这个普通网页，该页面由 Firsto 运营，其后产生的访问遵循 Firsto 自己的隐私政策；扩展不会替你登录、下单或提交任何表单。链接经本机白名单校验，只放行 <code>firsto.ai</code> 及其子域与 <code>tapeup.io</code> 及其子域。</p>
   <p><strong>1.4.14 签名帧（仅本机 DOM）：</strong>站内直连的 <code>x-client-transaction-id</code> 需要 X 自带签名模块读取 X 首页下发的 4 个加载动画 SVG 的几何数据。扩展会以你已登录的会话读取一次 <code>https://x.com/</code> 的 HTML（GET，接收方仅 X），只取这 4 个帧的 path 数据，并在当前 X 页面临时插入隐藏帧供签名模块读取，签名完成后立即移除。该过程不读取页面文字、推文内容或账号信息，不新增网络接收方，也不上传任何数据。</p>
   <p>扩展没有分析、广告或跟踪代码，没有远程加载的脚本，也不连接开发者自建的服务器。</p>
 
@@ -115,7 +115,8 @@
     <tr><td><code>api.x.ai</code> 主机权限</td><td>仅在 API 模式下、你主动使用 AI 功能时，向 xAI 官方接口发送生成请求；站内直连与页面模式都不用它</td></tr>
     <tr><td>alarms（1.4.13 新增）</td><td>按你设定的间隔在后台定时检查三项公开行情；只在本机触发刷新与阈值判定，不上传数据</td></tr>
     <tr><td>notifications（1.4.13 新增）</td><td>价格越过你设定的上下限时，由 Chrome 系统通知在桌面提醒；通知文字只含公开价格与阈值，点击打开 Firsto 数据页。可在面板里关闭</td></tr>
-    <tr><td><code>api-tapeout.firsto.ai</code> / <code>api.dexscreener.com</code> 主机权限（1.4.13 新增）</td><td>仅用于上述两个公开只读行情接口的 GET 请求；不读取这两个域名的页面内容，不在其上注入脚本，也不发送任何本机数据</td></tr>
+    <tr><td><code>api-tapeout.firsto.ai</code> 主机权限（1.4.13 新增）</td><td>仅用于上述 BEM / 矿机日产价的公开只读接口 GET 请求；不读取该域名页面内容，不在其上注入脚本，也不发送任何本机数据</td></tr>
+    <tr><td><code>tapeup.io</code> 主机权限（1.4.16 新增）</td><td>仅用于在 tapeup.io 交易页注入内容脚本读取页面显示的内盘价（TAPELIQUID UP/USDT）；不发请求、不读页面外数据、不发送任何本机数据</td></tr>
     <tr><td>X 站点主机权限 / 内容脚本</td><td>在你已打开的 X 页面上注入「一键转发 / AI 评论」按钮；站内直连时由 X 页面自身向 X 自有 Grok 接口发请求，并在该页面内读取 <code>ct0</code> 与 <code>authorization</code> 以复用会话（仅内存、不存储不导出，接收方仅 X 自己）；页面模式下仅定位 Grok 输入框与读取回答文本</td></tr>
     <tr><td>认证 Cookie / bearer（页面内读取）</td><td>仅在站内直连时于 X 页面内存中读取并随请求发回 X 自己；不写入任何持久化存储、不上传给开发者或第三方，详见第 1 节</td></tr>
     <tr><td>可选主机权限（默认未授予）</td><td>仅当你在设置里填写自定义网关并主动点「允许网关域名」时，才申请该域名的访问权</td></tr>
@@ -124,7 +125,7 @@
   <p>你可以在扩展设置面板里逐个关闭站点；关闭某个站点后，扩展不会在该站点注入任何界面。</p>
 
   <h2>6. 第三方内容与你的责任</h2>
-  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）与 xAI 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。1.4.13 面板顶端的行情与价格提醒来自 Firsto 官方 analytics 和 DexScreener 的公开数据，<strong>仅供参考、可能延迟或缺失，不构成投资建议</strong>；扩展不替你下单、不连接钱包、不读取你的持仓。</p>
+  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）与 xAI 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。1.4.13 起面板顶端的行情与价格提醒：BEM 与矿机日产价来自 Firsto 官方 analytics，TapeUP $UP 内盘价来自 tapeup.io 交易页（由内容脚本采集），<strong>仅供参考、可能延迟或缺失，不构成投资建议</strong>；扩展不替你下单、不连接钱包、不读取你的持仓。</p>
 
   <h2>7. 儿童隐私</h2>
   <p>本扩展不面向 13 岁以下儿童，也不会有意收集任何年龄信息。</p>

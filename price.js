@@ -2,10 +2,12 @@
  * price.js — TapeOut 行情数据层（popup / background / test-harness 共用）
  *
  * 1.4.13：面板顶端展示三项实时价格，并支持上下限提醒。
- * 数据来源全部是公开只读接口，不需要登录、不需要 API Key、不上传任何用户数据：
+ * 数据来源（公开只读、免登录免 Key、不上传任何用户数据）：
  *   · Firsto 官方 analytics：/v1/analytics/bem        → $BEM 现价（USD，8 位定点）
  *   · Firsto 官方 analytics：/v1/analytics/circuits   → 矿机日产能价（BNB，wei 18 位定点，与官网图表 ds() 一致）
- *   · DexScreener 公开行情：/latest/dex/tokens/0xEd99… → TapeUP $UP 现价（USD）
+ *   · TapeUP $UP 内盘价：来自 tapeup.io 交易页（TAPELIQUID UP/USDT 现货对）——
+ *     该站整站 Cloudflare 防护，后台直接 fetch 会被拦，因此由内容脚本在用户浏览器
+ *     （已通过 CF）里读取页面显示的内盘价，再回传后台缓存。详见 tapeup-price.js。
  *
  * 这个模块刻意不引用任何 chrome.* API：后台用 importScripts 加载，
  * 弹窗用 <script> 加载，Node 测试用 vm 加载，三处跑的是同一份纯逻辑。
@@ -14,28 +16,32 @@
 
 var TapePrice = (function () {
   var FIRSTO_API = 'https://api-tapeout.firsto.ai';
-  var UP_CONTRACT = '0xEd99445d72787Adb627cD8588586984DF548CD2F'; // BSC · TapeUP (UP)
 
+  // 后台定时拉取的接口（BEM / 矿机日产价来自 Firsto 官方 analytics，公开只读）。
+  // TapeUP $UP 内盘价不走后台 fetch（tapeup.io 整站 Cloudflare 防护），改由内容脚本采集，见下方 mergeUp。
   var ENDPOINTS = {
     bem: FIRSTO_API + '/v1/analytics/bem?range=24h',
-    miner: FIRSTO_API + '/v1/analytics/circuits?range=24h',
-    up: 'https://api.dexscreener.com/latest/dex/tokens/' + UP_CONTRACT
+    miner: FIRSTO_API + '/v1/analytics/circuits?range=24h'
   };
 
-  // 点击卡片 / 点击提醒弹窗要去的交易所页面
+  // 点击卡片 / 点击提醒弹窗要去的页面
   var LINKS = {
-    up: 'https://firsto.ai/data',
+    up: 'https://tapeup.io/zh/trade/token?id=1',   // TAPELIQUID UP/USDT 内盘交易页
     miner: 'https://firsto.ai/data/circuits',
     bem: 'https://firsto.ai/data/bem',
-    home: 'https://firsto.ai/'
+    home: 'https://firsto.ai/',
+    tapeupHome: 'https://tapeup.io/'
   };
 
   var META = {
-    up:    { label: 'TapeUP', symbol: '$UP', unit: 'USD', digits: 4, prefix: '$' },
-    miner: { label: '矿机日产价', symbol: 'TapeOut', unit: 'BNB', digits: 3, prefix: '' },
-    bem:   { label: 'BEM', symbol: '$BEM', unit: 'USD', digits: 2, prefix: '$' }
+    up:    { label: 'TapeUP·内盘', symbol: '$UP', unit: 'USD', digits: 4, prefix: '$', source: 'tapeup.io' },
+    miner: { label: '矿机日产价', symbol: 'TapeOut', unit: 'BNB', digits: 3, prefix: '', source: 'Firsto analytics' },
+    bem:   { label: 'BEM', symbol: '$BEM', unit: 'USD', digits: 2, prefix: '$', source: 'Firsto analytics' }
   };
+  // 面板展示顺序 / 三张卡
   var KEYS = ['up', 'miner', 'bem'];
+  // 后台真正要去拉的接口（UP 由内容脚本采集，不在此列）
+  var FETCH_KEYS = ['miner', 'bem'];
 
   var DEFAULT_SETTINGS = {
     enabled: true,           // 提醒总开关（不填任何阈值时不会触发）
@@ -135,27 +141,127 @@ var TapePrice = (function () {
     };
   }
 
-  function parseUp(json) {
-    if (!isObj(json) || !Array.isArray(json.pairs)) return null;
-    var pairs = json.pairs.filter(function (p) {
-      return isObj(p) && isObj(p.baseToken) && p.baseToken.symbol === 'UP' && num(p.priceUsd) != null;
-    });
-    // 同一个币可能有多个池子：取流动性最深的那个，避免被极小池子的报价带偏
-    pairs.sort(function (a, b) {
-      var la = isObj(a.liquidity) ? (num(a.liquidity.usd) || 0) : 0;
-      var lb = isObj(b.liquidity) ? (num(b.liquidity.usd) || 0) : 0;
-      return lb - la;
-    });
-    if (!pairs.length) return null;
-    var p = pairs[0];
-    var chg = (isObj(p.priceChange)) ? num(p.priceChange.h24) : null;
+  /*
+   * 1.4.16：TapeUP $UP 内盘价提取（内容脚本在用户浏览器里从 tapeup.io 交易页读取）。
+   * 入参可以是 Document（内容脚本直接传 document）或 HTML 字符串（便于测试）；
+   * 统一转成页面文本后用多策略正则抓价，避免依赖某个固定的 DOM 结构——
+   * tapeup.io 是 Cloudflare 后的 Next.js 应用，标记结构可能随版本变，纯文本抓价更稳。
+   * 返回 { value, changePct, asOf, debug }；debug 带上候选价，便于线上核对解析是否准确。
+   */
+  function toPageText(source) {
+    if (!source) return '';
+    var html = '';
+    try {
+      if (typeof source === 'string') html = source;
+      else if (source.documentElement && source.documentElement.outerHTML) html = source.documentElement.outerHTML;
+      else if (source.outerHTML) html = source.outerHTML;
+    } catch (e) { html = ''; }
+    if (!html) return '';
+    // 去掉脚本/样式，再脱标签，得到近似「页面可见文本」
+    return html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ');
+  }
+
+  function stripNum(s) {
+    if (s == null) return null;
+    var t = String(s).replace(/,/g, '').replace(/\s/g, '');
+    var n = Number(t);
+    return isFinite(n) ? n : null;
+  }
+
+  function extractUp(source) {
+    var text = toPageText(source);
+    if (!text) return { value: null, changePct: null, asOf: null, debug: { text: '', candidates: [] } };
+    var debug = { textLen: text.length, candidates: [] };
+    var best = null;
+
+    function consider(value, score, ctx) {
+      var v = stripNum(value);
+      if (v == null || v <= 0) return;
+      if (score > (best ? best.score : -1)) best = { value: v, score: score, ctx: ctx };
+      debug.candidates.push({ value: v, score: score, ctx: ctx });
+    }
+
+    // 策略 1：价格标签后紧跟的数字（中文/英文常见叫法）
+    var labelRe = /(?:最新价|现价|最新成交价|成交价|最新|Last\s*Price|Last Price|Last|Price|Price\(USDT\)|现价\(USDT\))\D{0,12}?([0-9][0-9,]*\.?[0-9]*)/gi;
+    var m1;
+    while ((m1 = labelRe.exec(text)) !== null) consider(m1[1], 80, 'label:' + m1[0].slice(0, 24));
+
+    // 策略 2：UP/USDT 交易对上下文里的数字
+    var pairRe = /(UP[\s\-/]*USDT|USDT[\s\-/]*UP)[^\n]{0,60}?([0-9][0-9,]*\.?[0-9]*)/gi;
+    var m2;
+    while ((m2 = pairRe.exec(text)) !== null) consider(m2[2], 70, 'pair:' + m2[0].replace(/\s+/g, ' ').slice(0, 28));
+
+    // 策略 3：页面里带「UP」字样、且本身是价格形态（2~8 位小数）的数字，按出现先后给中等权重
+    var upCtxRe = /UP[^\n]{0,60}?([0-9][0-9,]{0,12}\.[0-9]{2,8})/gi;
+    var m3;
+    while ((m3 = upCtxRe.exec(text)) !== null) consider(m3[1], 55, 'upctx:' + m3[0].replace(/\s+/g, ' ').slice(0, 28));
+
+    // 策略 4：兜底——任意「高小数位」数字（更像价格而非整数计数）
+    var anyRe = /([0-9][0-9,]{0,12}\.[0-9]{3,8})/g;
+    var m4;
+    while ((m4 = anyRe.exec(text)) !== null) consider(m4[1], 30, 'any:' + m4[0].slice(0, 20));
+
+    // 24h / 涨跌：找价附近带 +/- 的百分比（取第一个）
+    var chgRe = /([+-]?\d{1,3}(?:\.\d{1,2})?\s*%)/g;
+    var chg = null;
+    var m5;
+    while ((m5 = chgRe.exec(text)) !== null) { chg = m5[1]; break; }
+
+    if (!best) {
+      return { value: null, changePct: null, asOf: null, debug: debug };
+    }
+    var changePct = null;
+    if (chg != null) {
+      var cn = stripNum(chg.replace('%', ''));
+      if (cn != null) changePct = cn;
+    }
+    return { value: best.value, changePct: changePct, asOf: null, source: 'tapeup.io 内盘', debug: debug };
+  }
+
+  // 把内容脚本采集到的内盘价并入快照（按新鲜度给 stale 标记，过期则沿用上一次、不直接拿旧值误报）
+  function mergeUp(prev, cachedUp, nowMs) {
+    var now = num(nowMs);
+    if (now == null) now = Date.now();
+    var old = isObj(prev) && isObj(prev.items) ? prev.items : {};
+    var MAX_AGE = 30 * 60000; // 内盘价超过 30 分钟未刷新视为过期
+    var upCache = isObj(cachedUp) ? cachedUp : null;
+    var fresh = upCache && num(upCache.value) > 0 && num(upCache.at) && (now - num(upCache.at) < MAX_AGE);
+
+    if (fresh) {
+      return {
+        item: { key: 'up', value: num(upCache.value), changePct: num(upCache.changePct),
+          asOf: upCache.asOf || null, stale: false, source: 'tapeup.io 内盘' },
+        error: null
+      };
+    }
+    if (upCache && num(upCache.value) > 0) {
+      return {
+        item: { key: 'up', value: num(upCache.value), changePct: num(upCache.changePct),
+          asOf: upCache.asOf || null, stale: true, source: 'tapeup.io 内盘' },
+        error: 'TapeUP 内盘价沿用缓存（请打开 tapeup.io 交易页刷新）'
+      };
+    }
+    if (isObj(old.up) && old.up.value != null) {
+      return { item: Object.assign({}, old.up, { stale: true }), error: 'TapeUP 内盘价暂无采集（请打开 tapeup.io 交易页）' };
+    }
     return {
-      key: 'up', value: num(p.priceUsd), changePct: chg,
-      asOf: null, source: 'DexScreener'
+      item: { key: 'up', value: null, changePct: null, asOf: null, stale: true, source: 'tapeup.io 内盘' },
+      error: 'TapeUP 内盘价暂无采集（请打开 tapeup.io 交易页）'
     };
   }
 
-  var PARSERS = { bem: parseBem, miner: parseMiner, up: parseUp };
+  // 让一次 PRICE_GET 直接套用最新的内盘价缓存（即便快照本身是 2 分钟内的旧缓存）
+  function withUp(snapshot, cachedUp, nowMs) {
+    if (!isObj(snapshot)) return snapshot;
+    var r = mergeUp(snapshot, cachedUp, nowMs);
+    var items = Object.assign({}, snapshot.items, { up: r.item });
+    return Object.assign({}, snapshot, { items: items, errors: (snapshot.errors || []).concat(r.error ? [r.error] : []) });
+  }
+
+  var PARSERS = { bem: parseBem, miner: parseMiner };
 
   /* ---------- 抓取 ---------- */
 
@@ -179,21 +285,26 @@ var TapePrice = (function () {
   }
 
   /*
-   * 三项并发、互不牵连：任一接口挂了只影响那一项，其它两项照常显示。
-   * 某项失败 / 暂无成交样本时，沿用上一次缓存值并打上 stale 标记，
-   * 不让面板闪成一片 "--"，也不会拿旧值去误触发提醒。
+   * 后台定时拉取 BEM / 矿机日产价（并发、互不牵连），再把内容脚本采集的 TapeUP 内盘价并入。
+   * 某项失败 / 暂无成交样本时沿用上一次缓存并打 stale，不让面板闪成 "--"，也不拿旧值误报。
    */
-  function fetchSnapshot(fetchImpl, prev) {
+  function fetchSnapshot(fetchImpl, prev, cachedUp) {
     var f = fetchImpl || (typeof fetch === 'function' ? fetch : null);
     var old = isObj(prev) && isObj(prev.items) ? prev.items : {};
-    if (!f) return Promise.resolve({
-      updatedAt: new Date().toISOString(), items: {}, errors: ['当前环境没有 fetch'], stale: true
-    });
-    var urls = KEYS.map(function (k) { return ENDPOINTS[k]; });
-    return Promise.all(KEYS.map(function (k) { return getJson(f, ENDPOINTS[k]); }))
+    if (!f) {
+      var merged0 = mergeUp(prev, cachedUp);
+      return Promise.resolve({
+        updatedAt: new Date().toISOString(),
+        items: Object.assign({}, { up: merged0.item }),
+        errors: ['当前环境没有 fetch'].concat(merged0.error ? [merged0.error] : []),
+        stale: true
+      });
+    }
+    var urls = FETCH_KEYS.map(function (k) { return ENDPOINTS[k]; });
+    return Promise.all(FETCH_KEYS.map(function (k) { return getJson(f, ENDPOINTS[k]); }))
       .then(function (res) {
         var items = {}, errors = [];
-        KEYS.forEach(function (k, i) {
+        FETCH_KEYS.forEach(function (k, i) {
           var r = res[i];
           var parsed = (r && r.ok) ? PARSERS[k](r.json) : null;
           if (parsed && parsed.value != null && parsed.value > 0) {
@@ -206,6 +317,9 @@ var TapePrice = (function () {
             errors.push(META[k].label + '：' + (r && r.ok ? '暂无最新成交样本' : '接口暂不可用 ' + (r && r.error)));
           }
         });
+        var up = mergeUp(prev, cachedUp);
+        items.up = up.item;
+        if (up.error) errors.push(up.error);
         return {
           updatedAt: new Date().toISOString(),
           items: items,
@@ -238,7 +352,8 @@ var TapePrice = (function () {
 
   function safeLink(url) {
     if (typeof url !== 'string') return LINKS.home;
-    return /^https:\/\/(?:[a-z0-9-]+\.)*firsto\.ai\//i.test(url) ? url : LINKS.home;
+    // 仅放行 Firsto 与 tapeup.io 官方域名，其余一律回落首页，防中间人改链接
+    return /^https:\/\/(?:[a-z0-9-]+\.)*(?:firsto\.ai|tapeup\.io)\//i.test(url) ? url : LINKS.home;
   }
 
   /* ---------- 上下限提醒判定 ---------- */
@@ -303,18 +418,20 @@ var TapePrice = (function () {
 
   return {
     FIRSTO_API: FIRSTO_API,
-    UP_CONTRACT: UP_CONTRACT,
     ENDPOINTS: ENDPOINTS,
     LINKS: LINKS,
     META: META,
     KEYS: KEYS,
+    FETCH_KEYS: FETCH_KEYS,
     POLL_OPTIONS: POLL_OPTIONS,
     COOLDOWN_OPTIONS: COOLDOWN_OPTIONS,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     normalizeSettings: normalizeSettings,
     parseBem: parseBem,
     parseMiner: parseMiner,
-    parseUp: parseUp,
+    extractUp: extractUp,
+    mergeUp: mergeUp,
+    withUp: withUp,
     fetchSnapshot: fetchSnapshot,
     format: format,
     formatChange: formatChange,

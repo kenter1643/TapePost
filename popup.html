@@ -144,8 +144,8 @@
       <button id="priceRefresh" type="button" title="立即刷新行情">↻</button>
     </div>
     <div class="price-grid">
-      <button class="price-card" type="button" data-price-key="up" title="点击进入 Firsto 交易所">
-        <span class="pc-label">TapeUP · USD</span>
+      <button class="price-card" type="button" data-price-key="up" title="tapeup.io 内盘价（需打开交易页自动采集）；点击进入 TAPELIQUID UP/USDT 交易页">
+        <span class="pc-label">TapeUP·内盘</span>
         <span class="pc-value" id="priceValueUp">—</span>
         <span class="pc-change" id="priceChangeUp">—</span>
       </button>
@@ -161,7 +161,7 @@
       </button>
     </div>
     <div class="price-foot">
-      <span>点卡片进 Firsto 交易所 ↗</span>
+      <span>点卡片进对应交易所 ↗</span>
       <button type="button" class="resetbtn" data-info="price">行情说明</button>
     </div>
   </section>
@@ -213,7 +213,7 @@
     </div>
     <div id="priceStatus" class="tiny"></div>
     <p class="tiny">留空＝不监控该方向；只在「从区间内跨到区间外」时提醒一次，不会一直弹。改完阈值记得点保存。
-      数据来自 Firsto 官方 analytics（BEM / 矿机日产能价）与 DexScreener（TapeUP $UP），公开只读接口、免登录免 Key、不上传任何本机数据。行情仅供参考，不构成投资建议。</p>
+      BEM / 矿机日产能价来自 Firsto 官方 analytics（公开只读）；TapeUP $UP 内盘价来自 tapeup.io 交易页（TAPELIQUID UP/USDT，需打开该页后由扩展自动采集，关闭后沿用缓存）。均免登录免 Key、不上传任何本机数据。行情仅供参考，不构成投资建议。</p>
   </details>
 
   <div class="me">
@@ -355,7 +355,7 @@
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
-      <b>当前 v1.4.14</b>：修好 AI 评论「签名生成：Cannot read properties of undefined (reading 'childNodes')」——按 X 首页真实帧结构整棵克隆、帧留到异步签名完成、页面就绪即预热签名器，签名失败时补上 XVM 通道兜底。1.4.13 的行情卡片与价格提醒保持不变；把鼠标悬在 T 按钮上看到 v1.4.14 即确认重载生效，重载后刷新一次 X 页面。
+      <b>当前 v1.4.16</b>：TapeUP $UP 价格改为读取 tapeup.io 交易页内盘价（tapeup.io 有 Cloudflare 防护，后台直接抓会被拦，改由扩展在你浏览器里打开交易页时自动读取并缓存），不再用 DexScreener 外部盘价；BEM 与矿机日产价仍来自 Firsto 官方 analytics。1.4.15 的 AI 评论修复、1.4.14 的签名修复、1.4.13 的行情卡片与价格提醒保持不变；把鼠标悬在 T 按钮上看到 v1.4.16 即确认重载生效，重载后刷新一次 X 页面。
       <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 

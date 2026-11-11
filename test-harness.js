@@ -1298,7 +1298,7 @@ function makeNativeCtx(opts) {
     navigator: { language: 'zh-CN' },
     crypto: { randomUUID: () => '11111111-2222-4333-8444-555555555555' },
     AbortController: function () { this.abort = () => {}; this.signal = {}; },
-    TextDecoder,
+    TextDecoder, TextEncoder,
     DOMParser: function () {},
     setTimeout, clearTimeout,
     console: { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
@@ -1310,6 +1310,8 @@ function makeNativeCtx(opts) {
   // 1.4.14：允许注入一套 mini DOM，用来真跑帧克隆 / 帧生命周期
   if (opts.dom) g.document = opts.dom;
   if (opts.homeDoc) g.__homeDoc = opts.homeDoc;
+  // 1.4.15：流式事故回放需要把预置帧文本注入沙箱全局
+  if (opts.extraGlobals) Object.assign(g, opts.extraGlobals);
   const ctx = vm.createContext(g);
   vm.runInContext(read('grok-native.js'), ctx, { filename: 'grok-native.js' });
   return ctx;
@@ -2480,16 +2482,11 @@ async function runPrice1413Checks() {
       { all: { dailyCapacityPriceWei: null }, tapeout: { dailyCapacityPriceWei: '8350000000000000000' } }
     ]
   };
-  const upFixture = {
-    pairs: [
-      { baseToken: { symbol: 'UP' }, priceUsd: '0.1000', priceChange: { h24: 9 }, liquidity: { usd: 100 } },
-      { baseToken: { symbol: 'UP' }, priceUsd: '0.2955', priceChange: { h24: -2.95 }, liquidity: { usd: 213821 } },
-      { baseToken: { symbol: 'BEM' }, priceUsd: '99', priceChange: { h24: 1 }, liquidity: { usd: 999999 } }
-    ]
-  };
+  // 1.4.16：TapeUP $UP 内盘价由内容脚本从 tapeup.io 交易页读取（extractUp 接受 HTML 字符串或 document）
+  const upHtml = '<div class="trade"><span>UP/USDT</span> 最新价 0.2955 <span class="chg">+2.95%</span> 24h 成交额 1,234,567</div>';
   const bem = T.parseBem(bemFixture);
   const miner = T.parseMiner(minerFixture);
-  const up = T.parseUp(upFixture);
+  const upEx = T.extractUp(upHtml);
 
   add('1.4.13 BEM 8 位定点价换算正确（$12.53708639）',
     bem && Math.abs(bem.value - 12.53708639) < 1e-8 && bem.key === 'bem');
@@ -2497,11 +2494,12 @@ async function runPrice1413Checks() {
     bem && Math.abs(bem.changePct - (12.53708639 - 12) / 12 * 100) < 1e-6);
   add('1.4.13 矿机日产价按 wei/1e18 换算，且 all 为空时回退 tapeout',
     miner && Math.abs(miner.value - 8.35) < 1e-9 && Math.abs(miner.changePct + 7.2222222) < 1e-4);
-  add('1.4.13 TapeUP 只认 UP 主池且取流动性最深报价',
-    up && up.value === 0.2955 && up.changePct === -2.95);
-  add('1.4.13 三个解析器遇到空/坏数据都返回 null 而不抛错',
+  add('1.4.16 TapeUP 内盘价从交易页文本抓 UP/USDT 最新价与涨跌',
+    upEx && Math.abs(upEx.value - 0.2955) < 1e-9 && Math.abs(upEx.changePct - 2.95) < 1e-6);
+  add('1.4.16 解析器遇空/坏数据不抛错（extractUp 返回 null 价而非抛异常）',
     T.parseBem({}) === null && T.parseMiner({ series: [] }) === null &&
-    T.parseUp({ pairs: [] }) === null && T.parseUp({}) === null);
+    T.extractUp('').value === null && T.extractUp(null).value === null &&
+    T.extractUp('<html><body>no price here</body></html>').value === null);
   add('1.4.13 单位文案与官网一致（BNB，非臆造的 BNB/(BEM·日)）',
     T.META.miner.unit === 'BNB' && !priceJs.includes('BNB/(BEM'));
   add('1.4.13 格式化：前缀 / 小数位 / 涨跌正负号 / 空值',
@@ -2509,8 +2507,8 @@ async function runPrice1413Checks() {
     T.format('bem', 12.537) === '$12.54' && T.format('bem', null) === '—' &&
     T.formatChange(1.2) === '+1.20%' && T.formatChange(-2.95) === '-2.95%' &&
     T.isUp(1) === true && T.isDown(-1) === true && T.isUp(0) === false);
-  add('1.4.13 三个交易所跳转地址都是 Firsto 官方真实路由',
-    T.linkFor('up') === 'https://firsto.ai/data' &&
+  add('1.4.16 UP 卡片/提醒跳转 tapeup.io 交易页，矿机/BEM 仍跳 Firsto',
+    T.linkFor('up') === 'https://tapeup.io/zh/trade/token?id=1' &&
     T.linkFor('miner') === 'https://firsto.ai/data/circuits' &&
     T.linkFor('bem') === 'https://firsto.ai/data/bem' &&
     firstoBundleIncludes('/data/circuits'));
@@ -2519,10 +2517,10 @@ async function runPrice1413Checks() {
     T.safeLink('javascript:alert(1)') === 'https://firsto.ai/' &&
     T.safeLink('https://api-tapeout.firsto.ai/v1/analytics/bem?range=24h')
       .indexOf('https://api-tapeout.firsto.ai/') === 0);
-  add('1.4.13 三个数据源均为公开只读域名，无需 Key',
+  add('1.4.16 BEM/矿机日产价来自 Firsto 公开只读接口；UP 内盘价来自 tapeup.io（内容脚本采集，无后台接口）',
     T.ENDPOINTS.bem.indexOf('https://api-tapeout.firsto.ai/v1/analytics/bem') === 0 &&
     T.ENDPOINTS.miner.indexOf('https://api-tapeout.firsto.ai/v1/analytics/circuits') === 0 &&
-    T.ENDPOINTS.up.indexOf('https://api.dexscreener.com/latest/dex/tokens/') === 0);
+    T.LINKS.up.indexOf('https://tapeup.io/') === 0 && T.FETCH_KEYS.indexOf('up') < 0);
 
   // ---- 设置归一化 ----
   const def = T.normalizeSettings(null);
@@ -2580,7 +2578,6 @@ async function runPrice1413Checks() {
   const fixtures = {};
   fixtures[T.ENDPOINTS.bem] = bemFixture;
   fixtures[T.ENDPOINTS.miner] = minerFixture;
-  fixtures[T.ENDPOINTS.up] = upFixture;
   const mkFetch = (state) => (url) => {
     state.calls.push(url);
     const key = Object.keys(fixtures).find((k) => url.indexOf(k) === 0);
@@ -2590,15 +2587,17 @@ async function runPrice1413Checks() {
   };
   const fs1 = { calls: [], fail: [] };
   const allSnap = await T.fetchSnapshot(mkFetch(fs1), null);
-  add('1.4.13 一轮抓三个接口，互不牵连', fs1.calls.length === 3 &&
-    allSnap.items.bem.value > 0 && allSnap.items.miner.value > 0 && allSnap.items.up.value > 0);
+  add('1.4.16 后台只抓 BEM + 矿机日产价两个接口，UP 经 mergeUp 并入（无缓存时为 null/stale）',
+    fs1.calls.length === 2 &&
+    allSnap.items.bem.value > 0 && allSnap.items.miner.value > 0 &&
+    allSnap.items.up.value === null && allSnap.items.up.stale === true);
 
   const fs2 = { calls: [], fail: [T.ENDPOINTS.miner] };
   const partial = await T.fetchSnapshot(mkFetch(fs2), null);
-  add('1.4.13 单个接口挂了只影响那一项，其它两项照常显示',
-    partial.items.bem.value > 0 && partial.items.up.value > 0 &&
+  add('1.4.16 单个接口挂了只影响那一项，其余照常（UP 仍走缓存逻辑）',
+    partial.items.bem.value > 0 && partial.items.up.value === null &&
     partial.items.miner.value === null && partial.items.miner.stale === true &&
-    partial.errors.length === 1);
+    partial.errors.length >= 1);
 
   const fs3 = { calls: [], fail: [T.ENDPOINTS.miner] };
   const withCache = await T.fetchSnapshot(mkFetch(fs3), allSnap);
@@ -2611,7 +2610,27 @@ async function runPrice1413Checks() {
 
   const noFetch = await T.fetchSnapshot(null, null);
   add('1.4.13 没有 fetch 的环境优雅降级，不抛异常',
-    noFetch.stale === true && noFetch.errors.length === 1);
+    noFetch.stale === true && noFetch.errors.length >= 1);
+
+  // ---- 1.4.16：TapeUP 内盘价缓存并入 / withUp ----
+  const upFresh = { value: 0.2955, changePct: 2.95, asOf: '2026-11-11T00:00:00Z', at: now, debug: null };
+  const mergedFresh = T.mergeUp(null, upFresh, now);
+  add('1.4.16 内盘价缓存新鲜时并入为 up 项且不打 stale',
+    mergedFresh.item.value === 0.2955 && mergedFresh.item.stale === false && mergedFresh.error === null);
+  const upStale = { value: 0.2, changePct: -1, asOf: null, at: now - 40 * 60000, debug: null };
+  const mergedStale = T.mergeUp(null, upStale, now);
+  add('1.4.16 内盘价超过 30 分钟未刷新仍给值但打 stale，不拿旧值误报',
+    mergedStale.item.value === 0.2 && mergedStale.item.stale === true && !!mergedStale.error);
+  const emptyUp = T.mergeUp(null, null, now);
+  add('1.4.16 从未采集到内盘价时 up 为 null/stale 且给出引导文案',
+    emptyUp.item.value === null && emptyUp.item.stale === true && /tapeup\.io/.test(emptyUp.error || ''));
+  const baseSnap = { items: { up: { value: null, stale: true }, miner: { value: 8.35, stale: false }, bem: { value: 12.5, stale: false } } };
+  const withUpFresh = T.withUp(baseSnap, upFresh, now);
+  add('1.4.16 withUp 把内盘价缓存直接套进快照 up 项',
+    withUpFresh.items.up.value === 0.2955 && withUpFresh.items.up.stale === false);
+  const snapNoCache = T.withUp(baseSnap, null, now);
+  add('1.4.16 withUp 无缓存时不覆盖、保留原 stale 态',
+    snapNoCache.items.up.value === null && snapNoCache.items.up.stale === true);
 
   // ---- 后台源码段：真实消息链路 ----
   const marker = '/* =====================================================================\n * 1.4.13';
@@ -2678,17 +2697,26 @@ async function runPrice1413Checks() {
   const tick = () => new Promise((r) => setTimeout(r, 20));
 
   const rGet = await bgCall({ type: 'PRICE_GET' });
-  add('1.4.13 后台 PRICE_GET 返回三项行情与默认设置',
+  add('1.4.16 后台 PRICE_GET 返回 BEM/矿机日产价与默认设置（UP 无缓存时为 null）',
     !bgErrors.length && rGet && rGet.ok === true && rGet.snapshot &&
     rGet.snapshot.items.bem.value > 0 && rGet.snapshot.items.miner.value > 0 &&
-    rGet.snapshot.items.up.value > 0 && rGet.settings.pollMinutes === 5);
+    rGet.snapshot.items.up.value === null && rGet.settings.pollMinutes === 5);
   const callsAfterGet = bgFetchState.calls.length;
   await bgCall({ type: 'PRICE_GET' });
   add('1.4.13 2 分钟内缓存直接给面板，不重复打接口',
     bgFetchState.calls.length === callsAfterGet);
   const rRefresh = await bgCall({ type: 'PRICE_REFRESH' });
-  add('1.4.13 ↻ 强制刷新会重新抓三个接口',
-    rRefresh && rRefresh.ok === true && bgFetchState.calls.length === callsAfterGet + 3);
+  add('1.4.16 ↻ 强制刷新会重新抓 BEM + 矿机日产价两个接口（UP 不走后台 fetch）',
+    rRefresh && rRefresh.ok === true && bgFetchState.calls.length === callsAfterGet + 2);
+  // 模拟内容脚本回传内盘价缓存，验证 PRICE_GET 把它并回 up 项
+  localStore.tapeupPriceCache = { value: 0.2955, changePct: 2.95, asOf: null, at: now };
+  const rGet2 = await bgCall({ type: 'PRICE_GET' });
+  add('1.4.16 内容脚本回传内盘价后，PRICE_GET 把缓存并回 up 项',
+    rGet2 && rGet2.snapshot.items.up.value === 0.2955 && rGet2.snapshot.items.up.stale === false);
+  // 模拟内容脚本发来的内盘价回传消息
+  await bgCall({ type: 'TAPUP_PRICE', payload: { value: 0.31, changePct: -1.2, asOf: null, at: now, debug: null } });
+  add('1.4.16 收到 TAPUP_PRICE 后写入本地内盘价缓存',
+    localStore.tapeupPriceCache && localStore.tapeupPriceCache.value === 0.31);
 
   // 配置一个必然越界的阈值，验证「通知 + 右下角浮层」双层提醒
   syncStore.priceSettings = T.normalizeSettings({
@@ -2814,12 +2842,13 @@ async function runPrice1413Checks() {
   const perms = (manifest1413.permissions || []).slice().sort();
   const hosts = manifest1413.host_permissions || [];
   add('1.4.13 manifest 升到 1.4.13 且只新增 alarms / notifications',
-    manifest1413.version === '1.4.14' &&
+    manifest1413.version === '1.4.16' &&
     perms.join(',') === ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads',
       'notifications', 'offscreen', 'storage'].join(','));
-  add('1.4.13 只新增两个只读行情域名，没有申请通配域名',
+  add('1.4.16 仅新增 Firsto 只读行情域名 + tapeup.io 采集权限，没有通配域名',
     hosts.indexOf('https://api-tapeout.firsto.ai/*') >= 0 &&
-    hosts.indexOf('https://api.dexscreener.com/*') >= 0 &&
+    hosts.indexOf('https://tapeup.io/*') >= 0 &&
+    hosts.indexOf('https://*.tapeup.io/*') >= 0 &&
     !hosts.includes('https://*/*'));
   add('1.4.13 price-alert.js 注入 ISOLATED world，不污染 MAIN world',
     (manifest1413.content_scripts[0].js || []).indexOf('price-alert.js') >= 0 &&
@@ -2847,9 +2876,11 @@ async function runPrice1413Checks() {
     bgPriceSrc.includes('lastError'));
   add('1.4.13 提醒链接做白名单，通知点击不会打开任意站点',
     bgPriceSrc.includes('TapePrice.safeLink(a.url)') && bgPriceSrc.includes('TapePrice.safeLink(url)'));
-  add('1.4.14 版本说明 / README / 按钮 title 均同步到 1.4.14',
-    read('content.js').includes('v1.4.14') && popupHtml1413.includes('当前 v1.4.14') &&
-    popupJs1413.includes('v1.4.14 修好 AI 评论签名') && readme1413.includes('### 1.4.14：'));
+  add('1.4.16 版本说明 / README / 按钮 title 均同步到 1.4.16，且 1.4.15 历史说明保留',
+    read('content.js').includes('v1.4.16') && popupHtml1413.includes('当前 v1.4.16') &&
+    readme1413.includes('### 1.4.16：') && read('content.js').includes('TapePost v1.4.16') &&
+    popupJs1413.includes('v1.4.16 ') && popupJs1413.includes('v1.4.15 修好 AI 评论') &&
+    readme1413.includes('### 1.4.15：'));
 
   return checks;
 }
@@ -3088,6 +3119,138 @@ async function runSignature1414Checks() {
   return checks;
 }
 
+/* ---------- 1.4.15：X 新版思考布局（reasoningUILayout=UNIFIED）事故回放 ----------
+ * 用户真机报错：「原文：Thinking about your request」，响应前三帧如下。
+ * 旧版把所有带 message 的 assistant 帧都当答案，且 1.2 秒空闲就 cancel 流，
+ * 于是思考占位被当成回答、真正的 final 帧永远等不到。 */
+async function runThinking1415Checks() {
+  const checks = [];
+  const A = (name, ok) => checks.push({ name, ok: !!ok });
+  const nativeJs = read('grok-native.js');
+  const bgJs = read('background.js');
+  const contentSource = read('content.js');
+
+  // 用户贴的响应片段前三帧（原文照抄）
+  const REAL_HEAD = [
+    JSON.stringify({ conversationId: '2120315378964052731',
+      userChatItemId: '2120315387959214080', agentChatItemId: '2120315387959214081' }),
+    JSON.stringify({ result: { sender: 'ASSISTANT',
+      uiLayout: { reasoningUILayout: 'UNIFIED', willThinkLong: false } } }),
+    JSON.stringify({ result: { sender: 'ASSISTANT', message: 'Thinking about your request' } })
+  ].join('\n');
+  const FINAL_MESSAGE = '```\n认同并补充一点观察\n```\n```\n这个角度挺有意思的\n```\n```\n想问下后续怎么推进\n```';
+  const FINAL_FRAME = JSON.stringify({ result: {
+    sender: 'ASSISTANT', messageTag: 'final', message: FINAL_MESSAGE
+  } });
+
+  // ---- 静态接线 ----
+  A('1.4.15 streamFrames 识别思考标签与 reasoningUILayout',
+    nativeJs.includes('var THINKING_TAGS') && nativeJs.includes('function isThinkingFrame(') &&
+    nativeJs.includes('ui.reasoningUILayout') && nativeJs.includes('thinking about your request'));
+  A('1.4.15 思考帧单独归类，绝不进 assistants',
+    /if \(isThinkingFrame\(r, tag, msg\)\) \{ thinking\.push\(msg\); return; \}/.test(nativeJs) &&
+    nativeJs.includes('return { finals: finals, assistants: assistants, thinking: thinking };'));
+  A('1.4.15 只有见到 final 帧才允许空闲提前收尾',
+    nativeJs.includes('sawFinal && currentText() && now - lastGrow >= idleMs') &&
+    !/if \(finalText && now - lastGrow >= idleMs\)/.test(nativeJs));
+  A('1.4.15 read() 提到循环外复用，思考阶段不会并发读流',
+    nativeJs.includes('var nextRead = reader.read();') &&
+    nativeJs.includes('nextRead = reader.read();'));
+  A('1.4.15 所有帧统一 joinFrames，跨 chunk 累积帧不重复拼接',
+    nativeJs.includes('function absorb(text)') && nativeJs.includes('function currentText()') &&
+    nativeJs.includes('joinFrames(finalChunks)'));
+  A('1.4.15 响应片段从 300 字放宽到 700 字',
+    nativeJs.includes("replace(/\\s+/g, ' ').slice(0, 700)") &&
+    !nativeJs.includes(".slice(0, 300)"));
+  A('1.4.15 解析失败文案按帧构成分类，不再甩锅模型格式',
+    nativeJs.includes('Grok 没返回可用评论：') &&
+    nativeJs.includes('只收到思考/状态帧，没等到最终回答帧') &&
+    !nativeJs.includes('模型可能没按格式输出'));
+  A('1.4.15 status 暴露最近一次流的帧诊断',
+    nativeJs.includes('lastStream: lastStreamDiag') &&
+    nativeJs.includes('lastStreamDiag: function ()'));
+  A('1.4.15 后台按解析类 / 签名类分流建议',
+    bgJs.includes('var parseIssue =') && bgJs.includes('var parseIssueForced =') &&
+    bgJs.includes('这是回答解析阶段的问题'));
+  A('1.4.15 候选面板详情按错误类型给建议',
+    contentSource.includes('const parseIssue = /思考|没解析') &&
+    contentSource.includes('再点一次「AI 评论」'));
+
+  // ---- 运行时：纯函数 ----
+  try {
+    const ctx = makeNativeCtx();
+    const J = (fn, val) => vm.runInContext(
+      'window.__tapeGrokNative.' + fn + '(' + JSON.stringify(val) + ')', ctx, { timeout: 3000 });
+    const f = J('streamFrames', REAL_HEAD);
+    A('1.4.15 真机前三帧：final/回答帧为 0，思考帧 >= 2',
+      f.finals.length === 0 && f.assistants.length === 0 && f.thinking.length >= 2);
+    A('1.4.15 只含思考帧时 extractFinalText 返回空，不再吐占位文本',
+      J('extractFinalText', REAL_HEAD) === '');
+    A('1.4.15 思考占位不会被当成候选',
+      (J('extractComments', J('extractFinalText', REAL_HEAD)) || []).length === 0);
+    A('1.4.15 思考帧 + final 帧能解析出 3 条候选',
+      (J('extractComments', REAL_HEAD + '\n' + FINAL_FRAME) || []).length === 3);
+    let body = {};
+    try { body = JSON.parse(J('buildBody', '测试提示词')); } catch (e) {}
+    A('1.4.15 buildBody 与 XVM 一致：enableSideBySide=true',
+      body.enableSideBySide === true && body.modelMode === 'MODEL_MODE_FAST');
+
+    // 旧版（1.4.12~1.4.14）等价逻辑回放，证明用户看到的现象来自这里
+    const oldExtract = (raw) => String(raw || '').split('\n').map((l) => {
+      try {
+        const p = JSON.parse(l);
+        const r = p.result || p;
+        return (r.sender === 'ASSISTANT' && typeof r.message === 'string') ? r.message : '';
+      } catch (e) { return ''; }
+    }).filter(Boolean).join('');
+    A('1.4.15 事故回放：旧版解析逻辑确实把思考占位当成回答',
+      oldExtract(REAL_HEAD) === 'Thinking about your request');
+  } catch (e) {
+    A('1.4.15 运行时纯函数沙箱可加载', false);
+    note('ERROR', '1.4.15 纯函数检查异常: ' + (e && e.message));
+  }
+
+  // ---- 运行时：流式事故回放（思考帧后停顿 1.7 秒才出 final） ----
+  try {
+    const ctx = makeNativeCtx({ extraGlobals: {
+      __head: REAL_HEAD + '\n', __final: FINAL_FRAME + '\n'
+    } });
+    const expr = `(async () => {
+      const enc = new TextEncoder();
+      let step = 0, inFlight = 0, concurrent = 0, reads = 0;
+      const finish = (p) => p.finally(() => { inFlight--; });
+      const reader = {
+        read() {
+          reads++;
+          if (inFlight > 0) concurrent++;
+          inFlight++;
+          if (step++ === 0) return finish(Promise.resolve({ done: false, value: enc.encode(__head) }));
+          if (step === 2) return finish(new Promise((res) =>
+            setTimeout(() => res({ done: false, value: enc.encode(__final) }), 1700)));
+          return finish(Promise.resolve({ done: true }));
+        },
+        cancel() {}
+      };
+      const text = await window.__tapeGrokNative.readStream(
+        { body: { getReader: () => reader } }, { fast: true });
+      return { text, diag: window.__tapeGrokNative.lastStreamDiag(), reads, concurrent };
+    })()`;
+    const out = await vm.runInContext(expr, ctx, { timeout: 10000 });
+    const comments = vm.runInContext(
+      'window.__tapeGrokNative.extractComments(' + JSON.stringify(out.text) + ')', ctx, { timeout: 3000 });
+    A('1.4.15 思考帧后停顿 1.7 秒，仍能等到 final 帧并拿到 3 条候选',
+      comments.length === 3 && !/Thinking/.test(out.text));
+    A('1.4.15 流诊断记录思考帧与 final 帧',
+      out.diag.finalFrames >= 1 && out.diag.thinkingFrames >= 2 && out.diag.sawFinal === true);
+    A('1.4.15 思考阶段没有并发 read()',
+      out.concurrent === 0 && out.reads === 3);
+  } catch (e) {
+    A('1.4.15 流式事故回放可完成', false);
+    note('ERROR', '1.4.15 流式回放异常: ' + (e && e.message));
+  }
+  return checks;
+}
+
 (async () => {
   console.log('=== 微博一键转发插件 · 端到端回归测试 ===\n');
   const cases = [];
@@ -3317,7 +3480,7 @@ async function runSignature1414Checks() {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.14' },
+      ok: manifestJson.version === '1.4.16' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -3345,7 +3508,7 @@ async function runSignature1414Checks() {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.14' },
+      ok: manifestJson.version === '1.4.16' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -3360,7 +3523,7 @@ async function runSignature1414Checks() {
     { name: '1.4.4 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.14') && popupHtml.includes('当前 v1.4.14') }
+      ok: contentJs.includes('v1.4.16') && popupHtml.includes('当前 v1.4.16') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -3648,8 +3811,8 @@ async function runSignature1414Checks() {
 
   const promo148Checks = [
     { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
-      ok: manifestJson.version === '1.4.14' && contentJs.includes('v1.4.14') &&
-          popupHtml.includes('当前 v1.4.14') && contentJs.includes('TapePost v1.4.14') },
+      ok: manifestJson.version === '1.4.16' && contentJs.includes('v1.4.16') &&
+          popupHtml.includes('当前 v1.4.16') && contentJs.includes('TapePost v1.4.16') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -3768,10 +3931,10 @@ async function runSignature1414Checks() {
       ok: applyQuickBody.includes('const prefixOk =') &&
           applyQuickBody.includes('normReplyText(after).indexOf(normReplyText(body)) === 0') },
     { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
-      ok: manifestJson.version === '1.4.14' &&
-          contentJs.includes('TapePost v1.4.14') &&
-          contentJs.includes('v1.4.14') &&
-          popupHtml.includes('当前 v1.4.14') &&
+      ok: manifestJson.version === '1.4.16' &&
+          contentJs.includes('TapePost v1.4.16') &&
+          contentJs.includes('v1.4.16') &&
+          popupHtml.includes('当前 v1.4.16') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') },
     { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
       ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
@@ -3816,8 +3979,9 @@ async function runSignature1414Checks() {
       ok: contentJs.includes('function writeIntoReply(') &&
           contentJs.includes("existing + '\\n\\n' + text") &&
           !contentJs.includes("nativeReplyEdit(input, 'insertText', payload)") },
-    { name: '1.4.11 快速模式关掉并排生成（1.4.12 已移除两个猜测字段）',
-      ok: nativeJs.includes('enableSideBySide: fast !== false ? false : true') &&
+    { name: '1.4.15 请求体逐字段对齐 XVM：撤回 1.4.11 无据的 enableSideBySide 优化',
+      ok: nativeJs.includes('enableSideBySide: true') &&
+          !nativeJs.includes('enableSideBySide: fast !== false ? false : true') &&
           !nativeJs.includes('disableReasoning:') && !nativeJs.includes('disableDeepSearch:') },
     { name: '1.4.12 XVM 通道改为异常兜底，正常路径不再抢占',
       ok: nativeJs.includes('async function tryXvm(prompt)') &&
@@ -3845,9 +4009,9 @@ async function runSignature1414Checks() {
     { name: '1.4.11 运行时：X 拒绝写入时自动恢复原文',
       ok: !!promo148 && promo148.refusedRestored === true },
     { name: '1.4.11 版本已同步到 manifest / 按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.14' &&
-          contentJs.includes('v1.4.14') && contentJs.includes('TapePost v1.4.14') &&
-          popupHtml.includes('当前 v1.4.14') &&
+      ok: manifestJson.version === '1.4.16' &&
+          contentJs.includes('v1.4.16') && contentJs.includes('TapePost v1.4.16') &&
+          popupHtml.includes('当前 v1.4.16') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') &&
           read('README.md').includes('### 1.4.11：写回链路重写') },
     { name: '1.4.11 权限集合与当前版本一致',
@@ -3884,16 +4048,19 @@ async function runSignature1414Checks() {
     { name: '1.4.12 后台超时放宽到 40 秒配合重试',
       ok: backgroundJs.includes('fast ? 40000 : 90000') },
     { name: '1.4.12 版本已同步到 manifest / 两个按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.14' &&
-          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.14') &&
-          contentJs.includes('TapePost v1.4.14') &&
-          popupHtml.includes('当前 v1.4.14') &&
+      ok: manifestJson.version === '1.4.16' &&
+          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.16') &&
+          contentJs.includes('TapePost v1.4.16') &&
+          popupHtml.includes('当前 v1.4.16') &&
           popupJs.includes('v1.4.12 修好 AI 评论 401') &&
           read('README.md').includes('### 1.4.12：修复 AI 评论 401') },
     { name: '1.4.12 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') ===
           ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
   ];
+
+  /* ---------- 1.4.15：X 新版思考布局（reasoningUILayout=UNIFIED）事故回放 ---------- */
+  const thinking1415Checks = await runThinking1415Checks();
 
   // ---- v1.1.0：Grok 共享逻辑 / 官方白名单防伪 / X 评论按钮 ----
   const aiChecks = runTapeAIChecks()
@@ -3918,7 +4085,8 @@ async function runSignature1414Checks() {
     .concat(promo1411Checks)
     .concat(promo1412Checks)
     .concat(await runPrice1413Checks())
-    .concat(await runSignature1414Checks());
+    .concat(await runSignature1414Checks())
+    .concat(thinking1415Checks);
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);

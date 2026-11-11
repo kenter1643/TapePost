@@ -1030,7 +1030,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.14';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.16';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1621,7 +1621,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.4.14 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost v1.4.16 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
@@ -2037,8 +2037,13 @@ async function onAiComment(card, btn) {
     }
     if (!resp || !resp.ok) {
       const rawErr = String((resp && resp.error) || '后台没有响应');
+      // 1.4.15：回答解析类失败刷新页面没用，别一律让用户去刷新/查签名
+      const parseIssue = /思考|没解析|没返回可用评论|被截断|最终回答帧|回答帧/.test(rawErr);
+      const tip = parseIssue
+        ? '建议：再点一次「AI 评论」；仍失败可到 Grok 设置关掉「AI 快速模式」重试，或用「复制提示词（手动）」兜底。'
+        : '建议：刷新 X 页面 → 设置里「测试当前模式」看诊断；也可用「复制提示词（手动）」兜底。';
       showNotice('生成失败', briefError(rawErr) + '，点「详情」看原因。',
-        rawErr + '\n\n建议：刷新 X 页面 → 设置里「测试当前模式」看诊断；也可用「复制提示词（手动）」兜底。');
+        rawErr + '\n\n' + tip);
       return;
     }
     showCommentPicker(resp.comments || [], statusId, card, btn, text, resp.mode,

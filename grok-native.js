@@ -55,6 +55,9 @@
   var lastSentTxId = '';
   // 1.4.12：保留最近一次响应的原始流片段，解析失败时附在错误里便于定位
   var lastRawStream = '';
+  // 1.4.15：记录最近一次流的帧构成与结束原因，解析失败时直接给可判断的诊断
+  var lastStreamDiag = { finalFrames: 0, answerFrames: 0, thinkingFrames: 0,
+    bytes: 0, stoppedBy: '', sawFinal: false };
   // XVM 的 renderPrompt 遇到只含占位符的模板时，会原样返回 tweetText。
   // 我们的 prompt 已经拼好（含推文正文与格式要求），因此借用 XVM 时透传即可。
   var XVM_PASSTHROUGH_TEMPLATE = '[推文内容]';
@@ -405,11 +408,15 @@
     }
   }
 
-  /* 1.4.11/1.4.12 快速模式：
-   * - enableSideBySide=true 会让 X 并排跑两份回答，体感直接翻倍，关掉；
-   * - 1.4.11 曾加过 disableReasoning / disableDeepSearch 两个「猜测」字段，
-   *   服务端并不认识，反而可能改变响应帧结构（真机出现 200 但解析为空），
-   *   1.4.12 已移除。「不思考」只通过提示词与流式提前收尾来实现。 */
+  /* 1.4.15：请求体逐字段对齐 X Viral Monitor v1.18.17 的
+   * lib/grok-reply.js（用户指定的参考实现，真机上从未出现过
+   * 「200 但只吐思考帧」）。逐字段比对后，我们与它唯一实质差异就是
+   * enableSideBySide：1.4.11 把它改成 false，注释里写「会并排跑两份回答、
+   * 体感翻倍」，这是没有源码依据的猜测；XVM 一直用 true 且稳定。
+   * 1.4.14 之后真机出现 uiLayout.reasoningUILayout=UNIFIED 的思考流，
+   * 说明这个「优化」并不安全，撤回。体感靠「见到 final 帧就收尾」控制，
+   * 不再靠改服务端 payload。1.4.12 移除的 disableReasoning /
+   * disableDeepSearch 两个猜测字段同样不再加回来。 */
   function buildBody(prompt, fast) {
     return JSON.stringify({
       responses: [{ message: String(prompt || ''), sender: 1, promptSource: '', fileAttachments: [] }],
@@ -422,7 +429,7 @@
       promptMetadata: { promptSource: 'NATURAL', action: 'INPUT' },
       imageGenerationCount: 0,
       requestFeatures: { eagerTweets: false, serverHistory: false },
-      enableSideBySide: fast !== false ? false : true,
+      enableSideBySide: true,
       toolOverrides: {},
       modelConfigOverride: {},
       isTemporaryChat: true
@@ -485,13 +492,37 @@
     return freshCapturedTx() || lastSentTxId;
   }
 
+  /* 1.4.15：X 新版会把「思考布局」元数据与思考占位文本也塞进 assistant 帧：
+   *   {"result":{"sender":"ASSISTANT","uiLayout":{"reasoningUILayout":"UNIFIED",
+   *    "willThinkLong":false}}}
+   *   {"result":{"sender":"ASSISTANT","message":"Thinking about your request"}}
+   * 1.4.12 的 streamFrames 把所有带 message 的 assistant 帧都当答案帧，
+   * extractFinalText 又没有 final 帧时回退它们，于是「Thinking about your
+   * request」被当成 Grok 的回答交出去。现在按 XVM 的严格口径：final 帧才是
+   * 答案，思考/状态帧单独归类，绝不进 assistants。 */
+  var THINKING_TAGS = [
+    'thinking', 'reasoning', 'thought', 'analysis', 'tool', 'status',
+    'placeholder', 'heartbeat', 'progress', 'meta'
+  ];
+  var THINKING_TEXT = /^(?:thinking about your request\b|thinking\b|let me think\b|正在思考|思考中|thought for\b|\.{3,})$/i;
+
+  function isThinkingFrame(r, tag, msg) {
+    if (tag === 'final') return false;
+    if (THINKING_TAGS.indexOf(tag) !== -1) return true;
+    // uiLayout 里的 reasoningUILayout / willThinkLong 是 X 思考布局的标记
+    var ui = r.uiLayout;
+    if (ui && typeof ui === 'object' &&
+        (ui.reasoningUILayout || ui.willThinkLong !== undefined)) return true;
+    return THINKING_TEXT.test(String(msg || '').trim());
+  }
+
   /* 1.4.12：X 站内 Grok 的流格式改过好几次，旧版只认裸 NDJSON 里
    * sender=ASSISTANT / messageTag=final 一种组合，真机出现过「HTTP 200 但
    * 一个字都解析不出来」。现在兼容 SSE data: 前缀、result 再嵌一层、
    * message/text/content 三种字段、final 块不带 sender、以及只有增量
    * assistant 帧没有 final 帧的情况。 */
   function streamFrames(rawText) {
-    var finals = [], assistants = [];
+    var finals = [], assistants = [], thinking = [];
     String(rawText || '').split(/\r?\n/).forEach(function (line) {
       var t = line.trim();
       if (!t) return;
@@ -512,16 +543,22 @@
         var msg = typeof r.message === 'string' ? r.message
           : typeof r.text === 'string' ? r.text
             : typeof r.content === 'string' ? r.content : '';
-        if (!msg) return;
         var tag = String(r.messageTag || '').toLowerCase();
         var sender = String(r.sender || '').toUpperCase();
         // 用户气泡偶尔也带 final 标签，绝不能当成回答
         if (sender === 'USER' || sender === '1') return;
+        // 1.4.15：没有正文的纯元数据帧（conversationId / uiLayout）只计思考，
+        // 避免 readStream 把它误当成「答案已到」而提前收尾。
+        if (!msg) {
+          if (isThinkingFrame(r, tag, msg) || r.uiLayout || r.conversationId) thinking.push(1);
+          return;
+        }
+        if (isThinkingFrame(r, tag, msg)) { thinking.push(msg); return; }
         if (tag === 'final') finals.push(msg);
         else if (sender === 'ASSISTANT' || sender === 'GROK' || sender === '2') assistants.push(msg);
       });
     });
-    return { finals: finals, assistants: assistants };
+    return { finals: finals, assistants: assistants, thinking: thinking };
   }
 
   /* 增量帧要拼接；累积帧（后一帧包含前一帧全文）只取最后一帧，避免重复。 */
@@ -539,27 +576,40 @@
     return f.finals.length ? joinFrames(f.finals) : joinFrames(f.assistants);
   }
 
-  /* 1.4.11：Grok 出完答案后还会继续推思考尾帧 / 元数据帧。旧版死等流结束，
-   * 常常白等十几秒。这里给 read() 加心跳：
-   *   - 已拿到 final 文本且连续 idleMs 没有新内容 → 主动 cancel 收尾；
-   *   - 超过 hardMs 一律收尾，用已收到的内容去解析，绝不空等到后台超时。 */
+  /* 1.4.11：Grok 出完答案后还会继续推思考尾帧 / 元数据帧，给 read() 加心跳。
+   * 1.4.15 真机事故：X 新版思考布局会先推 uiLayout / "Thinking about your
+   * request" 帧，旧版把它们当成「已有答案」，1.2 秒空闲就 cancel 掉整个流，
+   * 于是永远等不到后面的 final 帧，只剩占位文本被当成回答。
+   * 现在按 XVM 的口径：**只有见到 messageTag=final 的帧才允许空闲提前收尾**；
+   * 思考/元数据帧期间继续读，直到流结束或 hardMs。同时把所有帧收集起来
+   * 统一 joinFrames，跨 chunk 的累积帧也不会再重复拼接。 */
   async function readStream(res, opts) {
     var fast = !!(opts && opts.fast);
-    var idleMs = fast ? 1200 : 4000;
+    var idleMs = fast ? 1500 : 4000;
     var hardMs = fast ? 27000 : 85000;
     lastRawStream = '';
+    lastStreamDiag = { finalFrames: 0, answerFrames: 0, thinkingFrames: 0,
+      bytes: 0, stoppedBy: '', sawFinal: false };
     if (!res.body || !res.body.getReader) {
       var whole = String(await res.text() || '');
-      lastRawStream = whole.slice(0, 900);
+      lastRawStream = whole.slice(0, 1200);
+      var f0 = streamFrames(whole);
+      lastStreamDiag.finalFrames = f0.finals.length;
+      lastStreamDiag.answerFrames = f0.assistants.length;
+      lastStreamDiag.thinkingFrames = f0.thinking.length;
+      lastStreamDiag.bytes = whole.length;
+      lastStreamDiag.sawFinal = f0.finals.length > 0;
+      lastStreamDiag.stoppedBy = 'whole-response';
       return whole;
     }
     var reader = res.body.getReader();
     var decoder = new TextDecoder();
     var pending = '';
-    var finalText = '';
+    var finalChunks = [], answerChunks = [];
     var rawBuf = '';
     var started = Date.now();
     var lastGrow = started;
+    var sawFinal = false;
     var stopped = false;
     function stop() {
       if (stopped) return;
@@ -567,46 +617,75 @@
       try { reader.cancel(); } catch (e) {}
     }
     function keepRaw(s) {
-      if (rawBuf.length < 900) rawBuf += s.slice(0, 900 - rawBuf.length);
+      if (rawBuf.length < 1200) rawBuf += s.slice(0, 1200 - rawBuf.length);
+      lastStreamDiag.bytes += String(s || '').length;
     }
+    function absorb(text) {
+      var f = streamFrames(text);
+      f.finals.forEach(function (x) { finalChunks.push(x); });
+      f.assistants.forEach(function (x) { answerChunks.push(x); });
+      if (f.finals.length) {
+        sawFinal = true;
+        lastGrow = Date.now();
+      }
+      lastStreamDiag.finalFrames = finalChunks.length;
+      lastStreamDiag.answerFrames = answerChunks.length;
+      lastStreamDiag.thinkingFrames += f.thinking.length;
+      lastStreamDiag.sawFinal = sawFinal;
+    }
+    function currentText() {
+      return finalChunks.length ? joinFrames(finalChunks) : joinFrames(answerChunks);
+    }
+    // 1.4.15：read() 只能有一个在途。旧写法每次心跳 tick 都新建一次
+    // reader.read()，思考布局下等几秒就会并发读同一个流，真机会抛
+    // TypeError。现在把 nextRead 提到循环外复用，只有真正消费了一个
+    // chunk 才发起下一次读取。
+    var nextRead = reader.read();
     while (!stopped) {
       var part;
       try {
         part = await Promise.race([
-          reader.read(),
+          nextRead,
           new Promise(function (resolve) {
             setTimeout(function () { resolve({ __tick: true }); }, 400);
           })
         ]);
-      } catch (e) { stop(); break; }
+      } catch (e) { stop(); lastStreamDiag.stoppedBy = 'read-error'; break; }
       if (part.__tick) {
         var now = Date.now();
-        if (finalText && now - lastGrow >= idleMs) { stop(); break; }
-        if (now - started >= hardMs) { stop(); break; }
+        // 1.4.15：思考帧 / 无 final 的增量帧阶段绝不提前收尾
+        if (sawFinal && currentText() && now - lastGrow >= idleMs) {
+          stop(); lastStreamDiag.stoppedBy = 'final-idle'; break;
+        }
+        if (now - started >= hardMs) {
+          stop(); lastStreamDiag.stoppedBy = 'hard-timeout'; break;
+        }
         continue;
       }
-      if (part.done) break;
+      if (part.done) { lastStreamDiag.stoppedBy = 'stream-end'; break; }
       var decoded = decoder.decode(part.value, { stream: true });
       keepRaw(decoded);
       pending += decoded;
+      nextRead = reader.read();
       var nl = pending.lastIndexOf('\n');
       if (nl < 0) continue;
       var ready = pending.slice(0, nl);
       pending = pending.slice(nl + 1);
-      var chunk = extractFinalText(ready);
-      if (chunk) { finalText += chunk; lastGrow = Date.now(); }
+      absorb(ready);
     }
     keepRaw(pending);
-    if (pending.trim()) finalText += extractFinalText(pending);
+    if (pending.trim()) absorb(pending);
     lastRawStream = rawBuf;
     /* 整段就是模型直接吐的 JSON 数组 / 文本（不是 NDJSON 流）时，
-     * extractFinalText 会返回空；把原文交给 extractComments 去解析。 */
+     * streamFrames 拿不到帧；把原文交给 extractComments 去解析。 */
     var looksLikeStream = /"sender"\s*:|"messageTag"\s*:|"result"\s*:/.test(rawBuf);
-    return finalText || (looksLikeStream ? '' : rawBuf);
+    var text = currentText();
+    return text || (looksLikeStream ? '' : rawBuf);
   }
 
   function streamSnippet() {
-    var s = String(lastRawStream || '').replace(/\s+/g, ' ').slice(0, 300);
+    // 1.4.15：300 字只能看到前 3 帧（全是思考布局元数据），诊断不出问题
+    var s = String(lastRawStream || '').replace(/\s+/g, ' ').slice(0, 700);
     return s ? ' 响应片段：' + s : '';
   }
 
@@ -827,8 +906,18 @@
     if (!comments.length) {
       var xvm2 = await tryXvm(prompt);
       if (xvm2) return { comments: xvm2, raw: xvm2.join('\n'), via: 'xvm-grok' };
-      throw new Error('Grok 已返回结果，但没解析到可用评论（模型可能没按格式输出）。原文：' +
-        String(finalText || '').slice(0, 160) + streamSnippet());
+      /* 1.4.15：旧文案把锅甩给模型的输出格式，实际是我们 1.2 秒就把
+       * 思考阶段的流掐断了。现在按帧构成给出可判断的诊断。 */
+      var d = lastStreamDiag;
+      var reason = (d.thinkingFrames > 0 && !d.finalFrames)
+        ? 'X 这轮让 Grok 进入了思考布局，只收到思考/状态帧，没等到最终回答帧。已放宽等待；请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试。'
+        : (d.finalFrames > 0
+          ? '已收到最终回答帧，但没解析出 3 条候选（回答可能被截断或没按代码块格式输出）。请点「重新生成」，或关掉「AI 快速模式」重试。'
+          : '没收到可用的回答帧。请刷新 X 页面后重试，或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。');
+      throw new Error('Grok 没返回可用评论：' + reason +
+        ' 诊断：final帧=' + d.finalFrames + '，回答帧=' + d.answerFrames +
+        '，思考帧=' + d.thinkingFrames + '，结束原因=' + (d.stoppedBy || '未知') +
+        '。原文：' + String(finalText || '').slice(0, 160) + streamSnippet());
     }
     return { comments: comments, raw: String(finalText || '').slice(0, 1200), via: via };
   }
@@ -859,6 +948,8 @@
       hasWebpack: Array.isArray(window.webpackChunk_twitter_responsive_web),
       frameTemplate: !!frameProto,
       generatorCached: !!genPromise,
+      // 1.4.15：最近一次流的帧构成，解析失败时「测试当前模式」能直接看到
+      lastStream: lastStreamDiag,
       framesInDom: (function () {
         try { return document.querySelectorAll ? document.querySelectorAll(FRAME_SELECTOR).length : -1; }
         catch (e) { return -1; }
@@ -874,6 +965,11 @@
     buildHeaders: buildHeaders,
     extractFinalText: extractFinalText,
     extractComments: extractComments,
+    // 1.4.15：帧分类与流式读取暴露给回归测试（真机事故回放在 Node vm 里跑）
+    streamFrames: streamFrames,
+    joinFrames: joinFrames,
+    readStream: readStream,
+    lastStreamDiag: function () { return lastStreamDiag; },
     cleanLine: cleanLine,
     isNoise: isNoise,
     liveBearer: liveBearer,

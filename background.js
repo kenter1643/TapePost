@@ -672,9 +672,12 @@ async function handleGrokMessage(msg, sender) {
       } catch (e) {
         nativeFailure = String(e && e.message || e);
         if (forceNative) {
+          var parseIssueForced = /思考|没解析|没返回可用评论|被截断|最终回答帧|回答帧/.test(nativeFailure);
           throw new Error('站内直连 Grok 生成失败：' + nativeFailure +
-            '。请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
-            '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。');
+            (parseIssueForced
+              ? '。请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+              : '。请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
+                '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。'));
         }
         console.warn('[bg][grok] 站内直连失败，降级页面模式：' + nativeFailure);
       }
@@ -686,11 +689,15 @@ async function handleGrokMessage(msg, sender) {
     catch (e) {
       if (nativeFailure) {
         // 1.4.1：把直连的真实失败原因放在最前面，避免被页面模式的
-        // 「提示词写入校验失败」盖住。1.4.14：不再建议切回已弃用的页面模式，
-        // 改成针对签名失败的可操作指引（刷新 / 让 X 自己发一次请求 / 看诊断）。
-        throw new Error('站内直连失败：' + nativeFailure.slice(0, 300) +
-          '。签名不可用时请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
-          '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。');
+        // 「提示词写入校验失败」盖住。1.4.14：不再建议切回已弃用的页面模式。
+        // 1.4.15：失败分两类——签名/认证类才需要刷新页面找签名；
+        // 回答解析类（思考布局、final 帧没到）刷新页面没用，给可操作的重试建议。
+        var parseIssue = /思考|没解析|没返回可用评论|被截断|最终回答帧|回答帧/.test(nativeFailure);
+        throw new Error('站内直连失败：' + nativeFailure.slice(0, 420) +
+          (parseIssue
+            ? '。这是回答解析阶段的问题，签名通常正常；请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+            : '。签名不可用时请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
+              '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'));
       }
       throw e;
     }
@@ -1030,7 +1037,8 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
 /* =====================================================================
  * 1.4.13：TapeOut 行情卡片 + 价格上下限提醒
  *
- *  · 定时（chrome.alarms）抓 Firsto 官方 analytics + DexScreener 公开行情；
+ *  · 定时（chrome.alarms）抓 Firsto 官方 analytics（BEM / 矿机日产价）；
+ *    TapeUP $UP 内盘价不走后台 fetch（tapeup.io 整站 Cloudflare 防护），由内容脚本采集后缓存；
  *  · 价格越过设定的上/下限时，发系统通知 + 给所有标签页广播右下角浮层；
  *  · 通知点击直接打开 Firsto 交易所对应数据页；
  *  · 只有「从区间内跨到区间外」提醒一次，不会每分钟重复轰炸（见 price.js）。
@@ -1075,7 +1083,9 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     if (busy) return busy;   // 弹窗刷新 + alarm 同时到时只发一轮请求
     busy = (async function () {
       var prev = await localGet(SNAP_KEY, null);
-      var snap = await TapePrice.fetchSnapshot(fetch, prev);
+      // TapeUP 内盘价由内容脚本在 tapeup.io 页面里采集后缓存到这里
+      var upCache = await localGet('tapeupPriceCache', null);
+      var snap = await TapePrice.fetchSnapshot(fetch, prev, upCache);
       var out = {}; out[SNAP_KEY] = snap;
       await localSet(out);
       var cfg = await readSettings();
@@ -1163,16 +1173,31 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
 
   // 独立 listener：不与原有 CROSSPOST / GROK_* 路由耦合，回归风险最低
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (!msg || !/^(PRICE_|OPEN_PRICE_LINK)/.test(String(msg.type || ''))) return false;
+    if (!msg || !/^(PRICE_|OPEN_PRICE_LINK|TAPUP_PRICE)/.test(String(msg.type || ''))) return false;
     (async function () {
       if (msg.type === 'PRICE_GET') {
         var cached = await localGet(SNAP_KEY, null);
         var age = cached ? (Date.now() - Date.parse(cached.updatedAt)) : Infinity;
-        // 2 分钟内的缓存直接给面板，避免每次点开弹窗都打三个接口
-        var snap = (age < 120000) ? cached : await refresh();
+        // 2 分钟内的缓存直接给面板，避免每次点开弹窗都打两个接口；
+        // 但内盘价可能刚在 tapeup.io 页面刷新，单独套用最新缓存，避免面板落后
+        var base = (age < 120000) ? cached : await refresh();
+        var upCache = await localGet('tapeupPriceCache', null);
+        var snap = TapePrice.withUp(base, upCache);
         sendResponse({ ok: true, snapshot: snap, settings: await readSettings() });
       } else if (msg.type === 'PRICE_REFRESH') {
         sendResponse({ ok: true, snapshot: await refresh() });
+      } else if (msg.type === 'TAPUP_PRICE') {
+        // 内容脚本从 tapeup.io 交易页采集到的内盘价，缓存起来供面板与提醒使用
+        // 不依赖 price.js 的 isObj（importScripts 只暴露 TapePrice 为全局，isObj 在其 IIFE 内），
+        // 这里直接内联判断，避免真机收到回传时 ReferenceError
+        var p = (msg && msg.payload && typeof msg.payload === 'object' && !Array.isArray(msg.payload)) ? msg.payload : {};
+        var val = Number(p.value);
+        if (isFinite(val) && val > 0) {
+          var upItem = { value: val, changePct: Number(p.changePct) || null, asOf: p.asOf || null, at: Number(p.at) || Date.now() };
+          var ups = {}; ups['tapeupPriceCache'] = upItem;
+          await localSet(ups);
+        }
+        sendResponse({ ok: true });
       } else if (msg.type === 'PRICE_SETTINGS') {
         // 阈值改过就清空状态机：新阈值应立即生效，不能被旧状态压住
         var clr = {}; clr[STATE_KEY] = {};

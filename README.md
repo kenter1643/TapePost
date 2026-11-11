@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.14（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.15（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,28 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-11）**：本仓库 `main` 是 **1.4.14**（修复 AI 评论签名 `childNodes` 报错）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 只改本机签名构造，不新增网络请求或权限。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（新增只读行情请求与通知用途）后再上传新包。
+> **版本状态（2026-11-11）**：本仓库 `main` 是 **1.4.16**（TapeUP $UP 价格源由 DexScreener 改为 tapeup.io 交易页内盘价采集）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
+
+### 1.4.16：TapeUP $UP 价格改用 tapeup.io 内盘价
+
+用户反馈面板上 $UP 价格不对，确认应取自 `https://tapeup.io/zh/trade/token?id=1` 的内盘价（TAPELIQUID UP/USDT 现货对），而非之前的 DexScreener 外部盘价。
+
+1. **数据源切换**：移除 DexScreener 依赖与 `api.dexscreener.com` 主机权限；新增 `tapeup.io` 主机权限，仅用于在交易页注入内容脚本（`tapeup-price.js`）读取页面显示的内盘价。tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会返回 403/502，因此改由用户浏览器里已通过 CF 的会话去读——这是真正的内盘价格，不猜接口、不依赖第三方 DEX。
+2. **采集 + 缓存**：`tapeup-price.js` 用 `MutationObserver` + 3 秒轮询，从页面 DOM 抽价（多策略正则，按置信度打分），变化时才 `sendMessage({type:'TAPUP_PRICE'})` 回传；后台 `localSet('tapeupPriceCache')` 缓存。PRICE_GET / PRICE_REFRESH 用 `withUp()` 把缓存并入快照；超过 30 分钟未刷新标记为 `stale`，不直接拿旧值误报。
+3. **展示 / 跳转**：UP 卡片、浮层、通知点击都打开 `tapeup.io/zh/trade/token?id=1`；其余两项仍打开 Firsto 数据页。关闭交易页后沿用缓存，缓存为空时引导「请打开 tapeup.io 交易页」。
+4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价 → 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.16`。
+
+### 1.4.15：修复 AI 评论「原文：Thinking about your request」
+
+真机报错：`站内直连失败：Grok 已返回结果，但没解析到可用评论（模型可能没按格式输出）。原文：Thinking about your request`，响应片段里有 `{"result":{"sender":"ASSISTANT","uiLayout":{"reasoningUILayout":"UNIFIED","willThinkLong":false}}}`。重新逐行对照 **X Viral Monitor v1.18.17** 的 `lib/grok-reply.js` 后定位到三处偏离：
+
+1. **思考帧冒充答案**：XVM 只认 `sender=ASSISTANT && messageTag=final` 的帧；1.4.12 为兼容新版流放宽成「所有带 message 的 assistant 帧都算回答」，于是 `Thinking about your request` 这类思考占位被 `extractFinalText` 当成 Grok 的最终回答交出去。现在 `streamFrames` 单独归类思考帧（`messageTag=thinking/reasoning/...`、`uiLayout.reasoningUILayout`、`Thinking about your request` 占位文本），绝不进 `assistants`。
+2. **1.2 秒就把流掐断**：1.4.11 的快速模式只要「已有文本且 1.2 秒无新内容」就 `reader.cancel()`。思考布局下先推占位帧、隔几秒才出 final，于是永远等不到答案。现在**只有见到 `messageTag=final` 帧才允许空闲提前收尾**，思考/元数据帧期间继续读；XVM 本身就是一直读到流结束。顺带把 `reader.read()` 提到循环外复用，修掉长等待时并发读同一个流会抛 `TypeError` 的隐患。
+3. **请求体与稳定实现不一致**：1.4.11 把 `enableSideBySide` 改成 `false`，注释称「会并排跑两份、体感翻倍」，但没有源码依据；XVM 一直用 `true` 且真机稳定。现撤回该改动，`buildBody` 逐字段对齐 XVM 的「快速模式」payload。体感改由「见到 final 帧就收尾」控制。
+
+另外：所有帧统一 `joinFrames`，跨 chunk 的累积帧不再重复拼接；解析失败文案按帧构成分类（只收到思考帧 / 有 final 帧但没候选 / 完全没回答帧），附 `final帧/回答帧/思考帧/结束原因` 诊断，响应片段从 300 字放宽到 700 字；后台与候选面板**不再对解析类失败一律建议刷新页面找签名**。`status()` 新增 `lastStream` 诊断字段。
+
+**升级必须手动重载**：到 `chrome://extensions` 点「重新加载」→ 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.15` → 再点「AI 评论」。
 
 ### 1.4.14：修复 AI 评论签名 `childNodes` 报错
 
@@ -37,12 +58,12 @@
 
 在 TapePost 面板最上方加了一排行情卡片，并可给每项设上下限，越界时右下角弹窗、点击直达 Firsto 交易所。
 
-1. **三项数据都有公开只读来源**：`$BEM` 与「矿机日产能价」取 Firsto 官方 analytics（`/v1/analytics/bem`、`/v1/analytics/circuits`，后者取 24h 内最近一个有效 `dailyCapacityPriceWei`，按官网图表口径 `BigInt/1e18` 换算为 BNB）；`TapeUP $UP` 取 DexScreener 按流动性最深池子的报价。全部免登录、免 API Key、不上传任何本机数据。
-2. **卡片可点**：TapeUP → `firsto.ai/data`，矿机日产 → `firsto.ai/data/circuits`，BEM → `firsto.ai/data/bem`；涨红跌绿，显示 24h 变化、更新时间，↻ 可立即刷新。点开面板读 2 分钟内缓存，后台默认每 5 分钟查一次（可设 1/5/15/30 分钟）。
+1. **三项数据都有公开只读来源**：`$BEM` 与「矿机日产能价」取 Firsto 官方 analytics（`/v1/analytics/bem`、`/v1/analytics/circuits`，后者取 24h 内最近一个有效 `dailyCapacityPriceWei`，按官网图表口径 `BigInt/1e18` 换算为 BNB）；`TapeUP $UP` 取 tapeup.io 交易页（TAPELIQUID UP/USDT）显示的内盘价——tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会被拦，因此由扩展的内容脚本在用户浏览器（已通过 CF）里读取页面显示的内盘价并回传后台缓存。全部免登录、免 API Key、不上传任何本机数据。
+2. **卡片可点**：TapeUP → `tapeup.io/zh/trade/token?id=1`（点击打开交易页，由扩展读取内盘价），矿机日产 → `firsto.ai/data/circuits`，BEM → `firsto.ai/data/bem`；涨红跌绿，显示 24h 变化、更新时间，↻ 可立即刷新。点开面板读 2 分钟内缓存，后台默认每 5 分钟查一次（可设 1/5/15/30 分钟）。
 3. **上下限提醒**：每项可分别填下限 / 上限，留空即不监控该方向。判定用状态机，只有「从区间内跨到区间外」那一次提醒，不会每分钟重复弹；另有 5~60 分钟冷却兜底。改完阈值点保存会清空状态机，新阈值立即生效。
 4. **双层提醒**：`price-alert.js` 在已打开的支持站点右下角画浮层（不改动页面原有 DOM，文字全用 `textContent`，20 秒自动消失，最多叠 3 条）；同时发一条系统通知，没开网页也能收到。点浮层 / 点通知都会打开 Firsto 对应数据页；通知 id → 链接映射存本地，Service Worker 重启后仍能正确跳转。
 5. **失败降级**：三个接口并发、互不牵连；某项失败或最近 24h 无成交样本时沿用上一次缓存并标「缓存」，且**不拿旧值触发提醒**。设置面板提供「🔔 测试弹窗」一键验证两种提醒是否都正常。
-6. **权限**：新增 `alarms`（定时检查）、`notifications`（系统通知）与两个只读行情域名 `api-tapeout.firsto.ai`、`api.dexscreener.com`；没有申请通配域名。行情仅供参考，不构成投资建议，插件不会替你下单。
+6. **权限**：新增 `alarms`（定时检查）、`notifications`（系统通知）与只读行情域名 `api-tapeout.firsto.ai`（BEM / 矿机日产价的公开只读接口）；另为采集 TapeUP 内盘价新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据）。没有申请通配域名。行情仅供参考，不构成投资建议，插件不会替你下单。
 
 ### 1.4.12：修复 AI 评论 401 /「重试已通但没解析出候选」
 
