@@ -20,7 +20,7 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-11）**：本仓库 `main` 是 **1.4.17**（TapeUP $UP 内盘价修正为按 UP/BEM 计价精准抽取，新增真机调试浮层）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
+> **版本状态（2026-11-11）**：本仓库 `main` 是 **1.4.18**（AI 评论站内直连提示词对齐 X Viral Monitor 极简模板、修复 Grok「I can't follow that format or role」拒答；TapeUP $UP 内盘价按 UP/BEM 计价精准抽取并带真机调试浮层）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。1.4.18 只改本机提示词构造与回答解析，不新增网络请求、域名或权限。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
 
 ### 1.4.16：TapeUP $UP 价格改用 tapeup.io 内盘价
 
@@ -29,7 +29,37 @@
 1. **数据源切换**：移除 DexScreener 依赖与 `api.dexscreener.com` 主机权限；新增 `tapeup.io` 主机权限，仅用于在交易页注入内容脚本（`tapeup-price.js`）读取页面显示的内盘价。tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会返回 403/502，因此改由用户浏览器里已通过 CF 的会话去读——这是真正的内盘价格，不猜接口、不依赖第三方 DEX。
 2. **采集 + 缓存**：`tapeup-price.js` 用 `MutationObserver` + 3 秒轮询，从页面 DOM 抽价（多策略正则，按置信度打分），变化时才 `sendMessage({type:'TAPUP_PRICE'})` 回传；后台 `localSet('tapeupPriceCache')` 缓存。PRICE_GET / PRICE_REFRESH 用 `withUp()` 把缓存并入快照；超过 30 分钟未刷新标记为 `stale`，不直接拿旧值误报。
 3. **展示 / 跳转**：UP 卡片、浮层、通知点击都打开 `tapeup.io/zh/trade/token?id=1`；其余两项仍打开 Firsto 数据页。关闭交易页后沿用缓存，缓存为空时引导「请打开 tapeup.io 交易页」。
-4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价 → 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.17`。
+4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价 → 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.18`。
+
+### 1.4.18：修复 AI 评论「I can't follow that format or role」（对齐 XVM 提示词）
+
+**真机报错**（诊断 `final帧=45，回答帧=1，思考帧=3，结束原因=stream-end`）：
+
+```
+Grok 没返回可用评论：已收到最终回答帧，但没解析出 3 条候选…
+原文：I can't follow that format or role. I generate replies naturally
+based on the content. The tweet is a casual post about a tough day and a
+simple lunch. If you...
+```
+
+**根因不是解析，是 Grok 拒绝执行提示词**。逐行对照 **X Viral Monitor v1.18.17 的 `lib/grok-reply.js`** 后确认：两边 `buildBody` 的 payload 逐字段一致（`systemPromptName:''`、`enableSideBySide:true`、`MODEL_MODE_FAST`、`isTemporaryChat:true`…），唯一实质差异在提示词与解析策略：
+
+| | XVM（真机稳定） | 1.4.17 之前 |
+|---|---|---|
+| 提示词 | `{推文原文}` + 一句「为我生成针对该推文的10条评论,每条评论用代码块包裹」 | 角色扮演「你是昆哥的 X 回复助手」+ `SYSTEM_HINT`「不要 Markdown 代码块」+「严格返回 JSON 数组」+ 又叠加「只输出 3 个 Markdown 代码块」「不要思考」+ `【TapePost 任务开始/结束】` 包裹 |
+| 解析 | 代码块 → 编号/项目符号列表 → 段落兜底，1~10 条都收 | 强依赖代码块/JSON，最后一步硬性要求「至少 3 行」，少一条就整链路报错 |
+
+旧提示词**自相矛盾**（既要 JSON 数组、又说不要代码块、又只准输出代码块），整段还像 prompt injection。X 站内 Grok 自带回复 persona，于是直接回绝 format/role，final 帧里一个代码块都没有——刷新页面、关快速模式、重签名都治不了。
+
+修复：
+
+1. **提示词改极简**（`grok.js` 新增 `buildNativeCommentPrompt`）：推文原文在前、一句中文要求在后（`为这条推文写 3 条可以直接发布的中文回复…每条回复用一个代码块包裹`）。不叠加 system 指令、不加角色、不加任务标记、不写「必须严格遵守」。用户真正自定义过的模板保留（仍支持 `{POST}` 占位符与附加要求），但**旧版默认模板会自动升级**——避免 `chrome.storage` 里存的旧值继续触发拒答。`background.js` 的 `GROK_COMMENTS` 直连分支与 `popup.js` 的「提示词预览」都改用它，预览与实际发送一致。**页面模式 / 手动兜底的 AI 评论**另用 `buildPageCommentPrompt`：同样无角色、无矛盾指令，但保留 `【TapePost 任务开始】` 标记（`grok-page.js` 的写入校验依赖）与单一 JSON 数组输出（`parsePageAnswer` 依赖）。
+2. **解析三段兜底**（`grok-native.js`）：照 XVM `extractComments` 加段落切分（空行分段优先、行次之），不再要求恰好 3 条，**1~3 条都算成功**；新增 `isMeta` 过滤 Grok 拒答/元话语（`I can't follow…`、`I generate replies naturally…`、`The tweet is…`、`Here are…`、`以下是…`），绝不会把拒答当候选塞给用户。
+3. **诊断不再误导**：明确识别「Grok 拒绝角色/格式」并提示「重新加载扩展后再点一次」，不再让用户去刷新页面或切快速模式。
+
+链接核验（verify）仍走 `buildNativePrompt` 的 JSON 约束，不受影响。不新增权限、域名或网络请求。
+
+**升级必须手动重载**：到 `chrome://extensions` 点「重新加载」→ 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.18` → 再点「AI 评论」。设置里的「提示词预览」应只显示推文原文 + 一句简短要求。
 
 ### 1.4.17：修正内盘价抽取（UP 以 BEM 计价，非 UP/USDT）
 

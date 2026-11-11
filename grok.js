@@ -506,6 +506,9 @@ var TapeAI = (function () {
     '- 可放在 ```json 代码块里，代码块外不要有任何文字，不要展示思考过程。'
   ].join('\n');
 
+  /* 1.4.18 起「站内直连 · AI 评论」的生产路径改用下面的
+   * buildNativeCommentPrompt（XVM 式极简模板）。本函数保留给
+   * 链接核验（verify）与旧调用兼容，comments 分支不再用于真机发送。 */
   function buildNativePrompt(messages, kind, extra) {
     var sys = [], user = [];
     (messages || []).forEach(function (m) {
@@ -518,6 +521,70 @@ var TapeAI = (function () {
     var rule = kind === 'verify' ? NATIVE_VERIFY_RULE : NATIVE_COMMENT_RULE;
     return (PROMPT_TAG + '\n' + head + user.join('\n\n') + '\n' + rule +
       (tail ? '\n\n' + tail : '') + '\n' + PROMPT_END).trim();
+  }
+
+  /* ---------- 1.4.18：站内直连提示词对齐 X Viral Monitor v1.18.17 ----------
+   * XVM lib/grok-reply.js 的默认模板只有一句自然语言要求：
+   *   「{推文原文}\n\n为我生成针对该推文的10条评论,每条评论用代码块包裹」
+   * 没有角色扮演、没有 system 指令、没有「必须严格遵守」、没有任务标记包裹，
+   * 更没有自相矛盾的格式要求。它真机上从未触发过 Grok 的拒答。
+   *
+   * 我们旧版把 buildCommentMessages（「你是昆哥的 X 回复助手」+ SYSTEM_HINT
+   * 「不要 Markdown 代码块」+「严格返回 JSON 数组」）再叠加 NATIVE_COMMENT_RULE
+   * （「只输出 3 个 Markdown 代码块」「不要思考、不要分析」）——既要 JSON 又要
+   * 代码块、既说不要代码块又说只输出代码块，整段还被【必须遵守的指令】包成
+   * 注入式文本。X 站内 Grok 自带 persona，于是直接回：
+   *   "I can't follow that format or role. I generate replies naturally
+   *    based on the content."
+   * final 帧里一个代码块都没有，解析层自然拿不到候选。
+   *
+   * 现在：推文原文在前，一句简短中文要求在后；只渲染占位符，不叠加任何
+   * system / 格式指令 / 任务标记。用户真正自定义过的模板保持原样（可编辑
+   * 能力不丢），只把旧版默认模板自动升级，避免 storage 里的旧值继续触发拒答。
+   */
+  var NATIVE_COMMENT_TEMPLATE = [
+    '{POST}',
+    '',
+    '为这条推文写 3 条可以直接发布的中文回复，语气自然、像真人，每条不超过 60 字。',
+    '每条回复用一个代码块包裹。'
+  ].join('\n');
+
+  function isLegacyCommentTpl(tpl) {
+    var t = String(tpl || '').trim();
+    if (!t || t === DEFAULT_COMMENT_PROMPT) return true;
+    return /严格返回 JSON 数组|不要输出任何解释或 Markdown 代码块|你是「昆哥」|【输出格式（必须严格遵守）】|不要思考、不要分析背景/.test(t);
+  }
+
+  function buildNativeCommentPrompt(postText, promptTpl, extra) {
+    var text = String(postText || '').slice(0, 1200);
+    var raw = String(promptTpl || '').trim();
+    var tpl = isLegacyCommentTpl(raw) ? NATIVE_COMMENT_TEMPLATE : raw;
+    // 模板缺 {POST} 时把推文正文补到末尾，和 XVM 的 renderPrompt 一致
+    var prompt = fillTemplate(tpl, { '{POST}': text }, text);
+    var tail = String(extra == null ? '' : extra).trim();
+    return (prompt + (tail ? '\n\n' + tail : '')).trim();
+  }
+
+  /* 1.4.18：页面模式 / 手动兜底的 AI 评论提示词同样去掉角色扮演与
+   * 「既要 JSON 又要代码块」的自相矛盾指令，避免 Grok 拒答。
+   * 但保留两点页面模式特有约束：
+   *   · PROMPT_TAG / PROMPT_END —— grok-page.js 的写入校验依赖标记；
+   *   · 单一 JSON 数组输出 —— parsePageAnswer 的 extractJsonLoose 依赖它。
+   * 站内直连（native）仍用 buildNativeCommentPrompt（代码块格式）。 */
+  var PAGE_COMMENT_TEMPLATE = [
+    '{POST}',
+    '',
+    '为这条推文写 3 条可以直接发布的中文回复，语气自然、像真人，每条不超过 60 字。',
+    '只输出一个 JSON 数组：["第一条", "第二条", "第三条"]。不要输出解释、编号或 Markdown 代码块。'
+  ].join('\n');
+
+  function buildPageCommentPrompt(postText, promptTpl, extra) {
+    var text = String(postText || '').slice(0, 1200);
+    var raw = String(promptTpl || '').trim();
+    var tpl = isLegacyCommentTpl(raw) ? PAGE_COMMENT_TEMPLATE : raw;
+    var body = fillTemplate(tpl, { '{POST}': text }, text);
+    var tail = String(extra == null ? '' : extra).trim();
+    return (PROMPT_TAG + '\n' + body + (tail ? '\n\n' + tail : '') + '\n' + PROMPT_END).trim();
   }
 
   // ---------- 3. URL 规范化与本地白名单判定 ----------
@@ -1081,6 +1148,11 @@ var TapeAI = (function () {
     pickGrokMode: pickGrokMode,
     buildPagePrompt: buildPagePrompt,
     buildNativePrompt: buildNativePrompt,
+    // 1.4.18：站内直连 AI 评论的生产提示词（XVM 式极简模板）
+    buildNativeCommentPrompt: buildNativeCommentPrompt,
+    buildPageCommentPrompt: buildPageCommentPrompt,
+    isLegacyCommentTpl: isLegacyCommentTpl,
+    NATIVE_COMMENT_TEMPLATE: NATIVE_COMMENT_TEMPLATE,
     NATIVE_COMMENT_RULE: NATIVE_COMMENT_RULE,
     NATIVE_VERIFY_RULE: NATIVE_VERIFY_RULE,
     normalizeUrl: normalizeUrl,

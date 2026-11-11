@@ -698,6 +698,31 @@
     'post your reply', '【tapepost 任务开始】', '【tapepost 任务结束】'
   ];
 
+  /* 1.4.18：X 站内 Grok 自带 persona，被注入式/强格式指令触发时会回一段
+   * 拒答或元话语（真机原文："I can't follow that format or role. I generate
+   * replies naturally based on the content. The tweet is a casual post about
+   * a tough day and a simple lunch. If you..."）。放宽段落兜底时必须拦掉
+   * 这些句子，否则会把「拒答」当成评论候选塞给用户。 */
+  var META_PATTERNS = [
+    /^i\s+(?:can't|cannot|won't|don't|am unable to|'m unable to)\b/i,
+    /\bthat format or role\b/i,
+    /\bgenerate replies naturally\b/i,
+    /^(?:sure|ok|okay|certainly|of course|here (?:are|is)|below are)\b/i,
+    /^(?:the|this)\s+(?:tweet|post)\s+(?:is|looks|seems|talks|mentions)\b/i,
+    /^(?:as an ai|i'm grok|i am grok)\b/i,
+    /^(?:以下是|下面是|这里是|好的|没问题|当然可以|综上)/,
+    /^(?:【|输出格式|推文正文|要求：|注意：)/,
+    /^\s*[{[].*(?:result|sender|messageTag|conversationId)\s*:/i,
+    /^(?:verdict|reason|risk|matched|comments|replies|items)\s*[:：]/i
+  ];
+
+  function isMeta(s) {
+    var t = String(s || '').trim();
+    if (!t) return true;
+    for (var i = 0; i < META_PATTERNS.length; i++) if (META_PATTERNS[i].test(t)) return true;
+    return false;
+  }
+
   function isNoise(s) {
     var t = String(s || '').trim().toLowerCase();
     if (!t) return true;
@@ -718,12 +743,15 @@
     var out = [];
     arr.forEach(function (s) {
       var c = String(s || '').trim().slice(0, 240);
-      if (c && !isNoise(c) && out.indexOf(c) === -1) out.push(c);
+      if (c && !isNoise(c) && !isMeta(c) && out.indexOf(c) === -1) out.push(c);
     });
     return out.slice(0, 3);
   }
 
-  /* 代码块 > JSON 数组 > 裸引号三元组 > 编号列表 > 3 行；绝不拿 UI 文字凑数。 */
+  /* 1.4.18：对齐 XVM extractComments 的三段兜底（代码块 → 列表 → 段落）。
+   * 旧版最后一步硬性要求「至少 3 行」才返回，Grok 只要少给一条就整条链路
+   * 报错；现在 1~3 条都算成功，但拒答/元话语与 UI 词一律不凑数。
+   * 代码块 > JSON 数组 > 裸引号三元组 > 编号列表 > 段落/行；绝不拿 UI 文字凑数。 */
   function extractComments(rawText) {
     var text = String(rawText || '');
     // 只有真正的 NDJSON 流才先抽 final 块；模型直接吐一个 JSON 数组时
@@ -754,11 +782,15 @@
       return dedupe(quoted.slice(0, 3).map(function (q) { return cleanLine(q.slice(1, -1)); }));
     }
 
-    var lines = joined.split(/\n+/).map(cleanLine).filter(function (s) {
-      return s && s.length >= 6 && s.length <= 240 && !isNoise(s) &&
-        !/^(?:verdict|reason|risk|matched|comments|replies|输出格式|推文正文)\s*[:：]/i.test(s);
-    });
-    return lines.length >= 3 ? dedupe(lines) : [];
+    var keep = function (s) {
+      return s && s.length >= 6 && s.length <= 240 && !isNoise(s) && !isMeta(s);
+    };
+    var lines = joined.split(/\n+/).map(cleanLine).filter(keep);
+    // XVM：优先按空行切段落（一整段就是一条评论），否则按行切；
+    // 不再要求恰好 3 条——有 1 条可用就比整条链路报错好。
+    var paragraphs = joined.split(/\n{2,}/).map(cleanLine).filter(keep);
+    var units = paragraphs.length >= 2 ? paragraphs : lines;
+    return dedupe(units);
   }
 
   // ---------------------------------------------------------------- 5. 主流程
@@ -906,14 +938,20 @@
     if (!comments.length) {
       var xvm2 = await tryXvm(prompt);
       if (xvm2) return { comments: xvm2, raw: xvm2.join('\n'), via: 'xvm-grok' };
-      /* 1.4.15：旧文案把锅甩给模型的输出格式，实际是我们 1.2 秒就把
-       * 思考阶段的流掐断了。现在按帧构成给出可判断的诊断。 */
+      /* 1.4.15：按帧构成给可判断的诊断。
+       * 1.4.18：新增「Grok 明确拒绝角色/格式」分支——真机原文
+       * "I can't follow that format or role. I generate replies naturally
+       * based on the content."。这种情况刷新页面、切快速模式都无用，
+       * 根因是提示词像 prompt injection，已改为 XVM 式极简模板。 */
       var d = lastStreamDiag;
-      var reason = (d.thinkingFrames > 0 && !d.finalFrames)
-        ? 'X 这轮让 Grok 进入了思考布局，只收到思考/状态帧，没等到最终回答帧。已放宽等待；请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试。'
-        : (d.finalFrames > 0
-          ? '已收到最终回答帧，但没解析出 3 条候选（回答可能被截断或没按代码块格式输出）。请点「重新生成」，或关掉「AI 快速模式」重试。'
-          : '没收到可用的回答帧。请刷新 X 页面后重试，或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。');
+      var refused = /can't follow that format|generate replies naturally|i can't follow|unable to follow (?:that|the) format|can't follow that role/i.test(finalText);
+      var reason = refused
+        ? 'Grok 拒绝了提示词里的角色/格式要求（X 站内 Grok 自带回复风格，不接受注入式指令）。1.4.18 已把提示词改为 X Viral Monitor 式极简模板；请在 chrome://extensions 重新加载扩展后再点一次「AI 评论」。'
+        : ((d.thinkingFrames > 0 && !d.finalFrames)
+          ? 'X 这轮让 Grok 进入了思考布局，只收到思考/状态帧，没等到最终回答帧。已放宽等待；请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试。'
+          : (d.finalFrames > 0
+            ? '已收到最终回答帧，但没解析出可用候选（回答可能只有拒答/元话语，或没按代码块格式输出）。请点「重新生成」；解析层已支持代码块 / 编号列表 / 段落三种兜底。'
+            : '没收到可用的回答帧。请刷新 X 页面后重试，或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。'));
       throw new Error('Grok 没返回可用评论：' + reason +
         ' 诊断：final帧=' + d.finalFrames + '，回答帧=' + d.answerFrames +
         '，思考帧=' + d.thinkingFrames + '，结束原因=' + (d.stoppedBy || '未知') +
@@ -965,6 +1003,7 @@
     buildHeaders: buildHeaders,
     extractFinalText: extractFinalText,
     extractComments: extractComments,
+    isMeta: isMeta,
     // 1.4.15：帧分类与流式读取暴露给回归测试（真机事故回放在 Node vm 里跑）
     streamFrames: streamFrames,
     joinFrames: joinFrames,

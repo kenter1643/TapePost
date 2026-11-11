@@ -324,12 +324,16 @@ function previewPrompt() {
   const extra = val('pagePromptExtra');
   const mode = (document.getElementById('grokMode') || {}).value || 'auto';
   const native = mode === 'native' || (mode === 'auto' && (document.getElementById('grokPreferNative') || {}).checked !== false);
-  const build = (messages, kind) => native
+  const samplePost = '（示例推文）TapeOut 生态又多了一个链上应用，DeWeb 容器索引突破 200 个。';
+  // 1.4.18：站内直连的 AI 评论走 XVM 式极简模板，预览必须与实际发送一致
+  const comment = native
+    ? TapeAI.buildNativeCommentPrompt(samplePost, val('commentPrompt'), extra)
+    : TapeAI.buildPagePrompt(
+        TapeAI.buildCommentMessages(samplePost, val('commentPrompt')), extra);
+  const buildVerify = (messages, kind) => native
     ? TapeAI.buildNativePrompt(messages, kind, extra)
     : TapeAI.buildPagePrompt(messages, extra);
-  const comment = build(
-    TapeAI.buildCommentMessages('（示例推文）TapeOut 生态又多了一个链上应用，DeWeb 容器索引突破 200 个。', val('commentPrompt')), 'comments');
-  const verify = build(
+  const verify = buildVerify(
     TapeAI.buildVerifyMessages('https://tapeout.net/', val('verifyPrompt')), 'verify');
   box.style.display = 'block';
   box.textContent = '【AI 评论 · 实际发送内容】\n' + comment +
@@ -504,6 +508,7 @@ const INFO = {
   versions: {
     title: '版本说明',
     lines: [
+      'v1.4.18 修复 AI 评论「I can\'t follow that format or role」：站内直连提示词对齐 X Viral Monitor v1.18.17 的极简模板（推文原文 + 一句「写 3 条回复、每条用代码块包裹」），去掉角色扮演、system 指令、任务标记包裹与自相矛盾的「严格返回 JSON 数组 / 只输出 3 个代码块」双重要求；解析层加代码块 → 编号列表 → 段落三段兜底，1~3 条都算成功，并过滤 Grok 拒答/元话语；设置里的旧默认提示词自动升级，预览与实际发送保持一致。',
       'v1.4.17 修正 TapeUP 内盘价抽取：tapeup.io 内盘是 UP/BEM 计价（非此前误以为的 UP/USDT），重写抽取逻辑——盘面实时价以「数字 BEM」呈现、钱包余额则是「$BEM 数字」（顺序相反），据此精准区分并排除钱包余额与交易记录干扰；Cloudflare 防护仍使后台无法直接抓，由扩展在你打开交易页时读取并缓存。',
       'v1.4.15 修好 AI 评论「原文：Thinking about your request」：思考帧不再冒充回答、等得到 final 帧、请求体对齐 XVM；解析失败给帧级诊断而非甩锅模型。',
       'v1.4.14 修好 AI 评论签名 childNodes 报错：整棵克隆 X 首页动画帧、帧留到异步签名完成、页面就绪预热签名器，签名失败时 XVM 通道兜底。',

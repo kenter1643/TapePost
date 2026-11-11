@@ -518,14 +518,17 @@ function messagesFor(kind, payload, cfg) {
 }
 
 /* 统一的 Grok 调用入口：API 模式 / 页面模式对上层透明 */
-async function runGrok(messages, maxTokens, cfg) {
+async function runGrok(messages, maxTokens, cfg, kind, postText) {
   const c = cfg || await getGrokConfig();
   const mode = TapeAI.pickGrokMode(c);
   if (mode === 'api') {
     const r = await callGrok(messages, maxTokens, c);
     return Object.assign({}, r, { mode: 'api' });
   }
-  const prompt = TapeAI.buildPagePrompt(messages, c.pagePromptExtra);
+  // 1.4.18：页面模式的 AI 评论也改用无角色/无矛盾指令的提示词（保留任务标记与 JSON 输出）
+  const prompt = (kind === 'comments' && postText !== undefined)
+    ? TapeAI.buildPageCommentPrompt(postText, c.commentPrompt, c.pagePromptExtra)
+    : TapeAI.buildPagePrompt(messages, c.pagePromptExtra);
   const r = await callGrokPage(prompt, c, 'auto');
   if (r.prepared) return { prepared: true, mode: 'page', prompt, endpoint: r.url, note: r.note || '' };
   return {
@@ -650,7 +653,10 @@ async function handleGrokMessage(msg, sender) {
     // 1.4.0 主路径：直接调 X 自带 Grok 接口，不依赖 /i/grok 标签与 DOM 文本读取
     if (mode === 'native') {
       try {
-        const prompt = TapeAI.buildNativePrompt(messages, 'comments', cfg.pagePromptExtra);
+        // 1.4.18：站内直连改用 XVM 式极简提示词（推文原文 + 一句自然语言要求），
+        // 不再叠加角色扮演 / system / 自相矛盾的 JSON+代码块双重约束，
+        // 否则 X 自带 Grok persona 会回 "I can't follow that format or role"。
+        const prompt = TapeAI.buildNativeCommentPrompt(payload.text || '', cfg.commentPrompt, cfg.pagePromptExtra);
         const fast = cfg.grokFastMode !== false;
         const r = await callGrokNative(tabId, {
           type: 'GROK_NATIVE_CALL', prompt, kind: 'comments',
@@ -673,11 +679,14 @@ async function handleGrokMessage(msg, sender) {
         nativeFailure = String(e && e.message || e);
         if (forceNative) {
           var parseIssueForced = /思考|没解析|没返回可用评论|被截断|最终回答帧|回答帧/.test(nativeFailure);
+          var refusedForced = /拒绝了提示词里的角色|不接受注入式指令|can't follow that format/i.test(nativeFailure);
           throw new Error('站内直连 Grok 生成失败：' + nativeFailure +
-            (parseIssueForced
-              ? '。请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
-              : '。请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
-                '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。'));
+            (refusedForced
+              ? '。这是提示词被 X 站内 Grok 拒答，1.4.18 已改为极简模板；请在 chrome://extensions 重新加载扩展后再试，也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+              : parseIssueForced
+                ? '。请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+                : '。请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
+                  '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。'));
         }
         console.warn('[bg][grok] 站内直连失败，降级页面模式：' + nativeFailure);
       }
@@ -685,7 +694,7 @@ async function handleGrokMessage(msg, sender) {
     }
 
     let r;
-    try { r = await runGrok(messages, 700, cfg); }
+    try { r = await runGrok(messages, 700, cfg, 'comments', payload.text || ''); }
     catch (e) {
       if (nativeFailure) {
         // 1.4.1：把直连的真实失败原因放在最前面，避免被页面模式的
@@ -693,11 +702,15 @@ async function handleGrokMessage(msg, sender) {
         // 1.4.15：失败分两类——签名/认证类才需要刷新页面找签名；
         // 回答解析类（思考布局、final 帧没到）刷新页面没用，给可操作的重试建议。
         var parseIssue = /思考|没解析|没返回可用评论|被截断|最终回答帧|回答帧/.test(nativeFailure);
+        // 1.4.18：Grok 明确拒绝角色/格式时，重试与切快速模式都无用，要提示重载扩展
+        var refusedIssue = /拒绝了提示词里的角色|不接受注入式指令|can't follow that format/i.test(nativeFailure);
         throw new Error('站内直连失败：' + nativeFailure.slice(0, 420) +
-          (parseIssue
-            ? '。这是回答解析阶段的问题，签名通常正常；请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
-            : '。签名不可用时请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
-              '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'));
+          (refusedIssue
+            ? '。这是提示词被 X 站内 Grok 拒答（非签名问题），1.4.18 已改为 XVM 式极简模板；请在 chrome://extensions 重新加载扩展后再点一次「AI 评论」；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+            : parseIssue
+              ? '。这是回答解析阶段的问题，签名通常正常；请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+              : '。签名不可用时请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
+                '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'));
       }
       throw e;
     }
@@ -744,7 +757,7 @@ async function handleGrokMessage(msg, sender) {
         if (!grok) actualMode = 'page';
       }
       if (!grok) {
-        const r = await runGrok(messages, 600, cfg);
+        const r = await runGrok(messages, 600, cfg, 'verify');
         if (r.prepared) throw new Error('当前设为「不自动发送」：请到 Grok 里手动发送，再点面板上的「读取 Grok 回答」。');
         const p = r.mode === 'page'
           ? parsePageText(r, 'verdict')
@@ -761,7 +774,9 @@ async function handleGrokMessage(msg, sender) {
   // 手动兜底：只把完整提示词填进 Grok（并回传给页面去复制），不发送
   if (msg.type === 'GROK_PAGE_PREPARE') {
     const kind = payload.kind === 'verify' ? 'verify' : 'comments';
-    const prompt = TapeAI.buildPagePrompt(messagesFor(kind, payload, cfg), cfg.pagePromptExtra);
+    const prompt = kind === 'comments'
+      ? TapeAI.buildPageCommentPrompt(payload.text || '', cfg.commentPrompt, cfg.pagePromptExtra)
+      : TapeAI.buildPagePrompt(messagesFor(kind, payload, cfg), cfg.pagePromptExtra);
     const r = await callGrokPage(prompt, cfg, 'prepare');
     return { ok: true, mode: 'page', prompt, page: { url: r.url, hasSend: r.hasSend }, createdTab: r.createdTab };
   }

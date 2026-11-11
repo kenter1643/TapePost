@@ -1118,9 +1118,11 @@ async function runPageModeEndToEnd() {
       r && r.ok && r.comments && r.comments.length === 3 && r.comments[0] === '甲观点');
 
     r = await runtimeSend('popup', { type: 'GROK_PAGE_PREPARE', payload: { kind: 'comments', text: '示例推文' } });
-    A('手动兜底①：准备提示词含 system 约束、正文与格式要求',
-      r && r.ok && r.prompt && r.prompt.includes('【必须遵守的指令】') &&
-      r.prompt.includes('示例推文') && r.prompt.includes('只输出上面要求的那一个 JSON'));
+    // 1.4.18：页面模式提示词去掉角色扮演与 system 注入，保留任务标记 + 单一 JSON 要求
+    A('手动兜底①：准备提示词含任务标记、正文与单一 JSON 要求（不再含 system 角色约束）',
+      r && r.ok && r.prompt && r.prompt.includes('【TapePost 任务开始】') &&
+      r.prompt.includes('示例推文') && r.prompt.includes('JSON 数组') &&
+      !r.prompt.includes('【必须遵守的指令】') && !r.prompt.includes('昆哥'));
 
     scenario.grokPageAnswer = '["读回一","读回二","读回三"]';
     scenario.grokPageAllText = scenario.grokPageAnswer;
@@ -1478,6 +1480,49 @@ async function runNativePureChecks() {
     (J('extractComments', '```\nHistory\n```\n```\nUsage\n```\n```\nShare\n```') || []).length === 0);
   A('空回答返回空数组', (J('extractComments', '') || []).length === 0);
   A('任务标记不当候选', (J('extractComments', '【TapePost 任务开始】\n【TapePost 任务结束】') || []).length === 0);
+
+  // --- 1.4.18：对齐 XVM 极简提示词 + Grok 拒答兜底 ---
+  const nativePrompt = P("TapeAI.buildNativeCommentPrompt('今天有点累 午饭很简单','','')");
+  A('1.4.18 站内直连提示词是 XVM 式极简模板（推文在前、一句要求在后）',
+    /今天有点累 午饭很简单/.test(nativePrompt) && /3 条/.test(nativePrompt) && /代码块/.test(nativePrompt));
+  A('1.4.18 提示词不含角色扮演 / system / 任务标记 / 自相矛盾的 JSON+代码块双重要求',
+    !/昆哥|SYSTEM|必须遵守|严格返回 JSON 数组|不要输出任何解释|【TapePost 任务|不要思考|只输出 3 个 Markdown 代码块/.test(nativePrompt));
+  const legacyUpgraded = P("TapeAI.buildNativeCommentPrompt('推文X','你是「昆哥」的 X 回复助手。严格返回 JSON 数组。不要输出任何解释或 Markdown 代码块。{POST}','')");
+  A('1.4.18 storage 里的旧默认提示词自动升级，不再触发 Grok 拒答',
+    /推文X/.test(legacyUpgraded) && /3 条/.test(legacyUpgraded) && !/昆哥|严格返回 JSON 数组/.test(legacyUpgraded));
+  const customNative = P("TapeAI.buildNativeCommentPrompt('推文A','请用粤语为 {POST} 写三条回复','请全程中文')");
+  A('1.4.18 用户自定义模板与附加要求仍保留',
+    /粤语/.test(customNative) && /推文A/.test(customNative) && /请全程中文/.test(customNative));
+  A('1.4.18 background 站内直连分支改用极简提示词',
+    read('background.js').includes('buildNativeCommentPrompt(payload.text'));
+  A('1.4.18 popup 提示词预览与实际发送一致',
+    read('popup.js').includes('buildNativeCommentPrompt(samplePost'));
+  A('1.4.18 诊断能识别 Grok 拒答并提示重载扩展',
+    /拒绝了提示词里的角色/.test(read('grok-native.js')) && /refusedIssue/.test(read('background.js')));
+  const pageNative = P("TapeAI.buildPageCommentPrompt('今天有点累 午饭很简单','','')");
+  A('1.4.18 页面模式提示词无角色/无矛盾指令，但保留任务标记与单一 JSON 要求',
+    /今天有点累 午饭很简单/.test(pageNative) && /JSON 数组/.test(pageNative) &&
+    pageNative.indexOf('【TapePost 任务开始】') === 0 &&
+    !/昆哥|必须遵守|SYSTEM|严格返回 JSON 数组|每条回复用一个代码块包裹/.test(pageNative));
+  A('1.4.18 手动兜底与降级页面模式都接到新提示词',
+    read('background.js').includes('buildPageCommentPrompt(payload.text') &&
+    read('background.js').includes("'comments', payload.text"));
+  // 真机原文：final帧=45、回答帧=1，但整段都是拒答/元话语，零代码块
+  const realRefusal = "I can't follow that format or role.\nI generate replies naturally based on the content.\nThe tweet is a casual post about a tough day and a simple lunch. If you...";
+  A('1.4.18 真机拒答原文不变成候选',
+    (J('extractComments', realRefusal) || []).length === 0);
+  A('1.4.18 isMeta 拦拒答/元话语但不误伤真实评论',
+    J('isMeta', "I can't follow that format or role.") === true &&
+    J('isMeta', 'The tweet is a casual post about a tough day.') === true &&
+    J('isMeta', '今天有点累就好好歇会儿') === false);
+  A('1.4.18 只有 2 条候选也返回，不再硬性要求 3 条',
+    (J('extractComments', '1. 第一条中文评论内容\n2. 第二条中文评论内容') || []).length === 2);
+  A('1.4.18 段落兜底（空行分段）仍能出 3 条',
+    (J('extractComments', '这顿简单的午饭看着就很舒服\n\n忙了一天能停下来吃口热的最重要\n\n明天也别太赶，慢慢来') || []).length === 3);
+  const mixedRefusal = "I can't follow that format or role.\n\n```\n今天确实辛苦了，好好歇会儿\n```\n\n```\n简单的午饭反而最踏实\n```";
+  const mixedOut = J('extractComments', mixedRefusal) || [];
+  A('1.4.18 拒答 + 代码块时只取真实评论',
+    mixedOut.length === 2 && mixedOut.every((s) => !/can't follow/.test(s)));
 
   // --- 请求体 / 请求头 ---
   let body;
@@ -2848,7 +2893,7 @@ async function runPrice1413Checks() {
   const perms = (manifest1413.permissions || []).slice().sort();
   const hosts = manifest1413.host_permissions || [];
   add('1.4.13 manifest 升到 1.4.13 且只新增 alarms / notifications',
-    manifest1413.version === '1.4.17' &&
+    manifest1413.version === '1.4.18' &&
     perms.join(',') === ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads',
       'notifications', 'offscreen', 'storage'].join(','));
   add('1.4.16 仅新增 Firsto 只读行情域名 + tapeup.io 采集权限，没有通配域名',
@@ -2883,9 +2928,9 @@ async function runPrice1413Checks() {
   add('1.4.13 提醒链接做白名单，通知点击不会打开任意站点',
     bgPriceSrc.includes('TapePrice.safeLink(a.url)') && bgPriceSrc.includes('TapePrice.safeLink(url)'));
   add('1.4.16 版本说明 / README / 按钮 title 均同步到 1.4.16，且 1.4.15 历史说明保留',
-    read('content.js').includes('v1.4.17') && popupHtml1413.includes('当前 v1.4.17') &&
-    readme1413.includes('### 1.4.17：') && read('content.js').includes('TapePost v1.4.17') &&
-    popupJs1413.includes('v1.4.17 ') && popupJs1413.includes('v1.4.15 修好 AI 评论') &&
+    read('content.js').includes('v1.4.18') && popupHtml1413.includes('当前 v1.4.18') &&
+    readme1413.includes('### 1.4.18：') && read('content.js').includes('TapePost v1.4.18') &&
+    popupJs1413.includes('v1.4.18 ') && popupJs1413.includes('v1.4.15 修好 AI 评论') &&
     readme1413.includes('### 1.4.15：'));
 
   return checks;
@@ -3486,7 +3531,7 @@ async function runThinking1415Checks() {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.17' },
+      ok: manifestJson.version === '1.4.18' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -3514,7 +3559,7 @@ async function runThinking1415Checks() {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.17' },
+      ok: manifestJson.version === '1.4.18' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -3529,7 +3574,7 @@ async function runThinking1415Checks() {
     { name: '1.4.4 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.17') && popupHtml.includes('当前 v1.4.17') }
+      ok: contentJs.includes('v1.4.18') && popupHtml.includes('当前 v1.4.18') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -3817,8 +3862,8 @@ async function runThinking1415Checks() {
 
   const promo148Checks = [
     { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
-      ok: manifestJson.version === '1.4.17' && contentJs.includes('v1.4.17') &&
-          popupHtml.includes('当前 v1.4.17') && contentJs.includes('TapePost v1.4.17') },
+      ok: manifestJson.version === '1.4.18' && contentJs.includes('v1.4.18') &&
+          popupHtml.includes('当前 v1.4.18') && contentJs.includes('TapePost v1.4.18') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -3937,10 +3982,10 @@ async function runThinking1415Checks() {
       ok: applyQuickBody.includes('const prefixOk =') &&
           applyQuickBody.includes('normReplyText(after).indexOf(normReplyText(body)) === 0') },
     { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
-      ok: manifestJson.version === '1.4.17' &&
-          contentJs.includes('TapePost v1.4.17') &&
-          contentJs.includes('v1.4.17') &&
-          popupHtml.includes('当前 v1.4.17') &&
+      ok: manifestJson.version === '1.4.18' &&
+          contentJs.includes('TapePost v1.4.18') &&
+          contentJs.includes('v1.4.18') &&
+          popupHtml.includes('当前 v1.4.18') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') },
     { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
       ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
@@ -4015,9 +4060,9 @@ async function runThinking1415Checks() {
     { name: '1.4.11 运行时：X 拒绝写入时自动恢复原文',
       ok: !!promo148 && promo148.refusedRestored === true },
     { name: '1.4.11 版本已同步到 manifest / 按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.17' &&
-          contentJs.includes('v1.4.17') && contentJs.includes('TapePost v1.4.17') &&
-          popupHtml.includes('当前 v1.4.17') &&
+      ok: manifestJson.version === '1.4.18' &&
+          contentJs.includes('v1.4.18') && contentJs.includes('TapePost v1.4.18') &&
+          popupHtml.includes('当前 v1.4.18') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') &&
           read('README.md').includes('### 1.4.11：写回链路重写') },
     { name: '1.4.11 权限集合与当前版本一致',
@@ -4054,10 +4099,10 @@ async function runThinking1415Checks() {
     { name: '1.4.12 后台超时放宽到 40 秒配合重试',
       ok: backgroundJs.includes('fast ? 40000 : 90000') },
     { name: '1.4.12 版本已同步到 manifest / 两个按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.17' &&
-          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.17') &&
-          contentJs.includes('TapePost v1.4.17') &&
-          popupHtml.includes('当前 v1.4.17') &&
+      ok: manifestJson.version === '1.4.18' &&
+          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.18') &&
+          contentJs.includes('TapePost v1.4.18') &&
+          popupHtml.includes('当前 v1.4.18') &&
           popupJs.includes('v1.4.12 修好 AI 评论 401') &&
           read('README.md').includes('### 1.4.12：修复 AI 评论 401') },
     { name: '1.4.12 权限集合与当前版本一致',
