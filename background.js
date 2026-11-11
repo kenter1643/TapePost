@@ -1193,7 +1193,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
         var p = (msg && msg.payload && typeof msg.payload === 'object' && !Array.isArray(msg.payload)) ? msg.payload : {};
         var val = Number(p.value);
         if (isFinite(val) && val > 0) {
-          var upItem = { value: val, changePct: Number(p.changePct) || null, asOf: p.asOf || null, at: Number(p.at) || Date.now() };
+          var upItem = { value: val, changePct: Number(p.changePct) || null, asOf: p.asOf || null, at: Number(p.at) || Date.now(), debug: (p && p.debug) ? p.debug : null };
           var ups = {}; ups['tapeupPriceCache'] = upItem;
           await localSet(ups);
         }

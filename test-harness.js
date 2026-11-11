@@ -2483,7 +2483,11 @@ async function runPrice1413Checks() {
     ]
   };
   // 1.4.16：TapeUP $UP 内盘价由内容脚本从 tapeup.io 交易页读取（extractUp 接受 HTML 字符串或 document）
-  const upHtml = '<div class="trade"><span>UP/USDT</span> 最新价 0.2955 <span class="chg">+2.95%</span> 24h 成交额 1,234,567</div>';
+  // 模拟真实 tapeup.io 交易页可见文本：UP 以 BEM 计价；钱包余额是「$BEM 数字」(单位在前)、
+  // 盘面实时价是「数字 BEM」(数字在前)、交易记录里还有成交价(0.0227)等干扰项
+  const upHtml = '<div class="wallet">$BEM0.00049456 $UP0.00</div>'
+    + '<div class="chart"><text>0.286182409</text> BEM <text>+1.23%</text></div>'
+    + '<div class="trades">买入0.022712.692774490.2888</div>';
   const bem = T.parseBem(bemFixture);
   const miner = T.parseMiner(minerFixture);
   const upEx = T.extractUp(upHtml);
@@ -2494,8 +2498,10 @@ async function runPrice1413Checks() {
     bem && Math.abs(bem.changePct - (12.53708639 - 12) / 12 * 100) < 1e-6);
   add('1.4.13 矿机日产价按 wei/1e18 换算，且 all 为空时回退 tapeout',
     miner && Math.abs(miner.value - 8.35) < 1e-9 && Math.abs(miner.changePct + 7.2222222) < 1e-4);
-  add('1.4.16 TapeUP 内盘价从交易页文本抓 UP/USDT 最新价与涨跌',
-    upEx && Math.abs(upEx.value - 0.2955) < 1e-9 && Math.abs(upEx.changePct - 2.95) < 1e-6);
+  add('1.4.17 TapeUP 内盘价抓 UP/BEM 盘面实时价，排除钱包余额与交易记录',
+    upEx && Math.abs(upEx.value - 0.286182409) < 1e-9 && Math.abs((upEx.changePct || 0) - 1.23) < 1e-6);
+  add('1.4.17 钱包余额 $BEM0.00049456 不被误认为价格（单位在前、带 $）',
+    T.extractUp('<div>$BEM0.00049456 $UP0.00</div>').value === null);
   add('1.4.16 解析器遇空/坏数据不抛错（extractUp 返回 null 价而非抛异常）',
     T.parseBem({}) === null && T.parseMiner({ series: [] }) === null &&
     T.extractUp('').value === null && T.extractUp(null).value === null &&
@@ -2503,7 +2509,7 @@ async function runPrice1413Checks() {
   add('1.4.13 单位文案与官网一致（BNB，非臆造的 BNB/(BEM·日)）',
     T.META.miner.unit === 'BNB' && !priceJs.includes('BNB/(BEM'));
   add('1.4.13 格式化：前缀 / 小数位 / 涨跌正负号 / 空值',
-    T.format('up', 0.2955) === '$0.2955' && T.format('miner', 8.35) === '8.350' &&
+    T.format('up', 0.286182409) === '0.28618241' && T.format('miner', 8.35) === '8.350' &&
     T.format('bem', 12.537) === '$12.54' && T.format('bem', null) === '—' &&
     T.formatChange(1.2) === '+1.20%' && T.formatChange(-2.95) === '-2.95%' &&
     T.isUp(1) === true && T.isDown(-1) === true && T.isUp(0) === false);
@@ -2842,7 +2848,7 @@ async function runPrice1413Checks() {
   const perms = (manifest1413.permissions || []).slice().sort();
   const hosts = manifest1413.host_permissions || [];
   add('1.4.13 manifest 升到 1.4.13 且只新增 alarms / notifications',
-    manifest1413.version === '1.4.16' &&
+    manifest1413.version === '1.4.17' &&
     perms.join(',') === ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads',
       'notifications', 'offscreen', 'storage'].join(','));
   add('1.4.16 仅新增 Firsto 只读行情域名 + tapeup.io 采集权限，没有通配域名',
@@ -2877,9 +2883,9 @@ async function runPrice1413Checks() {
   add('1.4.13 提醒链接做白名单，通知点击不会打开任意站点',
     bgPriceSrc.includes('TapePrice.safeLink(a.url)') && bgPriceSrc.includes('TapePrice.safeLink(url)'));
   add('1.4.16 版本说明 / README / 按钮 title 均同步到 1.4.16，且 1.4.15 历史说明保留',
-    read('content.js').includes('v1.4.16') && popupHtml1413.includes('当前 v1.4.16') &&
-    readme1413.includes('### 1.4.16：') && read('content.js').includes('TapePost v1.4.16') &&
-    popupJs1413.includes('v1.4.16 ') && popupJs1413.includes('v1.4.15 修好 AI 评论') &&
+    read('content.js').includes('v1.4.17') && popupHtml1413.includes('当前 v1.4.17') &&
+    readme1413.includes('### 1.4.17：') && read('content.js').includes('TapePost v1.4.17') &&
+    popupJs1413.includes('v1.4.17 ') && popupJs1413.includes('v1.4.15 修好 AI 评论') &&
     readme1413.includes('### 1.4.15：'));
 
   return checks;
@@ -3480,7 +3486,7 @@ async function runThinking1415Checks() {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.16' },
+      ok: manifestJson.version === '1.4.17' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -3508,7 +3514,7 @@ async function runThinking1415Checks() {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.16' },
+      ok: manifestJson.version === '1.4.17' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -3523,7 +3529,7 @@ async function runThinking1415Checks() {
     { name: '1.4.4 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.16') && popupHtml.includes('当前 v1.4.16') }
+      ok: contentJs.includes('v1.4.17') && popupHtml.includes('当前 v1.4.17') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -3811,8 +3817,8 @@ async function runThinking1415Checks() {
 
   const promo148Checks = [
     { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
-      ok: manifestJson.version === '1.4.16' && contentJs.includes('v1.4.16') &&
-          popupHtml.includes('当前 v1.4.16') && contentJs.includes('TapePost v1.4.16') },
+      ok: manifestJson.version === '1.4.17' && contentJs.includes('v1.4.17') &&
+          popupHtml.includes('当前 v1.4.17') && contentJs.includes('TapePost v1.4.17') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -3931,10 +3937,10 @@ async function runThinking1415Checks() {
       ok: applyQuickBody.includes('const prefixOk =') &&
           applyQuickBody.includes('normReplyText(after).indexOf(normReplyText(body)) === 0') },
     { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
-      ok: manifestJson.version === '1.4.16' &&
-          contentJs.includes('TapePost v1.4.16') &&
-          contentJs.includes('v1.4.16') &&
-          popupHtml.includes('当前 v1.4.16') &&
+      ok: manifestJson.version === '1.4.17' &&
+          contentJs.includes('TapePost v1.4.17') &&
+          contentJs.includes('v1.4.17') &&
+          popupHtml.includes('当前 v1.4.17') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') },
     { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
       ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
@@ -4009,9 +4015,9 @@ async function runThinking1415Checks() {
     { name: '1.4.11 运行时：X 拒绝写入时自动恢复原文',
       ok: !!promo148 && promo148.refusedRestored === true },
     { name: '1.4.11 版本已同步到 manifest / 按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.16' &&
-          contentJs.includes('v1.4.16') && contentJs.includes('TapePost v1.4.16') &&
-          popupHtml.includes('当前 v1.4.16') &&
+      ok: manifestJson.version === '1.4.17' &&
+          contentJs.includes('v1.4.17') && contentJs.includes('TapePost v1.4.17') &&
+          popupHtml.includes('当前 v1.4.17') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') &&
           read('README.md').includes('### 1.4.11：写回链路重写') },
     { name: '1.4.11 权限集合与当前版本一致',
@@ -4048,10 +4054,10 @@ async function runThinking1415Checks() {
     { name: '1.4.12 后台超时放宽到 40 秒配合重试',
       ok: backgroundJs.includes('fast ? 40000 : 90000') },
     { name: '1.4.12 版本已同步到 manifest / 两个按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.16' &&
-          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.16') &&
-          contentJs.includes('TapePost v1.4.16') &&
-          popupHtml.includes('当前 v1.4.16') &&
+      ok: manifestJson.version === '1.4.17' &&
+          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.17') &&
+          contentJs.includes('TapePost v1.4.17') &&
+          popupHtml.includes('当前 v1.4.17') &&
           popupJs.includes('v1.4.12 修好 AI 评论 401') &&
           read('README.md').includes('### 1.4.12：修复 AI 评论 401') },
     { name: '1.4.12 权限集合与当前版本一致',

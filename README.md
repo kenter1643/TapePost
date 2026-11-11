@@ -20,16 +20,24 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-11）**：本仓库 `main` 是 **1.4.16**（TapeUP $UP 价格源由 DexScreener 改为 tapeup.io 交易页内盘价采集）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
+> **版本状态（2026-11-11）**：本仓库 `main` 是 **1.4.17**（TapeUP $UP 内盘价修正为按 UP/BEM 计价精准抽取，新增真机调试浮层）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
 
 ### 1.4.16：TapeUP $UP 价格改用 tapeup.io 内盘价
 
-用户反馈面板上 $UP 价格不对，确认应取自 `https://tapeup.io/zh/trade/token?id=1` 的内盘价（TAPELIQUID UP/USDT 现货对），而非之前的 DexScreener 外部盘价。
+用户反馈面板上 $UP 价格不对，确认应取自 `https://tapeup.io/zh/trade/token?id=1` 的**内盘价**——该页是 UP/BEM 计价（用 BEM 买 UP），而非此前误用的 DexScreener 外部盘价。
 
 1. **数据源切换**：移除 DexScreener 依赖与 `api.dexscreener.com` 主机权限；新增 `tapeup.io` 主机权限，仅用于在交易页注入内容脚本（`tapeup-price.js`）读取页面显示的内盘价。tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会返回 403/502，因此改由用户浏览器里已通过 CF 的会话去读——这是真正的内盘价格，不猜接口、不依赖第三方 DEX。
 2. **采集 + 缓存**：`tapeup-price.js` 用 `MutationObserver` + 3 秒轮询，从页面 DOM 抽价（多策略正则，按置信度打分），变化时才 `sendMessage({type:'TAPUP_PRICE'})` 回传；后台 `localSet('tapeupPriceCache')` 缓存。PRICE_GET / PRICE_REFRESH 用 `withUp()` 把缓存并入快照；超过 30 分钟未刷新标记为 `stale`，不直接拿旧值误报。
 3. **展示 / 跳转**：UP 卡片、浮层、通知点击都打开 `tapeup.io/zh/trade/token?id=1`；其余两项仍打开 Firsto 数据页。关闭交易页后沿用缓存，缓存为空时引导「请打开 tapeup.io 交易页」。
-4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价 → 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.16`。
+4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价 → 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.17`。
+
+### 1.4.17：修正内盘价抽取（UP 以 BEM 计价，非 UP/USDT）
+
+用户反馈「内盘价格不对」。核查真实 tapeup.io 交易页后发现根因：内盘交易对是 **UP/BEM**（用 BEM 买 UP），而上一版误以为是 UP/USDT，正则全在找「最新价 / UP-USDT」等页面上根本不存在的标签，于是兜底抽到了钱包余额或交易记录里的错数字。
+
+1. **单位与标签**：`META.up` 单位由 USD 改为 BEM，去掉 `$` 前缀；盘面实时价在页面上以「数字 BEM」呈现（如 `0.286182409 BEM`），而钱包余额是「$BEM 数字」（单位在前、带 `$`），两者顺序相反，`extractUp` 据此精准区分并排除钱包余额与交易记录干扰。
+2. **抽取逻辑**：优先取小数尾数非全 0 的「数字 BEM」（实时价特征，排开坐标轴规整刻度 0.28/0.30）；退路取交易活动记录里的成交价。详见 `price.js` 的 `extractUp` 与 `tapeup-price.js`。
+3. **真机验证浮层**：`tapeup-price.js` 在交易页右下角渲染半透明角标，实时显示抽到的内盘价与候选数字，便于在真机确认抽取是否正确（点击角标展开候选）。
 
 ### 1.4.15：修复 AI 评论「原文：Thinking about your request」
 
@@ -58,7 +66,7 @@
 
 在 TapePost 面板最上方加了一排行情卡片，并可给每项设上下限，越界时右下角弹窗、点击直达 Firsto 交易所。
 
-1. **三项数据都有公开只读来源**：`$BEM` 与「矿机日产能价」取 Firsto 官方 analytics（`/v1/analytics/bem`、`/v1/analytics/circuits`，后者取 24h 内最近一个有效 `dailyCapacityPriceWei`，按官网图表口径 `BigInt/1e18` 换算为 BNB）；`TapeUP $UP` 取 tapeup.io 交易页（TAPELIQUID UP/USDT）显示的内盘价——tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会被拦，因此由扩展的内容脚本在用户浏览器（已通过 CF）里读取页面显示的内盘价并回传后台缓存。全部免登录、免 API Key、不上传任何本机数据。
+1. **三项数据都有公开只读来源**：`$BEM` 与「矿机日产能价」取 Firsto 官方 analytics（`/v1/analytics/bem`、`/v1/analytics/circuits`，后者取 24h 内最近一个有效 `dailyCapacityPriceWei`，按官网图表口径 `BigInt/1e18` 换算为 BNB）；`TapeUP $UP` 取 tapeup.io 交易页（UP 以 BEM 计价，即 UP/BEM 内盘价；详见 1.4.17 修正）显示的内盘价——tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会被拦，因此由扩展的内容脚本在用户浏览器（已通过 CF）里读取页面显示的内盘价并回传后台缓存。全部免登录、免 API Key、不上传任何本机数据。
 2. **卡片可点**：TapeUP → `tapeup.io/zh/trade/token?id=1`（点击打开交易页，由扩展读取内盘价），矿机日产 → `firsto.ai/data/circuits`，BEM → `firsto.ai/data/bem`；涨红跌绿，显示 24h 变化、更新时间，↻ 可立即刷新。点开面板读 2 分钟内缓存，后台默认每 5 分钟查一次（可设 1/5/15/30 分钟）。
 3. **上下限提醒**：每项可分别填下限 / 上限，留空即不监控该方向。判定用状态机，只有「从区间内跨到区间外」那一次提醒，不会每分钟重复弹；另有 5~60 分钟冷却兜底。改完阈值点保存会清空状态机，新阈值立即生效。
 4. **双层提醒**：`price-alert.js` 在已打开的支持站点右下角画浮层（不改动页面原有 DOM，文字全用 `textContent`，20 秒自动消失，最多叠 3 条）；同时发一条系统通知，没开网页也能收到。点浮层 / 点通知都会打开 Firsto 对应数据页；通知 id → 链接映射存本地，Service Worker 重启后仍能正确跳转。

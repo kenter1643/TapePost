@@ -504,7 +504,7 @@ const INFO = {
   versions: {
     title: '版本说明',
     lines: [
-      'v1.4.16 TapeUP $UP 价格改为读取 tapeup.io 交易页内盘价（tapeup.io 整站 Cloudflare 防护，后台直接抓会被拦，改由扩展在你浏览器打开交易页时自动读取并缓存），不再用 DexScreener 外部盘价；BEM 与矿机日产价仍来自 Firsto 官方 analytics。',
+      'v1.4.17 修正 TapeUP 内盘价抽取：tapeup.io 内盘是 UP/BEM 计价（非此前误以为的 UP/USDT），重写抽取逻辑——盘面实时价以「数字 BEM」呈现、钱包余额则是「$BEM 数字」（顺序相反），据此精准区分并排除钱包余额与交易记录干扰；Cloudflare 防护仍使后台无法直接抓，由扩展在你打开交易页时读取并缓存。',
       'v1.4.15 修好 AI 评论「原文：Thinking about your request」：思考帧不再冒充回答、等得到 final 帧、请求体对齐 XVM；解析失败给帧级诊断而非甩锅模型。',
       'v1.4.14 修好 AI 评论签名 childNodes 报错：整棵克隆 X 首页动画帧、帧留到异步签名完成、页面就绪预热签名器，签名失败时 XVM 通道兜底。',
       'v1.4.13 面板顶端新增 TapeUP / 矿机日产价 / BEM 实时行情，可设上下限，越界右下角弹窗 + 系统通知，点击直达 Firsto 交易所。',
@@ -590,9 +590,9 @@ const INFO = {
   price: {
     title: '行情与提醒说明',
     lines: [
-      '三项数据：TapeUP·内盘（$UP）、矿机日产能价（BNB）、$BEM。',
+      '三项数据：TapeUP 内盘（UP/BEM 计价）、矿机日产能价（BNB）、$BEM。',
       'BEM 与矿机日产价取自 Firsto 官方 analytics（公开只读）。',
-      'TapeUP $UP 内盘价来自 tapeup.io 交易页（TAPELIQUID UP/USDT）：tapeup.io 整站 Cloudflare 防护，',
+      'TapeUP 内盘价来自 tapeup.io 交易页，按 UP/BEM 计价（用 BEM 买 UP）；tapeup.io 整站 Cloudflare 防护，',
       '后台无法直接抓取，因此由扩展在你打开交易页时从页面自动读取内盘价并缓存；关闭后沿用缓存。',
       '均不登录、不需要 API Key、不发送任何本机数据。',
       '点开面板会读 2 分钟内的缓存；点 ↻ 可立即刷新，后台默认每 5 分钟查一次。',
