@@ -580,7 +580,7 @@ async function handleGrokMessage(msg, sender) {
         ok: t != null, mode: 'native', reloaded: 0,
         note: t != null
           ? '站内直连通道正常：当前 X 标签已就绪，不需要重建 Grok 标签。'
-          : '没检测到可用的站内直连脚本。请刷新 X 页面（重载扩展后必须刷新），或在设置里切到「页面模式」再重建标签。'
+          : '没检测到可用的站内直连脚本。请在 chrome://extensions 重新加载扩展后刷新 X 页面；升级 MAIN world 脚本只刷新页面不够。'
       };
     }
     let tabs = [];
@@ -623,7 +623,7 @@ async function handleGrokMessage(msg, sender) {
         };
       }
       if (!forceNative) effectiveMode = String(cfg.grokApiKey || '').trim() ? 'api' : 'page';
-      else throw new Error('站内直连脚本没有响应：请刷新 X 页面（重载扩展后必须刷新），或在设置里切回「页面模式」。');
+      else throw new Error('站内直连脚本没有响应：请在 chrome://extensions 重新加载扩展后刷新 X 页面；升级 MAIN world 脚本只刷新页面不够。');
     }
     if (effectiveMode === 'page') {
       // 页面模式不做真实提问，只验证能不能连上 x.com 里那个 Grok 页面
@@ -673,7 +673,8 @@ async function handleGrokMessage(msg, sender) {
         nativeFailure = String(e && e.message || e);
         if (forceNative) {
           throw new Error('站内直连 Grok 生成失败：' + nativeFailure +
-            '。请刷新 X 页面后重试；也可在设置里把运行模式切到「页面模式」。');
+            '。请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
+            '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。');
         }
         console.warn('[bg][grok] 站内直连失败，降级页面模式：' + nativeFailure);
       }
@@ -685,11 +686,11 @@ async function handleGrokMessage(msg, sender) {
     catch (e) {
       if (nativeFailure) {
         // 1.4.1：把直连的真实失败原因放在最前面，避免被页面模式的
-        // 「提示词写入校验失败」盖住。1.4.2：页面模式已弃用且必然失败，
-        // 不再把它那一长串误导性提示怼给用户，只保留一句结论 + 可操作兜底。
+        // 「提示词写入校验失败」盖住。1.4.14：不再建议切回已弃用的页面模式，
+        // 改成针对签名失败的可操作指引（刷新 / 让 X 自己发一次请求 / 看诊断）。
         throw new Error('站内直连失败：' + nativeFailure.slice(0, 300) +
-          '。旧的「页面模式」兜底同样不可用（X 改版后写入常失败，已弃用）。' +
-          '请点插件图标 → Grok 设置 → 「测试当前模式」看诊断；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。');
+          '。签名不可用时请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
+          '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。');
       }
       throw e;
     }

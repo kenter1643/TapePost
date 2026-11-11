@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.13（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.14（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,18 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-10）**：本仓库 `main` 是 **1.4.13**（新增 TapeOut 实时行情与价格上下限提醒）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（新增只读行情请求与通知用途）后再上传新包。
+> **版本状态（2026-11-11）**：本仓库 `main` 是 **1.4.14**（修复 AI 评论签名 `childNodes` 报错）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 只改本机签名构造，不新增网络请求或权限。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（新增只读行情请求与通知用途）后再上传新包。
+
+### 1.4.14：修复 AI 评论签名 `childNodes` 报错
+
+真机报错：`站内直连失败：无法建立 X 站内 Grok 直连：签名生成：Cannot read properties of undefined (reading 'childNodes')`。重新逐行对照 **X Viral Monitor v1.18.17** 的 `lib/x-client-transaction.js` 与开源 `x-client-transaction-id` 实现（iSarabjitDhiman / swyxio）后定位到两处结构性差异：
+
+1. **帧结构少了外层 `div`**：X 首页下发的动画帧是 `<div id="loading-x-anim-N"><svg><g><path/></g></svg></div>`，旧版把帧「重建」成 `<svg id="loading-x-anim-N"><g><path/></g></svg>`，只保留了 class 与 path 的 `d`。X 新版 `ondemand.s` 签名模块按 `childNodes` 层级读几何数据，层级错位就报 `undefined.childNodes`。现在优先 `importNode` **整棵克隆**首页原始帧（只剥离 script / style / link / `on*` 事件属性），重建逻辑仅作克隆不可用时的兜底。
+2. **懒初始化 + 帧移除太早**：XVM 在 `document_start` 就 `warmup()`，那时 X 自己的 4 个动画帧还在 DOM；旧版等用户点「AI 评论」才建签名器，X 首次 API 调用后帧已被消费，且 priming 的假帧在 `finally` 里**同步移除**，X 把采样挪到 `digest await` 之后就会读到空 DOM。现在页面就绪即预热签名器，帧保留到异步签名真正完成，且每次调用 `generate` 都由 `withFrames` 保证 DOM 里有完整帧、settle 后才移除并恢复 X 原有帧的 id/class。
+
+另外补齐失败兜底链：原生模块抛 `childNodes` 时丢弃缓存的坏闭包重建；签名链路整体没发出请求时先试 XVM 通道（`window.__xvmGrok.generate`），不再直接报错；错误文案去掉「切回页面模式」这类已弃用且必然失败的建议，改成刷新 / 让 X 自己发一次请求捕获签名 / 「测试当前模式」诊断。`status()` 新增 `frameTemplate` / `generatorCached` / `framesInDom` 三个诊断字段。
+
+**升级必须手动重载**：MAIN world 脚本与签名器都要重新注入，只刷新 X 页面不够。到 `chrome://extensions` 点「重新加载」→ 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.14` → 设置里「测试当前模式」应显示签名可用，再点「AI 评论」。
 
 ### 1.4.13：面板顶端实时行情 + 价格上下限提醒
 

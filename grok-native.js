@@ -11,6 +11,15 @@
  *      仍失败才借用 X Viral Monitor（window.__xvmGrok.generate）兜底。
  *      XVM 通道稳定但提示词长、体感慢，因此不再默认抢占正常快速路径。
  *
+ * 1.4.14 起，修复真机报错「签名生成：Cannot read properties of undefined
+ *      (reading 'childNodes')」。逐行对照 XVM v1.18.17 的
+ *      lib/x-client-transaction.js 与开源 x-client-transaction-id 实现：
+ *      X 首页动画帧真实结构是 <div id="loading-x-anim-N"><svg><g><path/></g></svg></div>，
+ *      旧版却把帧重建成 <svg id=...><g><path/></g></svg>（少了外层 div），
+ *      X 新版 ondemand.s 模块按 childNodes 层级取 path 时读到 undefined。
+ *      现在整棵克隆首页原始帧、帧在异步签名期间常驻、注入后主动 warmup，
+ *      并在签名链路整体失败时补上 XVM 通道兜底。
+ *
  * 设计参考了本机已安装的 X Viral Monitor 的稳定实现，但代码独立：
  *   - 复用 X 页面自己的 webpack「ondemand.s」模块生成 x-client-transaction-id，
  *     签名算法随 X 前端更新，不需要硬编码或抓包；
@@ -165,7 +174,11 @@
     return runtime;
   }
 
-  function makeFrames(homeDoc) {
+  /* 1.4.14 之前的做法：把帧重建成 <svg id="loading-x-anim-N"><g>…</g></svg>。
+   * 保留了 class 与 path 的 d，但丢掉了外层 <div>，也丢掉了 X 下发的其它
+   * 子节点；X 新版签名模块按 childNodes 层级读几何数据时直接崩。
+   * 只作为「无法整棵克隆」时的兜底保留。 */
+  function rebuildFrames(homeDoc) {
     var host = document.createElement('div');
     host.hidden = true;
     var frames = Array.prototype.slice.call(homeDoc.querySelectorAll(FRAME_SELECTOR));
@@ -186,6 +199,99 @@
       host.appendChild(svg);
     });
     return host;
+  }
+
+  /* 只从 X 首页 HTML 取几何数据；克隆时剥掉脚本 / 样式 / 外链 / on* 事件，
+   * 与 XVM「never scripts, styles, links or event attributes」保持一致。 */
+  function stripDangerous(node) {
+    try {
+      if (!node || !node.querySelectorAll) return;
+      var all = [node].concat(Array.prototype.slice.call(node.querySelectorAll('*')));
+      all.forEach(function (el) {
+        if (!el || !el.attributes) return;
+        Array.prototype.slice.call(el.attributes).forEach(function (a) {
+          var n = String((a && (a.name || a.nodeName)) || '').toLowerCase();
+          var v = el.getAttribute ? String(el.getAttribute(n) || '') : '';
+          if (n.indexOf('on') === 0 || (n === 'href' && /^\s*javascript:/i.test(v))) {
+            try { el.removeAttribute(n); } catch (e) {}
+          }
+        });
+      });
+      Array.prototype.slice.call(node.querySelectorAll('script,style,link,iframe,object,embed'))
+        .forEach(function (b) {
+          try { if (b.parentNode) b.parentNode.removeChild(b); } catch (e) {}
+        });
+    } catch (e) {}
+  }
+
+  /* 整棵克隆 X 首页下发的 4 个帧：div → svg → g → path 的层级、
+   * 文本节点与全部属性都原样保留，X 原生模块无论按 id、class 还是
+   * childNodes 索引读取都能拿到与 X 自己页面一致的几何数据。 */
+  function cloneFrames(homeDoc) {
+    if (!document.importNode || !document.createElement) return null;
+    var frames = Array.prototype.slice.call(homeDoc.querySelectorAll(FRAME_SELECTOR));
+    if (frames.length !== 4) return null;
+    var host = document.createElement('div');
+    host.hidden = true;
+    for (var i = 0; i < frames.length; i++) {
+      var node = document.importNode(frames[i], true);
+      stripDangerous(node);
+      node.id = 'loading-x-anim-' + i;
+      if (!node.querySelectorAll || node.querySelectorAll('path').length < 2) return null;
+      host.appendChild(node);
+    }
+    return host;
+  }
+
+  var frameProto = null;   // 最近一次从首页构造的帧模板，供每次签名调用临时复用
+  function buildFrameHost(homeDoc) {
+    var host = null;
+    try { host = cloneFrames(homeDoc); } catch (e) { host = null; }
+    if (!host) host = rebuildFrames(homeDoc);
+    try { frameProto = host.cloneNode ? host.cloneNode(true) : host; } catch (e) { frameProto = host; }
+    return host;
+  }
+
+  /* 1.4.14：旧版只在 priming 时插帧，并在 Promise 完成前同步移除；
+   * X 新版把动画采样放到 digest await 之后，移除太早就读不到帧。
+   * 现在每次调用原生 generate 都保证 DOM 里有一份完整帧，settle 后才移除。 */
+  function withFrames(makePromise) {
+    var host = null, originals = [], saved = [];
+    try {
+      if (!frameProto || !document.body || typeof document.body.appendChild !== 'function' ||
+          typeof document.querySelectorAll !== 'function') return makePromise();
+      if (document.querySelectorAll(FRAME_SELECTOR).length === 0) {
+        host = frameProto.cloneNode ? frameProto.cloneNode(true) : frameProto;
+        originals = Array.prototype.slice.call(document.querySelectorAll(FRAME_SELECTOR));
+        saved = originals.map(function (n) {
+          return { id: n.id, cls: n.getAttribute ? n.getAttribute('class') : null };
+        });
+        originals.forEach(function (n, i) {
+          try { n.id = 'tapepost-saved-frame-' + i; if (n.removeAttribute) n.removeAttribute('class'); } catch (e) {}
+        });
+        document.body.appendChild(host);
+      }
+    } catch (e) { host = null; }
+
+    function cleanup() {
+      if (!host) return;
+      try {
+        if (host.remove) host.remove();
+        else if (host.parentNode) host.parentNode.removeChild(host);
+      } catch (e) {}
+      originals.forEach(function (n, i) {
+        try {
+          n.id = saved[i].id;
+          if (saved[i].cls !== null && n.setAttribute) n.setAttribute('class', saved[i].cls);
+        } catch (e) {}
+      });
+    }
+
+    var p;
+    try { p = makePromise(); }
+    catch (e) { cleanup(); throw e; }
+    return Promise.resolve(p).then(function (v) { cleanup(); return v; },
+      function (e) { cleanup(); throw e; });
   }
 
   /* 返回 X 原生模块里的 generate(path, method) —— 与 X 网页客户端同版本。 */
@@ -220,14 +326,15 @@
     if (typeof generate !== 'function') throw new Error('X 签名生成器缺失');
 
     var homeDoc = new DOMParser().parseFromString(homeHtml, 'text/html');
-    if (!document.querySelector('meta[name="twitter-site-verification"]')) {
+    // 1.4.14：对齐 XVM —— 校验 meta 的 content，而不是只判断元素存在
+    var vmeta = document.querySelector('meta[name="twitter-site-verification"]');
+    if (!vmeta || !(vmeta.getAttribute && vmeta.getAttribute('content'))) {
       throw new Error('当前 X 页面缺少校验标记，请刷新页面后重试');
     }
-    var host = makeFrames(homeDoc);
+    var host = buildFrameHost(homeDoc);
     var originals = Array.prototype.slice.call(document.querySelectorAll(FRAME_SELECTOR));
     var ids = originals.map(function (n) { return n.id; });
     var classes = originals.map(function (n) { return n.getAttribute('class'); });
-    var pending;
     try {
       // 原生模块会消费页面上第一组动画帧，先临时把 X 自己的帧改名保护起来
       originals.forEach(function (node, i) {
@@ -235,7 +342,9 @@
         node.removeAttribute('class');
       });
       document.body.appendChild(host);
-      pending = generate(ENDPOINT_PATH, 'POST');
+      // 1.4.14：帧必须留到异步签名真正完成。旧版在 finally 里同步移除，
+      // X 新版把动画采样挪到 digest await 之后时就会读到空 DOM。
+      await generate(ENDPOINT_PATH, 'POST');
     } finally {
       try { host.remove(); } catch (e) {}
       originals.forEach(function (node, i) {
@@ -243,7 +352,6 @@
         if (classes[i] !== null) node.setAttribute('class', classes[i]);
       });
     }
-    await pending;
     return generate;
   }
 
@@ -257,12 +365,34 @@
       genPromise = buildXGenerator().catch(function (e) { genPromise = null; throw e; });
     }
     var g = await genPromise;
-    return { fn: function (method, path) { return g(path, method); }, via: 'x-ondemand' };
+    return { fn: function (method, path) {
+      return withFrames(function () { return g(path, method); });
+    }, via: 'x-ondemand' };
   }
 
   function resetGenerator() {
     genPromise = null;
+    frameProto = null;
     try { if (window.__xvmXct && window.__xvmXct.reset) window.__xvmXct.reset(); } catch (e) {}
+  }
+
+  /* XVM 在 document_start 就 warmup：那时 X 自己的 4 个动画帧还在 DOM。
+   * 我们以前等用户点「AI 评论」才懒初始化，X 首次 API 调用后就把帧消费掉了，
+   * 只剩自己造的帧，一旦层级不对就没有任何退路。 */
+  function warmupGenerator() {
+    try {
+      if (!document.body || !document.body.appendChild) return;
+      generator().then(function (g) { return g.fn('POST', ENDPOINT_PATH); }).catch(function () {});
+    } catch (e) {}
+  }
+
+  function scheduleWarmup() {
+    var start = function () { try { setTimeout(warmupGenerator, 0); } catch (e) {} };
+    try {
+      if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', start, { once: true });
+      } else start();
+    } catch (e) { try { start(); } catch (e2) {} }
   }
 
   // ---------------------------------------------------------------- 3. 请求 / 响应
@@ -611,7 +741,11 @@
         via = g.via;
         return true;
       } catch (e) {
-        attempts.push(g.via + '：' + (e && e.message || e));
+        var gerr = String((e && e.message) || e);
+        attempts.push(g.via + '：' + gerr);
+        // 1.4.14：原生模块读 DOM 帧失败时，缓存的 generate 闭包可能是坏的，
+        // 丢掉重建一次，避免之后每次重试都复用同一个坏闭包。
+        if (/childNodes|Cannot read properties/.test(gerr)) resetGenerator();
         res = null;
         return false;
       }
@@ -622,11 +756,19 @@
       if (!borrowed && window.__xvmXct && typeof window.__xvmXct.generateTxId === 'function') {
         await tryGenerator(true);
       }
+      // 1.4.14：只有上述签名路径确实都没发出请求时才试 XVM 通道（它自带签名器）。
+      // 注意这里必须重新判断 res —— tryGenerator 成功时会把它设成响应对象，
+      // 否则会把已经成功的直连结果覆盖掉。
+      if (!res) {
+        var xvmEarly = await tryXvm(prompt);
+        if (xvmEarly) return { comments: xvmEarly, raw: xvmEarly.join('\n'), via: 'xvm-grok-signature-fallback' };
+      }
     }
 
     if (!res) {
       throw new Error('无法建立 X 站内 Grok 直连：' + (attempts.join('；') || '签名不可用') +
-        '。请刷新 X 页面；若仍失败，可到 x.com/i/grok 随便发一条消息让扩展抓到有效签名，或在设置里切回「页面模式」。');
+        '。请刷新 X 页面后重试；若仍失败，可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
+        '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。');
     }
     if (!res.ok) {
       var httpStatus = res.status;
@@ -674,7 +816,7 @@
       if (httpStatus === 404) {
         captured.txId = '';
         resetGenerator();
-        throw new Error('X 拒绝了本次 Grok 签名（404）。请刷新 X 页面后重试；持续失败请在设置里切到「页面模式」。');
+        throw new Error('X 拒绝了本次 Grok 签名（404）。请刷新 X 页面后重试；持续失败可到 x.com/i/grok 发一条消息让扩展捕获有效签名。');
       }
       if (httpStatus === 429) throw new Error('X 站内 Grok 触发限流（429），稍等一两分钟再试。');
       throw new Error('X 站内 Grok 请求失败：HTTP ' + httpStatus + ' ' + (res.statusText || ''));
@@ -714,7 +856,13 @@
       hasXvmGrok: hasXvmGrok(),
       xvmCapturedTx: !!xvmCapturedTx(),
       hasXct: !!(window.__xvmXct && window.__xvmXct.generateTxId),
-      hasWebpack: Array.isArray(window.webpackChunk_twitter_responsive_web)
+      hasWebpack: Array.isArray(window.webpackChunk_twitter_responsive_web),
+      frameTemplate: !!frameProto,
+      generatorCached: !!genPromise,
+      framesInDom: (function () {
+        try { return document.querySelectorAll ? document.querySelectorAll(FRAME_SELECTOR).length : -1; }
+        catch (e) { return -1; }
+      })()
     };
   }
 
@@ -737,9 +885,19 @@
     generate: generate,
     _remember: remember,
     _captured: captured,
-    _resetGenerator: resetGenerator
+    _resetGenerator: resetGenerator,
+    // 1.4.14：帧构造与生命周期函数暴露给回归测试（Node vm 可直接调用）
+    buildFrameHost: buildFrameHost,
+    cloneFrames: cloneFrames,
+    rebuildFrames: rebuildFrames,
+    withFrames: withFrames,
+    warmupGenerator: warmupGenerator
   };
   window.__tapeGrokNative = api;
+
+  // XVM 在注入时就 warmup；我们在页面就绪后也做一次，抢在 X 消费动画帧之前
+  // 把签名器初始化好。失败静默忽略，真正用到时仍会重新构建。
+  scheduleWarmup();
 
   // ---------------------------------------------------------------- 6. 与扩展后台的桥
   window.addEventListener('message', function (event) {

@@ -1307,6 +1307,9 @@ function makeNativeCtx(opts) {
   if (opts.xvmGrok) g.window.__xvmGrok = opts.xvmGrok(state);
   if (opts.xvmNet) g.window.__xvmNet = opts.xvmNet(state);
   if (opts.xvmXct) g.window.__xvmXct = opts.xvmXct(state);
+  // 1.4.14：允许注入一套 mini DOM，用来真跑帧克隆 / 帧生命周期
+  if (opts.dom) g.document = opts.dom;
+  if (opts.homeDoc) g.__homeDoc = opts.homeDoc;
   const ctx = vm.createContext(g);
   vm.runInContext(read('grok-native.js'), ctx, { filename: 'grok-native.js' });
   return ctx;
@@ -2811,7 +2814,7 @@ async function runPrice1413Checks() {
   const perms = (manifest1413.permissions || []).slice().sort();
   const hosts = manifest1413.host_permissions || [];
   add('1.4.13 manifest 升到 1.4.13 且只新增 alarms / notifications',
-    manifest1413.version === '1.4.13' &&
+    manifest1413.version === '1.4.14' &&
     perms.join(',') === ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads',
       'notifications', 'offscreen', 'storage'].join(','));
   add('1.4.13 只新增两个只读行情域名，没有申请通配域名',
@@ -2844,9 +2847,9 @@ async function runPrice1413Checks() {
     bgPriceSrc.includes('lastError'));
   add('1.4.13 提醒链接做白名单，通知点击不会打开任意站点',
     bgPriceSrc.includes('TapePrice.safeLink(a.url)') && bgPriceSrc.includes('TapePrice.safeLink(url)'));
-  add('1.4.13 版本说明 / README / 按钮 title 均同步到 1.4.13',
-    read('content.js').includes('v1.4.13') && popupHtml1413.includes('当前 v1.4.13') &&
-    popupJs1413.includes('v1.4.13 面板顶端新增') && readme1413.includes('### 1.4.13：'));
+  add('1.4.14 版本说明 / README / 按钮 title 均同步到 1.4.14',
+    read('content.js').includes('v1.4.14') && popupHtml1413.includes('当前 v1.4.14') &&
+    popupJs1413.includes('v1.4.14 修好 AI 评论签名') && readme1413.includes('### 1.4.14：'));
 
   return checks;
 }
@@ -2859,6 +2862,230 @@ function firstoBundleIncludes(path) {
     if (!fs.existsSync(p)) return true;
     return fs.readFileSync(p, 'utf8').includes('"' + path + '"');
   } catch (e) { return true; }
+}
+
+/* ---------- 1.4.14：签名动画帧真机事故回放 ----------
+ * X 首页帧是 <div id="loading-x-anim-N"><svg><g><path/></g></svg></div>；
+ * 旧版重建成 <svg id="loading-x-anim-N"><g><path/></g></svg>，X 新版
+ * ondemand.s 按 div > svg > g > path 读几何数据时报
+ * "Cannot read properties of undefined (reading 'childNodes')"。
+ * 这里用最小 DOM 真正跑 cloneFrames / rebuildFrames / withFrames，不靠静态猜。 */
+function miniEl(tag) {
+  const n = {
+    tagName: String(tag).toUpperCase(), id: '', hidden: false, _attrs: {},
+    childNodes: [], children: [], style: {}, parentNode: null,
+    setAttribute(k, v) { this._attrs[k] = String(v); if (k === 'id') this.id = String(v); },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null; },
+    removeAttribute(k) { delete this._attrs[k]; if (k === 'id') this.id = ''; },
+    appendChild(c) {
+      this.childNodes.push(c); this.children.push(c); c.parentNode = this; return c;
+    },
+    removeChild(c) {
+      const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1);
+      const j = this.children.indexOf(c); if (j >= 0) this.children.splice(j, 1);
+      c.parentNode = null; return c;
+    },
+    remove() { if (this.parentNode) this.parentNode.removeChild(this); },
+    cloneNode(deep) {
+      const c = miniEl(this.tagName.toLowerCase());
+      c.id = this.id; c.hidden = this.hidden; c._attrs = Object.assign({}, this._attrs);
+      if (deep) this.childNodes.forEach((ch) => c.appendChild(ch.cloneNode(true)));
+      return c;
+    },
+    querySelectorAll(sel) { return miniSelect(this, sel); },
+    querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
+    get attributes() {
+      return Object.keys(this._attrs).map((k) => ({ name: k, nodeName: k, value: this._attrs[k] }));
+    }
+  };
+  return n;
+}
+
+function miniDescendants(root) {
+  const out = [];
+  const walk = (n) => (n.childNodes || []).forEach((c) => { out.push(c); walk(c); });
+  walk(root);
+  return out.filter((n) => n.tagName);
+}
+
+function miniSelect(root, sel) {
+  const all = miniDescendants(root);
+  const s = String(sel).trim();
+  if (s === '*') return all;
+  if (s.indexOf(',') >= 0) {
+    const parts = s.split(',').map((x) => x.trim().toUpperCase());
+    return all.filter((n) => parts.indexOf(n.tagName) >= 0);
+  }
+  if (s.indexOf('[id^=') === 0) {
+    const m = s.match(/\[id\^=["']?([^"'\]]+)["']?\]/);
+    const pre = m ? m[1] : '';
+    return all.filter((n) => String(n.id).indexOf(pre) === 0);
+  }
+  if (s.indexOf('meta[') === 0) {
+    const m = s.match(/name="([^"]+)"/);
+    return all.filter((n) => n.tagName === 'META' && n.getAttribute('name') === (m ? m[1] : ''));
+  }
+  return all.filter((n) => n.tagName === s.toUpperCase());
+}
+
+function makeMiniFrameDom() {
+  const root = miniEl('html'), head = miniEl('head'), body = miniEl('body');
+  root.appendChild(head); root.appendChild(body);
+  const meta = miniEl('meta');
+  meta.setAttribute('name', 'twitter-site-verification');
+  meta.setAttribute('content', 'FAKE-VERIFICATION-KEY');
+  head.appendChild(meta);
+  const doc = {
+    cookie: 'ct0=fake-ct0-token', readyState: 'loading', body: body, head: head,
+    documentElement: root,
+    createElement: (t) => miniEl(t),
+    createElementNS: (ns, t) => miniEl(t),
+    importNode: (n, deep) => n.cloneNode(deep),
+    querySelectorAll: (sel) => miniSelect(root, sel),
+    querySelector: (sel) => miniSelect(root, sel)[0] || null,
+    addEventListener: () => {}
+  };
+
+  const home = miniEl('html'), homeBody = miniEl('body');
+  home.appendChild(homeBody);
+  for (let i = 0; i < 4; i++) {
+    const frame = miniEl('div');
+    frame.setAttribute('id', 'loading-x-anim-' + i);
+    frame.setAttribute('class', 'x-anim-frame-' + i);
+    const svg = miniEl('svg'), g = miniEl('g');
+    const p1 = miniEl('path'); p1.setAttribute('d', 'M0 0C1 2 3 4 5 6');
+    const p2 = miniEl('path'); p2.setAttribute('d', 'M1 1C2 3 4 5 6 7');
+    g.appendChild(p1); g.appendChild(p2); svg.appendChild(g); frame.appendChild(svg);
+    if (i === 0) { // 故意塞危险节点/属性，验证克隆时被剥离
+      frame.appendChild(miniEl('script'));
+      frame.setAttribute('onload', 'evil()');
+    }
+    homeBody.appendChild(frame);
+  }
+  const homeDoc = {
+    querySelectorAll: (sel) => miniSelect(home, sel),
+    querySelector: (sel) => miniSelect(home, sel)[0] || null
+  };
+  return { doc, homeDoc };
+}
+
+/* X ondemand.s 的读取方式：先按 id 找帧，再取帧内部的 svg → g → path。
+ * 帧若被重建为顶层 <svg>，querySelectorAll('svg') 找不到自身，
+ * 就会在 undefined.childNodes 上报出真机那条错误。 */
+function readFrameLikeNative(host) {
+  const frame = host.children[0];
+  const svg = frame.querySelectorAll('svg')[0];
+  const g = svg.childNodes[0];
+  return g.childNodes[0].getAttribute('d');
+}
+
+async function runSignature1414Checks() {
+  const checks = [];
+  const A = (name, ok) => checks.push({ name, ok: !!ok });
+  const nativeJs = read('grok-native.js');
+  const bgJs = read('background.js');
+
+  // ---- 静态接线：对照 XVM / 开源 port 之后必须保留的结构 ----
+  A('1.4.14 整棵克隆 X 首页原始帧，不再只重建 svg',
+    nativeJs.includes('function cloneFrames(homeDoc)') &&
+    nativeJs.includes('document.importNode(frames[i], true)') &&
+    nativeJs.includes('function rebuildFrames(homeDoc)'));
+  A('1.4.14 克隆时剥离 script/style/link 与 on* 事件属性',
+    nativeJs.includes('function stripDangerous(node)') &&
+    nativeJs.includes('script,style,link,iframe,object,embed'));
+  A('1.4.14 帧保留到异步签名完成后才移除（旧版 finally 同步移除）',
+    /await generate\(ENDPOINT_PATH, 'POST'\);[\s\S]{0,240}\} finally \{[\s\S]{0,240}host\.remove\(\)/.test(nativeJs));
+  A('1.4.14 每次调用原生 generate 都由 withFrames 保证 DOM 有完整帧',
+    nativeJs.includes('function withFrames(makePromise)') &&
+    nativeJs.includes('return withFrames(function () { return g(path, method); });'));
+  A('1.4.14 页面就绪即预热签名器（对齐 XVM 的 warmup）',
+    nativeJs.includes('function scheduleWarmup()') &&
+    nativeJs.includes('function warmupGenerator()') &&
+    nativeJs.includes('scheduleWarmup();'));
+  A('1.4.14 meta 校验对齐 XVM：取 content 而不只看元素存在',
+    nativeJs.includes("vmeta.getAttribute('content')"));
+  A('1.4.14 childNodes 错误会重置坏闭包，签名全挂时走 XVM 兜底',
+    nativeJs.includes('if (/childNodes|Cannot read properties/.test(gerr)) resetGenerator();') &&
+    nativeJs.includes("via: 'xvm-grok-signature-fallback'"));
+  A('1.4.14 错误文案不再建议切回已弃用的页面模式',
+    !/切回「页面模式」|切到「页面模式」/.test(nativeJs) &&
+    !bgJs.includes('旧的「页面模式」兜底同样不可用') &&
+    nativeJs.includes('「测试当前模式」看诊断'));
+  A('1.4.14 status 暴露帧模板 / 生成器缓存 / DOM 帧数三项诊断',
+    ['frameTemplate', 'generatorCached', 'framesInDom'].every((k) => nativeJs.includes(k + ':')));
+
+  try {
+    const { doc, homeDoc } = makeMiniFrameDom();
+    const ctx = makeNativeCtx({ dom: doc, homeDoc });
+    const run = (expr) => vm.runInContext(expr, ctx, { timeout: 5000 });
+
+    const host = run('window.__tapeGrokNative.buildFrameHost(__homeDoc)');
+    A('1.4.14 克隆出 4 个帧，首层是 div（与 X 首页层级一致）',
+      host.children.length === 4 && host.children.every((n) => n.tagName === 'DIV') &&
+      host.children[0].id === 'loading-x-anim-0' &&
+      host.children[0].querySelectorAll('path').length === 2);
+    A('1.4.14 克隆帧保留 class 与 path 几何数据，不改动 X 下发内容',
+      host.children[0].getAttribute('class') === 'x-anim-frame-0' &&
+      readFrameLikeNative(host) === 'M0 0C1 2 3 4 5 6');
+    A('1.4.14 克隆时确实剥掉了 script 与 on* 事件属性',
+      host.children[0].querySelectorAll('script').length === 0 &&
+      host.children[0].getAttribute('onload') === null);
+
+    // 真机事故回放：旧版重建帧按 X 原生读法必然抛 childNodes 错误
+    let oldErr = '';
+    try { readFrameLikeNative(run('window.__tapeGrokNative.rebuildFrames(__homeDoc)')); }
+    catch (e) { oldErr = String(e && e.message || e); }
+    A('1.4.14 事故回放：旧版重建帧确实会抛 undefined.childNodes',
+      /childNodes/.test(oldErr));
+    A('1.4.14 修复后帧不再抛 childNodes，原生模块能读到 path',
+      readFrameLikeNative(host) === 'M0 0C1 2 3 4 5 6');
+
+    // 帧生命周期：异步签名期间必须在 DOM，settle 后移除
+    run('window.__pendingResolve = null; window.__framesPromise = ' +
+      'window.__tapeGrokNative.withFrames(function(){ return new Promise(function(res){ window.__pendingResolve = res; }); });');
+    const during = run("document.querySelectorAll('[id^=\"loading-x-anim-\"]').length");
+    A('1.4.14 异步签名期间 DOM 里始终有 4 个完整帧（旧版同步移除会读到 0）',
+      during === 4);
+    run('window.__pendingResolve("tx-1234567890abcdef")');
+    const settled = await run('window.__framesPromise');
+    const after = run("document.querySelectorAll('[id^=\"loading-x-anim-\"]').length");
+    A('1.4.14 Promise settle 后帧被移除且不改返回值，不污染页面 DOM',
+      settled === 'tx-1234567890abcdef' && after === 0);
+    A('1.4.14 帧模板 / DOM 帧数进入诊断字段',
+      run('window.__tapeGrokNative.status().frameTemplate') === true &&
+      run('window.__tapeGrokNative.status().framesInDom') === 0);
+
+    // 签名链路整体失败：childNodes 错误 + 自建模块不可用 → XVM 兜底
+    const badXct = () => ({ generateTxId: () => Promise.reject(
+      new Error("Cannot read properties of undefined (reading 'childNodes')")) });
+    const fbCtx = makeNativeCtx({
+      xvmGrok: (state) => ({ generate: (o) => {
+        state.xvmCalls.push(o);
+        return Promise.resolve(['签名兜底一', '签名兜底二', '签名兜底三']);
+      } }),
+      xvmXct: badXct
+    });
+    const fb = await vm.runInContext(
+      'window.__tapeGrokNative.generate("签名失败提示词", {fast:true})', fbCtx, { timeout: 5000 });
+    A('1.4.14 签名器抛 childNodes 时 XVM 通道兜底返回候选',
+      fb && fb.comments && fb.comments.length === 3 &&
+      fb.via === 'xvm-grok-signature-fallback');
+    A('1.4.14 childNodes 错误后清空缓存的坏生成器，不会一直复用',
+      vm.runInContext('window.__tapeGrokNative.status().generatorCached', fbCtx) === false);
+
+    let msg = '';
+    const badCtx = makeNativeCtx({ xvmXct: badXct });
+    try {
+      await vm.runInContext('window.__tapeGrokNative.generate("签名失败提示词", {fast:true})',
+        badCtx, { timeout: 5000 });
+    } catch (e) { msg = String(e && e.message || e); }
+    A('1.4.14 无 XVM 时错误带真实原因，且不再建议切页面模式',
+      /childNodes/.test(msg) && !/页面模式/.test(msg) && /测试当前模式/.test(msg));
+  } catch (e) {
+    A('1.4.14 签名帧检查无异常抛出', false);
+    note('ERROR', '1.4.14 签名帧检查异常: ' + (e && e.message));
+  }
+  return checks;
 }
 
 (async () => {
@@ -3090,7 +3317,7 @@ function firstoBundleIncludes(path) {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.13' },
+      ok: manifestJson.version === '1.4.14' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -3118,7 +3345,7 @@ function firstoBundleIncludes(path) {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.13' },
+      ok: manifestJson.version === '1.4.14' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -3133,7 +3360,7 @@ function firstoBundleIncludes(path) {
     { name: '1.4.4 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.13') && popupHtml.includes('当前 v1.4.13') }
+      ok: contentJs.includes('v1.4.14') && popupHtml.includes('当前 v1.4.14') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -3421,8 +3648,8 @@ function firstoBundleIncludes(path) {
 
   const promo148Checks = [
     { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
-      ok: manifestJson.version === '1.4.13' && contentJs.includes('v1.4.13') &&
-          popupHtml.includes('当前 v1.4.13') && contentJs.includes('TapePost v1.4.13') },
+      ok: manifestJson.version === '1.4.14' && contentJs.includes('v1.4.14') &&
+          popupHtml.includes('当前 v1.4.14') && contentJs.includes('TapePost v1.4.14') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -3541,10 +3768,10 @@ function firstoBundleIncludes(path) {
       ok: applyQuickBody.includes('const prefixOk =') &&
           applyQuickBody.includes('normReplyText(after).indexOf(normReplyText(body)) === 0') },
     { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
-      ok: manifestJson.version === '1.4.13' &&
-          contentJs.includes('TapePost v1.4.13') &&
-          contentJs.includes('v1.4.13') &&
-          popupHtml.includes('当前 v1.4.13') &&
+      ok: manifestJson.version === '1.4.14' &&
+          contentJs.includes('TapePost v1.4.14') &&
+          contentJs.includes('v1.4.14') &&
+          popupHtml.includes('当前 v1.4.14') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') },
     { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
       ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
@@ -3618,9 +3845,9 @@ function firstoBundleIncludes(path) {
     { name: '1.4.11 运行时：X 拒绝写入时自动恢复原文',
       ok: !!promo148 && promo148.refusedRestored === true },
     { name: '1.4.11 版本已同步到 manifest / 按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.13' &&
-          contentJs.includes('v1.4.13') && contentJs.includes('TapePost v1.4.13') &&
-          popupHtml.includes('当前 v1.4.13') &&
+      ok: manifestJson.version === '1.4.14' &&
+          contentJs.includes('v1.4.14') && contentJs.includes('TapePost v1.4.14') &&
+          popupHtml.includes('当前 v1.4.14') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') &&
           read('README.md').includes('### 1.4.11：写回链路重写') },
     { name: '1.4.11 权限集合与当前版本一致',
@@ -3657,10 +3884,10 @@ function firstoBundleIncludes(path) {
     { name: '1.4.12 后台超时放宽到 40 秒配合重试',
       ok: backgroundJs.includes('fast ? 40000 : 90000') },
     { name: '1.4.12 版本已同步到 manifest / 两个按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.13' &&
-          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.13') &&
-          contentJs.includes('TapePost v1.4.13') &&
-          popupHtml.includes('当前 v1.4.13') &&
+      ok: manifestJson.version === '1.4.14' &&
+          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.14') &&
+          contentJs.includes('TapePost v1.4.14') &&
+          popupHtml.includes('当前 v1.4.14') &&
           popupJs.includes('v1.4.12 修好 AI 评论 401') &&
           read('README.md').includes('### 1.4.12：修复 AI 评论 401') },
     { name: '1.4.12 权限集合与当前版本一致',
@@ -3690,7 +3917,8 @@ function firstoBundleIncludes(path) {
     .concat(promo1410Checks)
     .concat(promo1411Checks)
     .concat(promo1412Checks)
-    .concat(await runPrice1413Checks());
+    .concat(await runPrice1413Checks())
+    .concat(await runSignature1414Checks());
   aiChecks.forEach((c) => {
     console.log('[CHECK] ' + c.name + '：' + (c.ok ? 'PASS ✅' : 'FAIL ❌'));
     results.push(c.ok);
