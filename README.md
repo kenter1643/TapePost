@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.15（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.19（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,7 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-11）**：本仓库 `main` 是 **1.4.18**（AI 评论站内直连提示词对齐 X Viral Monitor 极简模板、修复 Grok「I can't follow that format or role」拒答；TapeUP $UP 内盘价按 UP/BEM 计价精准抽取并带真机调试浮层）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。1.4.18 只改本机提示词构造与回答解析，不新增网络请求、域名或权限。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
+> **版本状态（2026-11-12）**：本仓库 `main` 是 **1.4.19**（版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板、修复 Grok「I can't follow that format or role」拒答；TapeUP $UP 内盘价按 UP/BEM 计价精准抽取并带真机调试浮层）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取，均不新增网络请求、域名或权限。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
 
 ### 1.4.16：TapeUP $UP 价格改用 tapeup.io 内盘价
 
@@ -29,7 +29,19 @@
 1. **数据源切换**：移除 DexScreener 依赖与 `api.dexscreener.com` 主机权限；新增 `tapeup.io` 主机权限，仅用于在交易页注入内容脚本（`tapeup-price.js`）读取页面显示的内盘价。tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会返回 403/502，因此改由用户浏览器里已通过 CF 的会话去读——这是真正的内盘价格，不猜接口、不依赖第三方 DEX。
 2. **采集 + 缓存**：`tapeup-price.js` 用 `MutationObserver` + 3 秒轮询，从页面 DOM 抽价（多策略正则，按置信度打分），变化时才 `sendMessage({type:'TAPUP_PRICE'})` 回传；后台 `localSet('tapeupPriceCache')` 缓存。PRICE_GET / PRICE_REFRESH 用 `withUp()` 把缓存并入快照；超过 30 分钟未刷新标记为 `stale`，不直接拿旧值误报。
 3. **展示 / 跳转**：UP 卡片、浮层、通知点击都打开 `tapeup.io/zh/trade/token?id=1`；其余两项仍打开 Firsto 数据页。关闭交易页后沿用缓存，缓存为空时引导「请打开 tapeup.io 交易页」。
-4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价 → 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.18`。
+4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价 → 刷新 X 页面 → 弹窗标题旁 / T 按钮左侧直接显示当前版本号。
+
+### 1.4.19：版本号常驻显示在 TapePost 旁边
+
+用户反馈「检查版本要把鼠标悬在 T 按钮上看 title，不方便」。现在版本号直接可见，三处入口都显示：
+
+1. **插件弹窗**：`<h1>TapePost · 一键转发到 X</h1>` 右侧一枚橙色 `v1.4.19` 徽标，点开工具栏图标第一眼就能看到。
+2. **X 页面**：回复框上方那组按钮里，T 按钮左侧新增一枚 `v1.4.19` 小角标（全页只有一组，不刷屏），刷新 X 页面即可确认内容脚本是不是新版。
+3. **生态面板**：标题旁原来写死的 `TapePost v1.4.2` 已过时，改成实时版本号。
+
+**统一以 `chrome.runtime.getManifest().version` 为准**：`content.js` 的 `WBX_VERSION`、`popup.js` / `panel.js` 的版本填充都动态读取 manifest，静态 HTML 里的 `v1.4.19` 仅作 JS 未执行时的兜底。以后升版本只改 `manifest.json`，三处数字自动跟着变，不会再出现「按钮写 1.4.18、实际已装 1.4.19」的漂移。按钮 title 里的版本号仍保留，作为 hover 时的补充说明。
+
+不新增权限、域名或网络请求，`docs/privacy.html` 无需改。
 
 ### 1.4.18：修复 AI 评论「I can't follow that format or role」（对齐 XVM 提示词）
 
@@ -59,7 +71,7 @@ simple lunch. If you...
 
 链接核验（verify）仍走 `buildNativePrompt` 的 JSON 约束，不受影响。不新增权限、域名或网络请求。
 
-**升级必须手动重载**：到 `chrome://extensions` 点「重新加载」→ 刷新 X 页面 → 悬停 T 按钮显示 `v1.4.18` → 再点「AI 评论」。设置里的「提示词预览」应只显示推文原文 + 一句简短要求。
+**升级必须手动重载**：到 `chrome://extensions` 点「重新加载」→ 刷新 X 页面 → 弹窗标题旁 / T 按钮左侧直接显示当前版本号（1.4.19 起不必再 hover）→ 再点「AI 评论」。设置里的「提示词预览」应只显示推文原文 + 一句简短要求。
 
 ### 1.4.17：修正内盘价抽取（UP 以 BEM 计价，非 UP/USDT）
 

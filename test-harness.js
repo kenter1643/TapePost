@@ -1524,6 +1524,39 @@ async function runNativePureChecks() {
   A('1.4.18 拒答 + 代码块时只取真实评论',
     mixedOut.length === 2 && mixedOut.every((s) => !/can't follow/.test(s)));
 
+  // --- 1.4.19：版本号常驻可见，且统一以 manifest 为准 ---
+  const verManifest = JSON.parse(read('manifest.json')).version;
+  const verContent = read('content.js');
+  const verPopupHtml = read('popup.html');
+  const verPopupJs = read('popup.js');
+  const verPanelHtml = read('panel.html');
+  const verPanelJs = read('panel.js');
+  A('1.4.19 manifest 版本 1.4.19，三处静态兜底文案一致、生态面板不再写死 v1.4.2',
+    verManifest === '1.4.19' &&
+    /return 'v1\.4\.19';/.test(verContent) &&
+    verPopupHtml.includes('>v1.4.19</span>') &&
+    verPanelHtml.includes('TapePost v1.4.19') &&
+    !verPanelHtml.includes('TapePost v1.4.2</span>'));
+  A('1.4.19 弹窗标题旁有可见版本徽标（不是只写在 title 里）',
+    /<h1>[^<]*TapePost[^<]*<span class="appver" id="appVersion">v1\.4\.19<\/span><\/h1>/.test(verPopupHtml));
+  A('1.4.19 popup.js / panel.js 都从 manifest 动态读版本写入徽标',
+    /getManifest\(\)\.version/.test(verPopupJs) && verPopupJs.includes("getElementById('appVersion')") &&
+    /getManifest\(\)\.version/.test(verPanelJs) && verPanelJs.includes("getElementById('appVersion')"));
+  A('1.4.19 X 页面 T 按钮旁常驻版本角标，内容脚本以 manifest 为准',
+    verContent.includes('const WBX_VERSION =') &&
+    verContent.includes('chrome.runtime.getManifest') &&
+    verContent.includes("className = 'wbx-ver'") &&
+    verContent.includes('verTag.textContent = WBX_VERSION') &&
+    /\.wbx-ver\{/.test(verContent));
+  A('1.4.19 角标是可见文本而非 hover 提示，且复用旧 bar 实例也补写',
+    verContent.includes("bar.querySelector('.wbx-ver')") &&
+    verContent.includes('bar.insertBefore(verTag') &&
+    !/verTag\.title\s*=\s*WBX_VERSION/.test(verContent));
+  A('1.4.19 README 与弹窗版本说明都记录本次改动',
+    read('README.md').includes('### 1.4.19：') &&
+    verPopupHtml.includes('当前 v1.4.19') &&
+    verPopupJs.includes('v1.4.19 版本号直接显示'));
+
   // --- 请求体 / 请求头 ---
   let body;
   try { body = JSON.parse(J('buildBody', '测试提示词')); } catch (e) { body = {}; }
@@ -2893,7 +2926,7 @@ async function runPrice1413Checks() {
   const perms = (manifest1413.permissions || []).slice().sort();
   const hosts = manifest1413.host_permissions || [];
   add('1.4.13 manifest 升到 1.4.13 且只新增 alarms / notifications',
-    manifest1413.version === '1.4.18' &&
+    manifest1413.version === '1.4.19' &&
     perms.join(',') === ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads',
       'notifications', 'offscreen', 'storage'].join(','));
   add('1.4.16 仅新增 Firsto 只读行情域名 + tapeup.io 采集权限，没有通配域名',
@@ -2928,8 +2961,8 @@ async function runPrice1413Checks() {
   add('1.4.13 提醒链接做白名单，通知点击不会打开任意站点',
     bgPriceSrc.includes('TapePrice.safeLink(a.url)') && bgPriceSrc.includes('TapePrice.safeLink(url)'));
   add('1.4.16 版本说明 / README / 按钮 title 均同步到 1.4.16，且 1.4.15 历史说明保留',
-    read('content.js').includes('v1.4.18') && popupHtml1413.includes('当前 v1.4.18') &&
-    readme1413.includes('### 1.4.18：') && read('content.js').includes('TapePost v1.4.18') &&
+    read('content.js').includes('v1.4.19') && popupHtml1413.includes('当前 v1.4.19') &&
+    readme1413.includes('### 1.4.18：') && read('content.js').includes('TapePost v1.4.19') &&
     popupJs1413.includes('v1.4.18 ') && popupJs1413.includes('v1.4.15 修好 AI 评论') &&
     readme1413.includes('### 1.4.15：'));
 
@@ -3531,7 +3564,7 @@ async function runThinking1415Checks() {
   const manifestJson = JSON.parse(read('manifest.json'));
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
-      ok: manifestJson.version === '1.4.18' },
+      ok: manifestJson.version === '1.4.19' },
     { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
@@ -3559,7 +3592,7 @@ async function runThinking1415Checks() {
   // ---- v1.4.4：popup 消息端口 / Unchecked runtime.lastError ----
   const portChecks = [
     { name: '1.4.4 修复保留且版本继续推进',
-      ok: manifestJson.version === '1.4.18' },
+      ok: manifestJson.version === '1.4.19' },
     { name: '1.4.4 popup 提供统一 sendBg 并同步读取 lastError',
       ok: popupJs.includes('function sendBg(') && popupJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') },
     { name: '1.4.4 popup 仅 sendBg 内部调用 runtime.sendMessage',
@@ -3574,7 +3607,7 @@ async function runThinking1415Checks() {
     { name: '1.4.4 权限集合与当前版本一致',
       ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
-      ok: contentJs.includes('v1.4.18') && popupHtml.includes('当前 v1.4.18') }
+      ok: contentJs.includes('v1.4.19') && popupHtml.includes('当前 v1.4.19') }
   ];
 
   // ---- v1.4.5：评论末尾推广（TapeOut / $BEM 随机话术） ----
@@ -3862,8 +3895,8 @@ async function runThinking1415Checks() {
 
   const promo148Checks = [
     { name: '1.4.10 manifest / UI / 按钮 title 版本均为 1.4.10',
-      ok: manifestJson.version === '1.4.18' && contentJs.includes('v1.4.18') &&
-          popupHtml.includes('当前 v1.4.18') && contentJs.includes('TapePost v1.4.18') },
+      ok: manifestJson.version === '1.4.19' && contentJs.includes('v1.4.19') &&
+          popupHtml.includes('当前 v1.4.19') && contentJs.includes('TapePost v1.4.19') },
     { name: '1.4.8 只有一个 T 按钮（无 T1/T2、↻、×）',
       ok: contentJs.includes("b.className = 'wbx-promo-btn wbx-promo-single'") &&
           contentJs.includes("b.textContent = 'T'") &&
@@ -3982,10 +4015,10 @@ async function runThinking1415Checks() {
       ok: applyQuickBody.includes('const prefixOk =') &&
           applyQuickBody.includes('normReplyText(after).indexOf(normReplyText(body)) === 0') },
     { name: '1.4.10 版本已同步到 manifest / 按钮 title / 弹窗 / 说明',
-      ok: manifestJson.version === '1.4.18' &&
-          contentJs.includes('TapePost v1.4.18') &&
-          contentJs.includes('v1.4.18') &&
-          popupHtml.includes('当前 v1.4.18') &&
+      ok: manifestJson.version === '1.4.19' &&
+          contentJs.includes('TapePost v1.4.19') &&
+          contentJs.includes('v1.4.19') &&
+          popupHtml.includes('当前 v1.4.19') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') },
     { name: '1.4.10 运行时：换句选中末尾整句后，写回结束选区收成折叠光标',
       ok: !!promo148 && promo148.hadExpanded === true && promo148.selectionFolded === true },
@@ -4060,9 +4093,9 @@ async function runThinking1415Checks() {
     { name: '1.4.11 运行时：X 拒绝写入时自动恢复原文',
       ok: !!promo148 && promo148.refusedRestored === true },
     { name: '1.4.11 版本已同步到 manifest / 按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.18' &&
-          contentJs.includes('v1.4.18') && contentJs.includes('TapePost v1.4.18') &&
-          popupHtml.includes('当前 v1.4.18') &&
+      ok: manifestJson.version === '1.4.19' &&
+          contentJs.includes('v1.4.19') && contentJs.includes('TapePost v1.4.19') &&
+          popupHtml.includes('当前 v1.4.19') &&
           popupJs.includes('v1.4.11 写回改为一次全量替换') &&
           read('README.md').includes('### 1.4.11：写回链路重写') },
     { name: '1.4.11 权限集合与当前版本一致',
@@ -4099,10 +4132,10 @@ async function runThinking1415Checks() {
     { name: '1.4.12 后台超时放宽到 40 秒配合重试',
       ok: backgroundJs.includes('fast ? 40000 : 90000') },
     { name: '1.4.12 版本已同步到 manifest / 两个按钮 title / 弹窗 / README',
-      ok: manifestJson.version === '1.4.18' &&
-          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.18') &&
-          contentJs.includes('TapePost v1.4.18') &&
-          popupHtml.includes('当前 v1.4.18') &&
+      ok: manifestJson.version === '1.4.19' &&
+          contentJs.includes('TapePost · 整理正文与配图，手动发送到 X · v1.4.19') &&
+          contentJs.includes('TapePost v1.4.19') &&
+          popupHtml.includes('当前 v1.4.19') &&
           popupJs.includes('v1.4.12 修好 AI 评论 401') &&
           read('README.md').includes('### 1.4.12：修复 AI 评论 401') },
     { name: '1.4.12 权限集合与当前版本一致',

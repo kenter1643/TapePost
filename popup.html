@@ -4,7 +4,11 @@
   <meta charset="utf-8" />
   <style>
     body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; width: 320px; padding: 14px 16px; color: #222; }
-    h1 { font-size: 15px; margin: 0 0 4px; }
+    h1 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 7px; }
+    /* 1.4.19：版本号直接贴在 TapePost 标题旁，打开弹窗就能核对，不用 hover 按钮 */
+    .appver { font-size: 10px; font-weight: 700; color: #d96300; background: #fff1e4;
+              border: 1px solid #ffd0a6; border-radius: 20px; padding: 1px 7px;
+              letter-spacing: .2px; white-space: nowrap; }
     .sub { font-size: 12px; color: #888; margin: 0 0 12px; line-height: 1.5; }
 
     .me { display: flex; align-items: center; gap: 10px; padding: 10px; margin: 0 0 12px;
@@ -133,7 +137,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X</h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.19</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 295 条链接核验。发送始终由你手动完成。</p>
 
   <!-- 1.4.13：面板顶端三项实时行情，点卡片进 Firsto 交易所 -->
@@ -355,7 +359,7 @@
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
-      <b>当前 v1.4.18</b>：AI 评论站内直连的提示词改为 X Viral Monitor 式极简模板（推文原文 + 一句自然语言要求），不再叠加角色扮演、system 指令与自相矛盾的 JSON/代码块双重约束——X 站内 Grok 自带回复风格，旧提示词会被它回绝「I can't follow that format or role」；解析层同步支持代码块 / 编号列表 / 段落三段兜底并过滤拒答元话语。TapeUP 内盘价（UP/BEM 计价）、1.4.15 的 AI 评论修复、1.4.14 的签名修复、1.4.13 的行情卡片与价格提醒保持不变；把鼠标悬在 T 按钮上看到 v1.4.18 即确认重载生效，重载后刷新一次 X 页面。
+      <b>当前 v1.4.19</b>：版本号现在直接显示在「TapePost」旁边——弹窗标题右侧、X 页面 T 按钮左侧、生态面板标题旁都常驻显示，打开即可核对重载是否生效，不用再把鼠标悬在按钮上看提示；三处数值统一从 manifest 读取。1.4.18 的 AI 评论极简提示词、1.4.17 的 TapeUP 内盘价（UP/BEM 计价）、1.4.13 的行情卡片与价格提醒均保持不变；到 chrome://extensions 点「重新加载」后刷新一次 X 页面即可。
       <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 

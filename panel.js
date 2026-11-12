@@ -420,6 +420,13 @@ function initPanel() {
     });
   });
 
+  /* 1.4.19：生态面板标题旁的版本号同样以 manifest 为准（HTML 里有静态兜底） */
+  try {
+    var panelVer = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
+    var panelVerEl = document.getElementById('appVersion');
+    if (panelVer && panelVerEl) panelVerEl.textContent = 'TapePost v' + panelVer;
+  } catch (e) {}
+
   showMode();
   document.getElementById('verifyBtn').addEventListener('click', runVerify);
   document.getElementById('copyPromptBtn').addEventListener('click', preparePrompt);

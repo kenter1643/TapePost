@@ -4,6 +4,19 @@
  */
 'use strict';
 
+/* 1.4.19：版本号不再只能靠把鼠标悬在按钮上看 title。
+ * 以 manifest 为准动态读取，升版本时不会出现「按钮写 1.4.18、实际已 1.4.19」的漂移；
+ * 独立跑 Node 回归测试（没有 chrome.runtime）时退回内置版本。 */
+const WBX_VERSION = (function () {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) {
+      const m = chrome.runtime.getManifest();
+      if (m && m.version) return 'v' + m.version;
+    }
+  } catch (e) {}
+  return 'v1.4.19';
+})();
+
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值
 const MY_X = (typeof X_ACCOUNT !== 'undefined') ? X_ACCOUNT : {
   name: '昆哥', handle: 'YikunChen1983', url: 'https://x.com/YikunChen1983',
@@ -154,6 +167,15 @@ function injectStyle() {
     user-select:none !important;-webkit-user-select:none !important;
   }
   .wbx-promo-btn.wbx-promo-single:hover{background:#ff8c1a;}
+  /* 1.4.19：版本号常驻可见，贴在 T 按钮左侧（bar 从 right:76px 往左排，
+   * 不会撞到 right:6px 的 AI 评论按钮）。橙色品牌色，X 浅/深色主题都能看清。 */
+  .wbx-ver{
+    display:inline-flex !important;align-items:center;height:18px;padding:0 6px;
+    border-radius:6px;background:rgba(255,120,0,.12) !important;
+    color:#ff7800 !important;font-size:10px;line-height:18px;font-weight:700;
+    letter-spacing:.2px;white-space:nowrap;
+    user-select:none !important;-webkit-user-select:none !important;
+  }
   /* AI 评论候选卡片：与图片托盘同级的强可见浮层，不抢 X 的焦点 */
   #wbx-comments{
     position:fixed !important;right:20px !important;bottom:20px !important;
@@ -1030,7 +1052,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.18';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.19';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1621,7 +1643,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.4.18 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost v1.4.19 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
@@ -1640,6 +1662,16 @@ function injectPromoBar(c) {
     bar.appendChild(b);
     host.appendChild(bar);
   }
+  /* 1.4.19：版本号直接显示，不用 hover。放在 bar 里 T 按钮左侧；旧实例
+   * （升级前已注入、X 又复用了 DOM）也在这里补上，避免重载后不刷新就看不到。 */
+  let verTag = bar.querySelector ? bar.querySelector('.wbx-ver') : null;
+  if (!verTag) {
+    verTag = document.createElement('span');
+    verTag.className = 'wbx-ver';
+    verTag.title = 'TapePost 版本（来自 manifest）';
+    bar.insertBefore(verTag, bar.firstChild || null);
+  }
+  verTag.textContent = WBX_VERSION;
   // 每轮扫描刷新绑定：X 复用 DOM 节点时，按钮不会还指向上一个回复框
   bar.__wbxInput = c.input;
   bar.__wbxScope = c.scope;

@@ -508,6 +508,7 @@ const INFO = {
   versions: {
     title: '版本说明',
     lines: [
+      'v1.4.19 版本号直接显示在 TapePost 旁边：弹窗标题右侧、X 页面 T 按钮左侧、生态面板标题旁都常驻显示，打开就能核对重载是否生效，不用再把鼠标悬在按钮上看提示；三处统一从 manifest 动态读取，升版本不会再出现数字对不上。',
       'v1.4.18 修复 AI 评论「I can\'t follow that format or role」：站内直连提示词对齐 X Viral Monitor v1.18.17 的极简模板（推文原文 + 一句「写 3 条回复、每条用代码块包裹」），去掉角色扮演、system 指令、任务标记包裹与自相矛盾的「严格返回 JSON 数组 / 只输出 3 个代码块」双重要求；解析层加代码块 → 编号列表 → 段落三段兜底，1~3 条都算成功，并过滤 Grok 拒答/元话语；设置里的旧默认提示词自动升级，预览与实际发送保持一致。',
       'v1.4.17 修正 TapeUP 内盘价抽取：tapeup.io 内盘是 UP/BEM 计价（非此前误以为的 UP/USDT），重写抽取逻辑——盘面实时价以「数字 BEM」呈现、钱包余额则是「$BEM 数字」（顺序相反），据此精准区分并排除钱包余额与交易记录干扰；Cloudflare 防护仍使后台无法直接抓，由扩展在你打开交易页时读取并缓存。',
       'v1.4.15 修好 AI 评论「原文：Thinking about your request」：思考帧不再冒充回答、等得到 final 帧、请求体对齐 XVM；解析失败给帧级诊断而非甩锅模型。',
@@ -795,3 +796,13 @@ if (priceApi) {
   } catch (e) { /* 存储不可用时用默认设置 */ }
   loadPrices(false);
 }
+
+/* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
+ * HTML 里已写死 v1.4.19 作兜底，即使这段没跑到也不会空白。 */
+(function showAppVersion() {
+  try {
+    const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
+    const n = document.getElementById('appVersion');
+    if (v && n) n.textContent = 'v' + v;
+  } catch (e) {}
+})();
