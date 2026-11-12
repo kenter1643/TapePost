@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.4.28';
+  return 'v1.4.29';
 })();
 
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值
@@ -318,6 +318,65 @@ function injectStyle() {
     font-size:11px;padding:7px 4px;cursor:pointer;font-weight:600;
   }
   .wbx-g-actions button:hover{background:#ffe8d0;}
+  /* 1.4.29：托盘缩略图可点开大图浏览。hover 微放大 + 放大镜光标，
+   * 给出「这里能点」的视觉提示，不改变托盘宽度。 */
+  .wbx-g-item img{cursor:zoom-in !important;transition:transform .15s,box-shadow .15s;}
+  .wbx-g-item img:hover{transform:translateY(-2px) scale(1.04);box-shadow:0 4px 14px rgba(0,0,0,.28);}
+  #wbx-lightbox{
+    position:fixed !important;inset:0 !important;z-index:2147483647 !important;
+    display:flex !important;flex-direction:column !important;
+    background:rgba(10,10,12,.92) !important;color:#fff !important;
+    font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif !important;
+    animation:wbx-lb-in .16s ease-out;
+    -webkit-user-select:none !important;user-select:none !important;
+  }
+  @keyframes wbx-lb-in{from{opacity:0}to{opacity:1}}
+  .wbx-lb-bar{
+    flex:0 0 auto !important;display:flex !important;align-items:center;gap:10px;
+    padding:10px 16px;background:rgba(0,0,0,.45) !important;
+  }
+  .wbx-lb-info{
+    flex:1;min-width:0;color:#f2f2f2;font-size:13px;font-weight:600;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .wbx-lb-btn{
+    border:1px solid rgba(255,255,255,.28) !important;background:rgba(255,255,255,.1) !important;
+    color:#fff !important;border-radius:8px !important;padding:5px 12px !important;
+    font-size:12px !important;cursor:pointer;white-space:nowrap;
+  }
+  .wbx-lb-btn:hover{background:rgba(255,255,255,.22) !important;}
+  .wbx-lb-x{font-size:22px !important;line-height:1 !important;padding:2px 10px !important;}
+  .wbx-lb-stage{
+    flex:1 1 auto !important;min-height:0 !important;box-sizing:border-box !important;
+    display:flex !important;align-items:center !important;justify-content:center !important;
+    overflow:hidden !important;padding:14px 64px !important;
+  }
+  .wbx-lb-img{
+    display:block !important;max-width:100% !important;max-height:100% !important;
+    width:auto !important;height:auto !important;object-fit:contain !important;
+    background:#161616 !important;box-shadow:0 8px 40px rgba(0,0,0,.55) !important;
+    border-radius:4px !important;cursor:zoom-in !important;
+  }
+  .wbx-lb-nav{
+    position:absolute !important;top:50% !important;transform:translateY(-50%) !important;
+    width:42px !important;height:64px !important;border:none !important;border-radius:10px !important;
+    background:rgba(255,255,255,.14) !important;color:#fff !important;
+    font-size:26px !important;cursor:pointer;
+  }
+  .wbx-lb-nav:hover{background:rgba(255,255,255,.3) !important;}
+  .wbx-lb-prev{left:14px !important;}
+  .wbx-lb-next{right:14px !important;}
+  .wbx-lb-foot{
+    flex:0 0 auto !important;text-align:center;padding:8px 12px 12px;
+    color:rgba(255,255,255,.62) !important;font-size:11px !important;
+  }
+  /* 1:1 原图像素模式：容器可滚动，用来核对去水印后的细节 */
+  #wbx-lightbox.wbx-lb-actual .wbx-lb-stage{
+    overflow:auto !important;align-items:flex-start !important;justify-content:flex-start !important;
+  }
+  #wbx-lightbox.wbx-lb-actual .wbx-lb-img{
+    max-width:none !important;max-height:none !important;cursor:zoom-out !important;
+  }
   `;
   const style = document.createElement('style');
   style.id = 'wbx-style';
@@ -1053,7 +1112,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.28';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.29';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1644,7 +1703,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.4.28 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost v1.4.29 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
@@ -2467,12 +2526,157 @@ async function makeCollage(images) {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
+/* ---------- 1.4.29：多图托盘的大图浏览 ----------
+ * 托盘里是 96px 的方形缩略图，去水印 / 4K 效果看不清。这里复用托盘已经
+ * 生成好的 blob: / data: URL 直接显示大图：不重新解码、不上传、不发请求，
+ * 图片数据本身一个字节都不改。
+ * 关闭：右上 ×、点遮罩空白、ESC；多图：左右按钮或 ← → 切换。
+ * 键盘监听放 document 的捕获阶段并 stopPropagation，避免 X / 微博自身的
+ * 快捷键抢先响应（灯箱关掉后监听立即移除，不影响页面原有行为）。
+ */
+let wbxLightbox = null;
+let wbxGalleryUrls = [];
+
+function releaseGalleryUrls() {
+  wbxGalleryUrls.forEach((s) => {
+    if (s && String(s).indexOf('blob:') === 0 && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+      try { URL.revokeObjectURL(s); } catch (e) {}
+    }
+  });
+  wbxGalleryUrls = [];
+}
+
+function closeLightbox() {
+  const lb = wbxLightbox;
+  if (!lb) return;
+  wbxLightbox = null;
+  try {
+    if (lb.onKey && document.removeEventListener) document.removeEventListener('keydown', lb.onKey, true);
+  } catch (e) {}
+  try { if (lb.root && lb.root.remove) lb.root.remove(); } catch (e) {}
+}
+
+function openLightbox(srcList, index) {
+  const list = (srcList || []).filter(Boolean);
+  if (!list.length) return;
+  try { closeLightbox(); } catch (e) {}
+
+  const root = document.createElement('div');
+  root.id = 'wbx-lightbox';
+  root.setAttribute('role', 'dialog');
+  root.setAttribute('aria-label', '图片放大浏览');
+  let cur = Math.max(0, Math.min(list.length - 1, Number(index) || 0));
+  let actual = false;
+
+  const bar = document.createElement('div');
+  bar.className = 'wbx-lb-bar';
+  const info = document.createElement('span');
+  info.className = 'wbx-lb-info';
+  const zoomBtn = document.createElement('button');
+  zoomBtn.className = 'wbx-lb-btn';
+  zoomBtn.textContent = '1:1 原图';
+  zoomBtn.title = '按原始像素查看，再点一次回到适应窗口';
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'wbx-lb-btn wbx-lb-x';
+  closeBtn.textContent = '×';
+  closeBtn.title = '关闭（ESC）';
+  bar.appendChild(info);
+  bar.appendChild(zoomBtn);
+  bar.appendChild(closeBtn);
+
+  const stage = document.createElement('div');
+  stage.className = 'wbx-lb-stage';
+  const big = document.createElement('img');
+  big.className = 'wbx-lb-img';
+  big.setAttribute('alt', '放大浏览');
+  big.title = '点击切换 1:1 原图 / 适应窗口';
+  stage.appendChild(big);
+
+  const foot = document.createElement('div');
+  foot.className = 'wbx-lb-foot';
+  foot.textContent = '← → 切换 · ESC 关闭 · 点空白处关闭 · 点图片看 1:1 原图';
+
+  root.appendChild(bar);
+  root.appendChild(stage);
+  root.appendChild(foot);
+
+  let prev = null, next = null;
+  if (list.length > 1) {
+    prev = document.createElement('button');
+    prev.className = 'wbx-lb-nav wbx-lb-prev';
+    prev.textContent = '‹';
+    prev.title = '上一张（←）';
+    next = document.createElement('button');
+    next.className = 'wbx-lb-nav wbx-lb-next';
+    next.textContent = '›';
+    next.title = '下一张（→）';
+    root.appendChild(prev);
+    root.appendChild(next);
+  }
+
+  const render = () => {
+    big.setAttribute('src', list[cur]);
+    big.setAttribute('alt', '第 ' + (cur + 1) + ' 张');
+    info.textContent = `第 ${cur + 1} / ${list.length} 张`;
+  };
+  const step = (d) => { cur = (cur + d + list.length) % list.length; render(); };
+  const toggleZoom = () => {
+    actual = !actual;
+    root.className = actual ? 'wbx-lb-actual' : '';
+    zoomBtn.textContent = actual ? '适应窗口' : '1:1 原图';
+  };
+  // 尺寸取自已加载的本地图片，纯本机读取，不触发任何网络请求
+  try {
+    big.addEventListener('load', () => {
+      const w = big.naturalWidth || 0, h = big.naturalHeight || 0;
+      if (w && h) info.textContent = `第 ${cur + 1} / ${list.length} 张 · ${w}×${h}`;
+    });
+  } catch (e) {}
+
+  zoomBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleZoom(); });
+  closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeLightbox(); });
+  big.addEventListener('click', (e) => { e.stopPropagation(); toggleZoom(); });
+  if (prev) prev.addEventListener('click', (e) => { e.stopPropagation(); step(-1); });
+  if (next) next.addEventListener('click', (e) => { e.stopPropagation(); step(1); });
+  root.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (e.target === root || e.target === stage || e.target === foot) closeLightbox();
+  });
+
+  const onKey = (e) => {
+    const k = e && e.key;
+    if (k === 'Escape' || k === 'Esc') closeLightbox();
+    else if (k === 'ArrowLeft' && list.length > 1) step(-1);
+    else if (k === 'ArrowRight' && list.length > 1) step(1);
+    else return;
+    if (e.preventDefault) e.preventDefault();
+    // 站点（尤其 X）可能在 document 捕获阶段更早注册了 ESC / 方向键处理，
+    // stopPropagation 挡不住同阶段已注册的监听，优先用 stopImmediatePropagation。
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    else if (e.stopPropagation) e.stopPropagation();
+  };
+  try { if (document.addEventListener) document.addEventListener('keydown', onKey, true); } catch (e) {}
+
+  render();
+  document.body.appendChild(root);
+  wbxLightbox = { root, onKey };
+}
+
 function showGallery(text, images, b64List, xUrl) {
+  try { closeLightbox(); } catch (e) {}
+  try { releaseGalleryUrls(); } catch (e) {}
   const old = document.getElementById('wbx-gallery');
   if (old && old.remove) { try { old.remove(); } catch (e) {} }
   const panel = document.createElement('div');
   panel.id = 'wbx-gallery';
   panel.setAttribute('data-wbx-count', String(images.length));
+
+  // 关托盘要连带关灯箱，否则大图浮层会留在页面上；同时释放 blob URL
+  const closeGallery = () => {
+    try { closeLightbox(); } catch (e) {}
+    try { panel.remove(); } catch (e) {}
+    try { releaseGalleryUrls(); } catch (e) {}
+  };
 
   const copied = new Set();
   const head = document.createElement('div');
@@ -2489,7 +2693,8 @@ function showGallery(text, images, b64List, xUrl) {
   const close = document.createElement('button');
   close.className = 'wbx-g-close';
   close.textContent = '×';
-  close.addEventListener('click', () => { try { panel.remove(); } catch (e) {} });
+  close.title = '关闭图片托盘';
+  close.addEventListener('click', closeGallery);
   head.appendChild(title);
   head.appendChild(progress);
   head.appendChild(close);
@@ -2514,11 +2719,12 @@ function showGallery(text, images, b64List, xUrl) {
 
   const tip = document.createElement('div');
   tip.className = 'wbx-g-tip';
-  tip.textContent = '① 复制第 N 张 / 拼长图 → ② 打开 X → ③ Ctrl+V。默认不落盘；需要文件才点「下载到临时目录」，到期自动清理。';
+  tip.textContent = '点缩略图放大浏览（ESC 关闭）｜① 复制 / 拼长图 → ② 打开 X → ③ Ctrl+V。默认不落盘，需要文件再点「下载到临时目录」。';
   panel.appendChild(tip);
 
   const list = document.createElement('div');
   list.className = 'wbx-g-list';
+  const srcList = [];
   images.forEach((u8, i) => {
     const item = document.createElement('div');
     item.className = 'wbx-g-item';
@@ -2526,8 +2732,14 @@ function showGallery(text, images, b64List, xUrl) {
     let src = '';
     try { src = URL.createObjectURL(new Blob([u8], { type: 'image/png' })); } catch (e) {}
     if (!src) src = 'data:image/png;base64,' + (b64List[i] || '');
+    srcList.push(src);
     img.setAttribute('src', src);
     img.setAttribute('alt', '第 ' + (i + 1) + ' 张');
+    img.title = '点击放大浏览第 ' + (i + 1) + ' 张';
+    img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openLightbox(srcList, i);
+    });
     const b = document.createElement('button');
     b.textContent = '复制第 ' + (i + 1) + ' 张';
     b.addEventListener('click', async () => {
@@ -2589,6 +2801,7 @@ function showGallery(text, images, b64List, xUrl) {
   actions.appendChild(clean);
   panel.appendChild(actions);
 
+  wbxGalleryUrls = srcList.slice();
   document.body.appendChild(panel);
 }
 
