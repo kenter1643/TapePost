@@ -10,10 +10,13 @@
  *     口径是当前有效挂单的日产能价中位数（marketStats.dailyCapacityPriceWei），
  *     不是 /v1/analytics/circuits 的 24h 小时成交序列（那是历史成交均价，会滞后）。
  *   【此项来自 tapeup.io，与 Firsto 无关】
- *   · TapeUP $UP 内盘价：来自 tapeup.io 交易页（UP 以 BEM 计价，页面标注 BEM/UP，
- *     同时给出美元折算价）。真机页面示例：0.0264 BEM/UP · $0.3181 · +19.44%。
- *     该站整站 Cloudflare 防护，后台直接 fetch 会被拦，因此由内容脚本在用户浏览器
- *     （已通过 CF）里读取页面显示的内盘价，再回传后台缓存。详见 tapeup-price.js。
+   *   · TapeUP $UP 内盘价：来自 tapeup.io 交易页（UP 以 BEM 计价，页面标注 BEM/UP，
+   *     同时给出美元折算价）。真机页面示例：0.0254 BEM/UP · $0.3154 · +19.25%。
+   *     1.4.23 起另抓 K 线图「收=0.31542257」这个随成交跳动的动态当前价
+   *     （即右侧价格轴绿色高亮、带虚线的当前价标签），作为 UP 主值；
+   *     页头三个数仍完整保留在副行。该站整站 Cloudflare 防护，后台直接 fetch 会被拦，
+   *     因此由内容脚本在用户浏览器（已通过 CF）里读取页面显示的价格，再回传后台缓存。
+   *     详见 tapeup-price.js。
  *
  * 这个模块刻意不引用任何 chrome.* API：后台用 importScripts 加载，
  * 弹窗用 <script> 加载，Node 测试用 vm 加载，三处跑的是同一份纯逻辑。
@@ -202,6 +205,53 @@ var TapePrice = (function () {
     return isFinite(n) ? n : null;
   }
 
+  /*
+   * 1.4.23：K 线「动态当前价」（用户红框 / 箭头指的那个数）。
+   * 真机 /zh/trade/token?id=1 图表左上角有一条 DOM 图例：
+   *   开=0.31539427 高=0.32344613 低=0.31539427 收=0.31542257 -0.00103568 (-0.31%) Vol 9
+   * 右侧价格轴上绿色高亮、带横向虚线的「当前价标签」与「收=」完全一致，
+   * 且随成交实时跳动（截图 1：0.32344613；截图 2：0.31542257）。
+   * 它与页头「0.0254 BEM/UP · $0.3154 · +19.25%」不是同一个数：页头是折算价，
+   * 图例「收」才是动态成交价。价格轴刻度（0.35000000 等）画在 canvas 上，
+   * 不出现在页面文本里，因此只认图例锚点，绝不拿轴刻度或其它 8 位小数凑数。
+   */
+  function extractChartLive(text) {
+    var out = { livePrice: null, liveChangePct: null, liveNote: null, candidates: [] };
+    var m;
+    // 策略 1（最稳）：完整中文 OHLC 四连，取「收」
+    var fullRe = /开\s*=\s*(\d{1,6}\.\d{2,12})\s*高\s*=\s*(\d{1,6}\.\d{2,12})\s*低\s*=\s*(\d{1,6}\.\d{2,12})\s*收\s*=\s*(\d{1,6}\.\d{2,12})/g;
+    while ((m = fullRe.exec(text)) !== null) {
+      var v = stripNum(m[4]);
+      if (v == null || v <= 0) continue;
+      var tail = text.slice(m.index + m[0].length, m.index + m[0].length + 90);
+      var pm = /\(([+-]?\d{1,3}(?:\.\d{1,2})?)\s*%\)/.exec(tail);
+      out.candidates.push({ value: v, ctx: 'chart-ohlc:收=' + m[4], score: 100 });
+      if (out.livePrice == null) {
+        out.livePrice = v;
+        out.liveChangePct = pm ? stripNum(pm[1]) : null;
+        out.liveNote = 'K线收=' + m[4];
+      }
+    }
+    // 策略 2：图例被拆成多段 / 英文界面，只认「收=」且附近有图表特征（OHL 或 Vol）
+    if (out.livePrice == null) {
+      var looseRe = /(?:收|C|Close)\s*[=:：]\s*(\d{1,6}\.\d{2,12})/g;
+      while ((m = looseRe.exec(text)) !== null) {
+        var around = text.slice(Math.max(0, m.index - 140), m.index + m[0].length + 90);
+        if (!/(?:开|高|低|O|H|L)\s*=/.test(around) && !/Vol\s*\d/i.test(around)) continue;
+        var v2 = stripNum(m[1]);
+        if (v2 == null || v2 <= 0) continue;
+        var pm2 = /\(([+-]?\d{1,3}(?:\.\d{1,2})?)\s*%\)/.exec(around);
+        out.candidates.push({ value: v2, ctx: 'chart-legend:收=' + m[1], score: 95 });
+        if (out.livePrice == null) {
+          out.livePrice = v2;
+          out.liveChangePct = pm2 ? stripNum(pm2[1]) : null;
+          out.liveNote = 'K线收=' + m[1];
+        }
+      }
+    }
+    return out;
+  }
+
   /* 1.4.21：真机校准（2026-11-12，tapeup.io/zh/trade 与 /zh/trade/token?id=1）。
    * 页面头部价格是「0.0264 BEM/UP  $0.3181  +19.44%」：BEM 计价 + 美元折算 + 24h 涨跌。
    * 旧版用「数字 BEM」宽泛正则，会抓到图表坐标 / 钱包余额（0.00049456）/ 待释放
@@ -212,6 +262,7 @@ var TapePrice = (function () {
     var text = toPageText(source);
     if (!text) {
       return { value: null, usdValue: null, changePct: null, asOf: null,
+        livePrice: null, liveChangePct: null, liveNote: null, liveSource: 'none',
         debug: { textLen: 0, candidates: [], note: 'BEM/UP 锚点' } };
     }
     var debug = { textLen: text.length, candidates: [], note: 'BEM/UP 锚点' };
@@ -264,13 +315,41 @@ var TapePrice = (function () {
       consider(m[1], null, null, 0, 'diagnostic:' + m[0].replace(/\s+/g, ' ').trim().slice(0, 22));
     }
 
-    if (!best) {
-      return { value: null, usdValue: null, changePct: null, asOf: null, debug: debug };
+    /* 1.4.23：取 K 线动态当前价（箭头所指的绿框数字）。
+     * 只认图例「收=」；和页头折算价差太多（>5 倍 / <0.2 倍）说明是鼠标悬停到
+     * 历史 K 线、或抓到了无关数字，直接丢弃，退回页头折算价并标 header。
+     * 轴刻度 0.35000000 这类数字在 canvas 上，本来就不在页面文本里。 */
+    var live = extractChartLive(text);
+    live.candidates.forEach(function (c) {
+      debug.candidates.push({ value: c.value, usdValue: null, changePct: null,
+        score: 0, ctx: c.ctx });
+    });
+    if (live.livePrice != null && best && best.usdValue > 0) {
+      var ratio = live.livePrice / best.usdValue;
+      if (ratio < 0.2 || ratio > 5) {
+        debug.candidates.push({ value: live.livePrice, usdValue: null, changePct: null,
+          score: 0, ctx: 'chart-REJECTED:偏离页头折算价' });
+        live.livePrice = null; live.liveChangePct = null; live.liveNote = null;
+      }
     }
-    return {
+    var livePrice = live.livePrice;
+    var liveSource = livePrice != null ? 'chart'
+      : ((best && best.usdValue != null) ? 'header' : 'none');
+    if (livePrice == null && best) livePrice = best.usdValue;
+    var liveFields = {
+      livePrice: livePrice,
+      liveChangePct: live.liveChangePct,
+      liveNote: live.liveNote,
+      liveSource: liveSource
+    };
+    if (!best) {
+      return Object.assign({ value: null, usdValue: null, changePct: null,
+        asOf: null, debug: debug }, liveFields);
+    }
+    return Object.assign({
       value: best.value, usdValue: best.usdValue, changePct: best.changePct,
       asOf: null, source: 'tapeup.io 内盘', debug: debug
-    };
+    }, liveFields);
   }
 
   // 把内容脚本采集到的内盘价并入快照（按新鲜度给 stale 标记，过期则沿用上一次、不直接拿旧值误报）
@@ -280,23 +359,31 @@ var TapePrice = (function () {
     var old = isObj(prev) && isObj(prev.items) ? prev.items : {};
     var MAX_AGE = 30 * 60000; // 内盘价超过 30 分钟未刷新视为过期
     var upCache = isObj(cachedUp) ? cachedUp : null;
-    var fresh = upCache && num(upCache.value) > 0 && num(upCache.at) && (now - num(upCache.at) < MAX_AGE);
+    // 1.4.23：只有 K 线动态价、页头 BEM/UP 缺失时也算有效采集，别把主值闪成空
+    var hasPrice = !!upCache && (num(upCache.value) > 0 || num(upCache.livePrice) > 0);
+    var fresh = upCache && hasPrice && num(upCache.at) && (now - num(upCache.at) < MAX_AGE);
+    function liveOf(c) {
+      return {
+        livePrice: num(c.livePrice), liveChangePct: num(c.liveChangePct),
+        liveNote: c.liveNote || null, liveSource: c.liveSource || null
+      };
+    }
 
     if (fresh) {
       return {
-        item: { key: 'up', value: num(upCache.value), usdValue: num(upCache.usdValue),
+        item: Object.assign({ key: 'up', value: num(upCache.value), usdValue: num(upCache.usdValue),
           changePct: num(upCache.changePct),
           asOf: upCache.asOf || null, stale: false, source: 'tapeup.io 内盘',
-          debug: (upCache && upCache.debug) ? upCache.debug : null },
+          debug: (upCache && upCache.debug) ? upCache.debug : null }, liveOf(upCache)),
         error: null
       };
     }
-    if (upCache && num(upCache.value) > 0) {
+    if (hasPrice) {
       return {
-        item: { key: 'up', value: num(upCache.value), usdValue: num(upCache.usdValue),
+        item: Object.assign({ key: 'up', value: num(upCache.value), usdValue: num(upCache.usdValue),
           changePct: num(upCache.changePct),
           asOf: upCache.asOf || null, stale: true, source: 'tapeup.io 内盘',
-          debug: (upCache && upCache.debug) ? upCache.debug : null },
+          debug: (upCache && upCache.debug) ? upCache.debug : null }, liveOf(upCache)),
         error: 'TapeUP 内盘价沿用缓存（请打开 tapeup.io 交易页刷新）'
       };
     }
@@ -304,7 +391,9 @@ var TapePrice = (function () {
       return { item: Object.assign({}, old.up, { stale: true, debug: (old.up && old.up.debug) ? old.up.debug : null }), error: 'TapeUP 内盘价暂无采集（请打开 tapeup.io 交易页）' };
     }
     return {
-      item: { key: 'up', value: null, usdValue: null, changePct: null, asOf: null, stale: true, source: 'tapeup.io 内盘' },
+      item: { key: 'up', value: null, usdValue: null, changePct: null, asOf: null,
+        stale: true, source: 'tapeup.io 内盘', livePrice: null, liveChangePct: null,
+        liveNote: null, liveSource: 'none' },
       error: 'TapeUP 内盘价暂无采集（请打开 tapeup.io 交易页）'
     };
   }

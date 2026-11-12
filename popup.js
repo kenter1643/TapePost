@@ -505,34 +505,6 @@ bind('promoReset', () => {
 
 /* 1.4.2 文案精简：长说明收进一个简洁弹窗，设置页只留一句结论。 */
 const INFO = {
-  versions: {
-    title: '版本说明',
-    lines: [
-      'v1.4.21 按真机页面重新校准 TapeUP 内盘价：交易页显示「0.0264 BEM/UP · $0.3181 · +19.44%」，旧版用「数字 BEM」宽泛正则误抓图表坐标、钱包余额（0.00049456）、待释放（8.78…）与统计区大数字，才一直给出错误的 0.286…。现在只认 BEM/UP 标签与「价 + 美元 + 百分比」组合，认不出就显示未采集；UP 卡主值显示美元折算价、副行显示 BEM/UP 计价与涨跌。BEM 与矿机日产价两项都来自 Firsto，卡片上已直接标出来源，TapeUP 内盘价来自 tapeup.io。',
-      'v1.4.20 修正矿机日产价：改从 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」的同源接口 /v1/circuit-holders?page=1 取 marketStats.dailyCapacityPriceWei（当前有效挂单中位数，实时），不再用 /v1/analytics/circuits 的 24h 小时成交序列最后一个点（历史成交均价、会滞后）；点矿机卡直达 /circuits/other。因参考价无同口径 24h 序列，矿机卡不再显示涨跌，改标「挂单参考价」。',
-      'v1.4.19 版本号直接显示在 TapePost 旁边：弹窗标题右侧、X 页面 T 按钮左侧、生态面板标题旁都常驻显示，打开就能核对重载是否生效，不用再把鼠标悬在按钮上看提示；三处统一从 manifest 动态读取，升版本不会再出现数字对不上。',
-      'v1.4.18 修复 AI 评论「I can\'t follow that format or role」：站内直连提示词对齐 X Viral Monitor v1.18.17 的极简模板（推文原文 + 一句「写 3 条回复、每条用代码块包裹」），去掉角色扮演、system 指令、任务标记包裹与自相矛盾的「严格返回 JSON 数组 / 只输出 3 个代码块」双重要求；解析层加代码块 → 编号列表 → 段落三段兜底，1~3 条都算成功，并过滤 Grok 拒答/元话语；设置里的旧默认提示词自动升级，预览与实际发送保持一致。',
-      'v1.4.17 修正 TapeUP 内盘价抽取：tapeup.io 内盘是 UP/BEM 计价（非此前误以为的 UP/USDT），重写抽取逻辑——盘面实时价以「数字 BEM」呈现、钱包余额则是「$BEM 数字」（顺序相反），据此精准区分并排除钱包余额与交易记录干扰；Cloudflare 防护仍使后台无法直接抓，由扩展在你打开交易页时读取并缓存。（注：此版「数字 BEM」抽法仍会误抓图表坐标，1.4.21 已改为 BEM/UP 锚点。）',
-      'v1.4.15 修好 AI 评论「原文：Thinking about your request」：思考帧不再冒充回答、等得到 final 帧、请求体对齐 XVM；解析失败给帧级诊断而非甩锅模型。',
-      'v1.4.14 修好 AI 评论签名 childNodes 报错：整棵克隆 X 首页动画帧、帧留到异步签名完成、页面就绪预热签名器，签名失败时 XVM 通道兜底。',
-      'v1.4.13 面板顶端新增 TapeUP / 矿机日产价 / BEM 实时行情，可设上下限，越界右下角弹窗 + 系统通知，点击直达 Firsto 交易所。',
-      'v1.4.12 修好 AI 评论 401：默认公开 bearer、重试重新签名、兼容新版 Grok 流格式；XVM 改为异常兜底。',
-      'v1.4.11 写回改为一次全量替换，修掉文字重复与回复框不可编辑；新增 T 安全模式与 AI 评论快速模式。',
-      'v1.4.10 按钮移到回复正文上方外侧不再压字；写回后收拢选区不留灰色高亮；已有两句以上推广句时停手不叠加。',
-      'v1.4.9 全页只有一个 T 按钮且绑定当前回复框；点击保住焦点，修好按钮成排、写错框、手工改完就乱。',
-      'v1.4.8 只留一个 T 按钮，点击随机换句不重复；写回改用原生编辑命令，正文绝不被重写。',
-      'v1.4.7 尝试只替换末尾推广句（仍有索引偏差，1.4.8 已重写）。',
-      'v1.4.6 回复框新增多个 T 快捷按钮，手写评论也能点一下带入推广句。',
-      'v1.4.5 可勾选「评论末尾推广」，随机附一句 TapeOut / $BEM 介绍。',
-      'v1.4.4 修好重载后 popup 的消息端口报错。',
-      'v1.4.3 默认不落盘；临时文件到期自动清理。',
-      'v1.4.2 修好直连 401 认证，可复用同页 XVM 通道。',
-      'v1.4.1 旧「页面模式」设置自动升级为「自动」。',
-      'v1.4.0 AI 评论改为直连 X 自带 Grok 接口。',
-      'v1.3.x 按钮移到回复框、等待浮层、正文防污染。',
-      '重载扩展后记得刷新一次 X 页面。'
-    ]
-  },
   modes: {
     title: '运行模式',
     lines: [
@@ -562,11 +534,11 @@ const INFO = {
       '全页只出现一个 T 按钮，跟着你正在编辑的回复框走；多个回复框时先点进要写的那个。',
       '自己写完评论后点一下 T，随机带入一句推广；再点换一句，不会重复也不会叠加。',
       '右键点 T 可去掉末尾推广句，只留你自己写的正文；手工删掉后再点会重新带入。',
-      '1.4.10 按钮不再压在正文上；每次写回后自动把选区收成光标，不留灰色选中块。',
-      '1.4.10 正文里已经有两句以上推广句时会停手，只提示、不继续叠加；右键 T 仍可去掉末尾那句。',
-      '1.4.11 写回只做一次「全量替换」（等价于自己全选后重打一遍），不再用局部选区删改：这就是之前文字重复、回复框不可编辑的根因。',
-      '1.4.11 正文里有 @ / 表情 / 配图时自动降级为只复制，绝不弄丢它们；也可手动开「安全模式」让 T 永远只复制。',
-      '1.4.11 AI 评论默认走快速模式：不思考、不并排生成、拿到答案即收尾，通常 5~15 秒。',
+      '按钮不再压在正文上；每次写回后自动把选区收成光标，不留灰色选中块。',
+      '正文里已经有两句以上推广句时会停手，只提示、不继续叠加；右键 T 仍可去掉末尾那句。',
+      '写回只做一次「全量替换」（等价于自己全选后重打一遍），不再用局部选区删改：这就是之前文字重复、回复框不可编辑的根因。',
+      '正文里有 @ / 表情 / 配图时自动降级为只复制，绝不弄丢它们；也可手动开「安全模式」让 T 永远只复制。',
+      'AI 评论默认走快速模式：不思考、不并排生成、拿到答案即收尾，通常 5~15 秒。',
       '如果推广句被你手动改过，插件会停止写入并复制新句，绝不弄乱正文。',
       '写入后会校验结果；异常时自动恢复原文并把推广句复制到剪贴板，绝不重试。',
       'AI 候选则是 3 条各随机附一句，候选面板可「🎲 换一批」。',
@@ -577,7 +549,7 @@ const INFO = {
   tmp: {
     title: '临时文件',
     lines: [
-      '1.4.3 起图片默认走剪贴板，转发不再自动落盘。',
+      '图片默认走剪贴板，转发不再自动落盘。',
       '视频只能拖入 X，会存到下载目录的 TapePost_tmp/ 子目录。',
       '托盘「下载到临时目录」也是同一位置，用完可点「🧹 清理」。',
       '按保留时长自动删除文件与下载记录，默认 30 分钟。',
@@ -595,23 +567,6 @@ const INFO = {
       '插件不调用任何发布接口，不替你发推或回复。'
     ]
   },
-  price: {
-    title: '行情与提醒说明',
-    lines: [
-      '三项数据：TapeUP 内盘（tapeup.io）、矿机日产能价（Firsto）、$BEM（Firsto）。',
-      '【BEM 与矿机日产价这两项都来自 Firsto】$BEM 取自 Firsto 官方 analytics；矿机日产价取自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」的同源只读接口（当前有效挂单中位数，实时）。',
-      '1.4.20 起不再用 24h 小时成交序列的最后一个点（那是历史成交均价，会滞后）；因此矿机卡不再显示 24h 涨跌，改标「挂单参考价」。',
-      '【TapeUP 内盘价与 Firsto 无关，来自 tapeup.io 交易页】页面标注 BEM/UP（UP 以 BEM 计价，如 0.0264 BEM/UP），并同时给出美元折算价（如 $0.3181）与 24h 涨跌；卡片主值显示美元价、副行显示 BEM/UP 计价。',
-      '1.4.21 起只认页面上的 BEM/UP 标签与「价 + 美元 + 百分比」组合，不再拿图表坐标、钱包余额或统计区数字凑数；认不出就显示未采集。',
-      'tapeup.io 整站 Cloudflare 防护，后台无法直接抓取，因此由扩展在你打开交易页时从页面自动读取内盘价并缓存；关闭后沿用缓存。',
-      '均不登录、不需要 API Key、不发送任何本机数据。',
-      '点开面板会读 2 分钟内的缓存；点 ↻ 可立即刷新，后台默认每 5 分钟查一次。',
-      '设好上下限并保存后，只在价格「从区间内跨到区间外」时提醒一次。',
-      '网页右下角浮层只在已打开的支持站点出现；系统通知不受此限制。',
-      '点 UP 卡片 / 浮层 / 通知会打开 tapeup.io 交易页；矿机卡打开 tapeout.firsto.ai/circuits/other，BEM 卡打开 Firsto 数据页。',
-      '行情仅供参考，不构成投资建议；插件不会替你下单。'
-    ]
-  }
 };
 
 const infoMask = document.getElementById('infoMask');
@@ -695,49 +650,85 @@ function priceStatus(text, good) {
   el.style.color = good === false ? '#b91c1c' : (good === true ? '#15803d' : '#999');
 }
 
+/* 1.4.24：界面只留数字，来源标注、版本说明、明细行、采集明细全部去掉。
+ * 数据链路不变：UP 仍取 tapeup.io 内盘，矿机日产与 BEM 仍取 Firsto。 */
+function priceClock(iso) {
+  const t = Date.parse(iso);
+  return isNaN(t) ? ''
+    : new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+/* K 线动态价是 8 位定点小数（0.31542257），不能按 2~4 位美元价四舍五入 */
+function priceUsdFull(v) {
+  if (v == null) return null;
+  const n = Number(v);
+  if (!isFinite(n)) return null;
+  return '$' + n.toLocaleString('en-US',
+    { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+}
+
 function renderPriceSnapshot(snap) {
-  if (!priceApi || !snap || !snap.items) { priceText('priceUpdated', '暂无数据'); return; }
+  if (!priceApi || !snap || !snap.items) {
+    priceText('priceUpdated', '暂无数据');
+    return;
+  }
   priceApi.KEYS.forEach((k) => {
     const item = snap.items[k] || {};
-    const vEl = priceEl('priceValue' + priceCap(k));
-    const cEl = priceEl('priceChange' + priceCap(k));
-    if (vEl) {
-      /* 1.4.21：UP 内盘价页面同时给「0.0264 BEM/UP」与「$0.3181」。
-       * 主值显示页面上那个大号美元价，副行补 BEM/UP 计价与涨跌，两个数都能当场核对。 */
-      if (k === 'up' && item.usdValue != null) {
-        vEl.textContent = '$' + Number(item.usdValue).toLocaleString('en-US',
-          { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-        vEl.title = 'tapeup.io 内盘：' + priceApi.format(k, item.value) + ' BEM/UP';
-      } else {
-        vEl.textContent = priceApi.format(k, item.value);
+    const C = priceCap(k);
+    const vEl = priceEl('priceValue' + C);
+    const uEl = priceEl('priceUnit' + C);
+    const sEl = priceEl('priceSub' + C);
+    const cEl = priceEl('priceChange' + C);
+    const hasVal = item.value != null;
+
+    let mainText, unitText;
+    if (k === 'up') {
+      const live = (item.livePrice != null) ? item.livePrice : item.usdValue;
+      mainText = priceUsdFull(live) || priceApi.format(k, item.value);
+      unitText = 'USD';
+      /* 页头三数整串放副行，一个都不裁：0.0254 BEM/UP · $0.3154 · +19.25% */
+      const trio = [
+        hasVal ? priceApi.format(k, item.value) + ' BEM/UP' : null,
+        item.usdValue != null ? priceUsdFull(item.usdValue) : null,
+        item.changePct != null ? priceApi.formatChange(item.changePct) : null
+      ].filter(Boolean);
+      if (sEl) {
+        sEl.textContent = trio.length ? trio.join(' · ') : '';
+        sEl.style.display = trio.length ? '' : 'none';
       }
+    } else {
+      mainText = priceApi.format(k, item.value);
+      unitText = (k === 'miner') ? 'BNB' : 'USD';
     }
+    if (vEl) {
+      vEl.textContent = mainText;
+      vEl.title = hasVal ? '原始值 ' + item.value : '暂无采集';
+    }
+    if (uEl) uEl.textContent = unitText;
+
+    let badge = (k === 'miner' && item.changePct == null && hasVal)
+      ? '挂单参考价' : priceApi.formatChange(item.changePct);
+    if (!hasVal) badge = '未采集';
+    if (item.stale) badge += ' · 缓存';
     if (cEl) {
-      /* 1.4.20：矿机日产价改为 /circuits/other 的实时挂单参考价，没有 24h 同口径
-       * 序列可比，changePct 为 null。给一句口径说明，别让用户以为是「没抓到涨跌」。 */
-      let pctText;
-      if (k === 'up') {
-        const bemText = (item.value != null) ? priceApi.format(k, item.value) + ' BEM/UP' : '';
-        const chgText = (item.changePct != null) ? priceApi.formatChange(item.changePct) : '';
-        pctText = [bemText, chgText].filter(Boolean).join(' · ') || '—';
-      } else {
-        pctText = (k === 'miner' && item.changePct == null && item.value != null)
-          ? '挂单参考价' : priceApi.formatChange(item.changePct);
-      }
-      cEl.textContent = pctText + (item.stale ? ' · 缓存' : '');
-      cEl.className = 'pc-change' + (priceApi.isUp(item.changePct) ? ' up'
+      cEl.textContent = badge;
+      cEl.className = 'pc-badge' + (priceApi.isUp(item.changePct) ? ' up'
         : (priceApi.isDown(item.changePct) ? ' down' : ''));
+      cEl.title = '涨＝红、跌＝绿';
     }
   });
+
   const t = Date.parse(snap.updatedAt);
   const up = priceEl('priceUpdated');
-  priceText('priceUpdated', isNaN(t) ? '刚刚更新'
-    : '更新 ' + new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+  priceText('priceUpdated', isNaN(t) ? '' : '更新 ' + priceClock(snap.updatedAt));
   if (up) up.title = (snap.errors && snap.errors.length) ? snap.errors.join('；') : '点 ↻ 立即刷新';
 }
 
 function loadPrices(force) {
-  if (!priceApi) { priceText('priceUpdated', '行情模块未加载'); return; }
+  if (!priceApi) {
+    priceText('priceUpdated', '行情模块未加载');
+    return;
+  }
   priceText('priceUpdated', force ? '刷新中…' : '读取中…');
   sendBg({ type: force ? 'PRICE_REFRESH' : 'PRICE_GET' }, (r, err) => {
     if (err || !r || !r.ok) {
@@ -823,7 +814,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.4.21 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.4.24 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

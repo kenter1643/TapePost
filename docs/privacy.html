@@ -76,6 +76,9 @@
     <li><code>https://api-tapeout.firsto.ai/v1/analytics/bem?range=24h</code> 与 <code>/v1/circuit-holders?page=1</code>：$BEM 现价与 TapeOut 矿机日产能价（后台 GET）。后者是 <code>https://tapeout.firsto.ai/circuits/other</code> 页顶「日产能价参考价」所用的同源公开接口；<strong>1.4.20 起</strong>替换原来的 <code>/v1/analytics/circuits?range=24h</code>（24h 成交序列，会滞后）。接口路径变了，但域名、请求方式与只读性质不变；</li>
   </ul>
   <p><strong>1.4.16 TapeUP $UP 内盘价（内容脚本采集，非后台 GET）：</strong>tapeup.io 整站 Cloudflare 防护，后台直接 <code>fetch</code> 会被拦，因此 TapeUP $UP 的内盘价（页面标注 <code>BEM/UP</code>，即 UP 以 BEM 计价，如 <code>0.0264 BEM/UP</code>，并同时给出美元折算价 <code>$0.3181</code>；来自 <code>https://tapeup.io/zh/trade/token?id=1</code>）改由扩展的<strong>内容脚本</strong>在你已通过 CF 的浏览器会话里读取页面显示的内盘价，再回传后台缓存。<strong>1.4.21 起</strong>只按页面上的 <code>BEM/UP</code> 标签与「价 + 美元 + 百分比」组合定位价格，钱包余额、待释放余额、统计区数字与图表坐标只作本机诊断候选、不参与取价；认不出就显示未采集。扩展仅在 <code>tapeup.io</code> 注入内容脚本读取该页显示的价格数字，<strong>不读取页面外数据、不发送任何本机数据、不在该域发起额外网络请求</strong>。</p>
+  <p><strong>1.4.22 界面改版（仅本机渲染）：</strong>行情面板由三列挤压改为「上 TapeUP / 中 矿机日产 / 下 BEM」三块整行卡片，把主值、另一计价口径、涨跌、来源、更新时间、实时或缓存状态，以及可折叠的「采集明细」（原始字段、采集锚点与本机诊断候选）完整显示出来。这些信息全部来自上述同源公开数据与本机缓存，<strong>只为解决文字被裁切的问题，不新增任何网络请求、权限、域名、数据接收方，也不额外读取或上传页面内容</strong>。BEM 与矿机日产能价仍来自 Firsto，TapeUP 内盘价仍来自 tapeup.io，与 Firsto 无关。</p>
+  <p><strong>1.4.24 界面精简（仅本机渲染）：</strong>行情区删除来源标注、版本说明文字、明细行与采集明细，设置页删除版本说明段落，整体布局收紧。这些文字本就来自本机缓存与静态页面，删除后<strong>不新增也不改变任何网络请求、权限、域名或数据接收方，也不额外读取或上传任何页面内容</strong>。</p>
+  <p><strong>1.4.23 动态价采集（仍为同一页面、仅本机渲染）：</strong>为按用户要求显示 K 线图右侧绿色「当前价标签」那个随成交跳动的动态价，内容脚本额外读取<strong>同一个 tapeup.io 交易页上已经显示的图表图例文字</strong>（形如 <code>开=… 高=… 低=… 收=0.31542257 … Vol 9</code>），并把它与页头 <code>0.0254 BEM/UP · $0.3154 · +19.25%</code> 一起存入本机缓存供弹窗显示。这只是对已打开页面可见文字的本机解析，<strong>不新增接口、不发起任何额外网络请求、不新增权限 / 域名 / 数据接收方，也不读取页面外的其它标签、账号或钱包信息，更不上传任何本机数据</strong>。采集到的价格数字只写入本机 <code>chrome.storage.local</code> 缓存与本机弹窗。BEM 与矿机日产能价仍来自 Firsto，TapeUP 仍来自 tapeup.io，与 Firsto 无关；行情区同时收紧为更紧凑的布局，属纯界面调整。</p>
   <p>请求仅携带 <code>Accept: application/json</code> 与 <code>cache: no-store</code>，<strong>不携带 Cookie、认证头、API Key、页面内容、推文正文、用户标识或任何本机数据</strong>；接口不要求登录，响应只含公开行情数字。点行情卡片或点提醒弹窗时，浏览器会打开 <code>https://firsto.ai/data</code>、<code>/data/bem</code>，或（1.4.20 起矿机卡）<code>https://tapeout.firsto.ai/circuits/other</code> 这类普通网页，该页面由 Firsto 运营，其后产生的访问遵循 Firsto 自己的隐私政策；扩展不会替你登录、下单或提交任何表单。链接经本机白名单校验，只放行 <code>firsto.ai</code> 及其子域与 <code>tapeup.io</code> 及其子域。</p>
   <p><strong>1.4.14 签名帧（仅本机 DOM）：</strong>站内直连的 <code>x-client-transaction-id</code> 需要 X 自带签名模块读取 X 首页下发的 4 个加载动画 SVG 的几何数据。扩展会以你已登录的会话读取一次 <code>https://x.com/</code> 的 HTML（GET，接收方仅 X），只取这 4 个帧的 path 数据，并在当前 X 页面临时插入隐藏帧供签名模块读取，签名完成后立即移除。该过程不读取页面文字、推文内容或账号信息，不新增网络接收方，也不上传任何数据。</p>
   <p>扩展没有分析、广告或跟踪代码，没有远程加载的脚本，也不连接开发者自建的服务器。</p>
@@ -116,7 +119,7 @@
     <tr><td>alarms（1.4.13 新增）</td><td>按你设定的间隔在后台定时检查三项公开行情；只在本机触发刷新与阈值判定，不上传数据</td></tr>
     <tr><td>notifications（1.4.13 新增）</td><td>价格越过你设定的上下限时，由 Chrome 系统通知在桌面提醒；通知文字只含公开价格与阈值，点击打开 Firsto 数据页。可在面板里关闭</td></tr>
     <tr><td><code>api-tapeout.firsto.ai</code> 主机权限（1.4.13 新增，1.4.20 仅换接口路径）</td><td>仅用于上述 BEM / 矿机日产价的公开只读接口 GET 请求（1.4.20 起矿机价路径为 <code>/v1/circuit-holders?page=1</code>，域名与权限不变）；不读取该域名页面内容，不在其上注入脚本，也不发送任何本机数据</td></tr>
-    <tr><td><code>tapeup.io</code> 主机权限（1.4.17 新增）</td><td>仅用于在 tapeup.io 交易页注入内容脚本读取页面显示的内盘价（页面标注 <code>BEM/UP</code>，UP 以 BEM 计价；1.4.21 起按明确的 <code>BEM/UP</code> 锚点取价并读取同页美元折算价）；不发请求、不读页面外数据、不发送任何本机数据</td></tr>
+    <tr><td><code>tapeup.io</code> 主机权限（1.4.17 新增）</td><td>仅用于在 tapeup.io 交易页注入内容脚本读取页面显示的内盘价（页面标注 <code>BEM/UP</code>，UP 以 BEM 计价；1.4.21 起按明确的 <code>BEM/UP</code> 锚点取价并读取同页美元折算价；1.4.23 起另读同页 K 线图例「收=」文本作为动态当前价）；不发请求、不读页面外数据、不发送任何本机数据</td></tr>
     <tr><td>X 站点主机权限 / 内容脚本</td><td>在你已打开的 X 页面上注入「一键转发 / AI 评论」按钮；站内直连时由 X 页面自身向 X 自有 Grok 接口发请求，并在该页面内读取 <code>ct0</code> 与 <code>authorization</code> 以复用会话（仅内存、不存储不导出，接收方仅 X 自己）；页面模式下仅定位 Grok 输入框与读取回答文本</td></tr>
     <tr><td>认证 Cookie / bearer（页面内读取）</td><td>仅在站内直连时于 X 页面内存中读取并随请求发回 X 自己；不写入任何持久化存储、不上传给开发者或第三方，详见第 1 节</td></tr>
     <tr><td>可选主机权限（默认未授予）</td><td>仅当你在设置里填写自定义网关并主动点「允许网关域名」时，才申请该域名的访问权</td></tr>
@@ -133,7 +136,7 @@
   <h2>8. 变更与联系</h2>
   <p>如政策有实质变更，我们会更新本页并同步提升扩展版本号。本项目源码公开，可自行审计数据处理逻辑：<a href="https://github.com/kenter1643/TapePost">github.com/kenter1643/TapePost</a>。如需咨询或反馈，请在 <a href="https://github.com/kenter1643/TapePost/issues">GitHub Issues</a> 提交，或通过 Chrome 网上应用店该扩展页面的「支持 / 开发者联系方式」渠道联系开发者。</p>
 
-  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · Grok 默认免 Key 走 X 站内模式 · 行情仅取公开只读接口　｜　Last updated: 2026-11-11</footer>
+  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · Grok 默认免 Key 走 X 站内模式 · 行情仅取公开只读接口　｜　Last updated: 2026-11-12</footer>
 </div>
 </body>
 </html>

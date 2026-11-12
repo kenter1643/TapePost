@@ -1208,10 +1208,18 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
         // 这里直接内联判断，避免真机收到回传时 ReferenceError
         var p = (msg && msg.payload && typeof msg.payload === 'object' && !Array.isArray(msg.payload)) ? msg.payload : {};
         var val = Number(p.value);
-        if (isFinite(val) && val > 0) {
+        // 1.4.23：K 线动态当前价也是有效采集；页头 BEM/UP 暂缺时不再整条丢弃
+        var liveVal = Number(p.livePrice);
+        if ((isFinite(val) && val > 0) || (isFinite(liveVal) && liveVal > 0)) {
           var upUsd = Number(p.usdValue);
-          var upItem = { value: val, usdValue: (isFinite(upUsd) && upUsd > 0) ? upUsd : null,
-            changePct: Number(p.changePct) || null, asOf: p.asOf || null,
+          var livePct = Number(p.liveChangePct);
+          var upItem = { value: (isFinite(val) && val > 0) ? val : null,
+            usdValue: (isFinite(upUsd) && upUsd > 0) ? upUsd : null,
+            changePct: Number(p.changePct) || null,
+            livePrice: (isFinite(liveVal) && liveVal > 0) ? liveVal : null,
+            liveChangePct: isFinite(livePct) ? livePct : null,
+            liveNote: p.liveNote || null, liveSource: p.liveSource || null,
+            asOf: p.asOf || null,
             at: Number(p.at) || Date.now(), debug: (p && p.debug) ? p.debug : null };
           var ups = {}; ups['tapeupPriceCache'] = upItem;
           await localSet(ups);

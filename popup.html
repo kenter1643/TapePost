@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; width: 320px; padding: 14px 16px; color: #222; }
+    /* 1.4.24：整体收紧，行情区只留数字，去掉来源 / 版本说明 / 明细行等说明文字 */
+    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; width: 320px; padding: 8px 10px; color: #222; }
     h1 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 7px; }
     /* 1.4.19：版本号直接贴在 TapePost 标题旁，打开弹窗就能核对，不用 hover 按钮 */
     .appver { font-size: 10px; font-weight: 700; color: #d96300; background: #fff1e4;
@@ -96,27 +97,39 @@
     .info-foot button { width:100%;border:none;border-radius:8px;background:#6b46c1;color:#fff;
       font-size:12px;padding:8px;cursor:pointer; }
 
-    /* 1.4.13：面板顶端 TapeOut 行情卡片 */
-    .tape-prices { margin:0 0 10px;padding:9px 10px;border:1px solid #ffd9b3;border-radius:10px;
+    /* 1.4.24：极简行情区——只留数字，去掉来源标注、版本说明、明细行、采集明细。
+     * 三块仍上中下排列；UP 多一行完整显示「0.0264 BEM/UP · $0.3181 · +19.44%」，
+     * 矿机 / BEM 各压到一行。文字允许换行，绝不 nowrap 截断。 */
+    .tape-prices { margin:0 0 8px;padding:6px 7px;border:1px solid #ffd9b3;border-radius:8px;
       background:linear-gradient(180deg,#fffaf4,#fff); }
-    .price-head { display:flex;align-items:center;gap:6px;margin:0 0 8px; }
-    .price-head strong { flex:1;font-size:12px;color:#b45309; }
-    .price-head span { font-size:10px;color:#999;white-space:nowrap; }
-    .price-head button { border:1px solid #ffd0a6;background:#fff;color:#d96300;border-radius:6px;
-      font-size:13px;padding:1px 7px;cursor:pointer;line-height:1.3; }
+    .price-head { display:flex;align-items:center;gap:5px;margin:0 0 5px; }
+    .price-head strong { flex:1;font-size:11px;color:#b45309; }
+    .price-head span { font-size:9px;color:#999; }
+    .price-head button { border:1px solid #ffd0a6;background:#fff;color:#d96300;border-radius:5px;
+      font-size:11px;padding:0 6px;cursor:pointer;line-height:1.4; }
     .price-head button:hover { background:#fff1e4; }
-    .price-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:6px; }
-    .price-card { display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;
-      padding:7px 6px;border:1px solid #ffe2c4;border-radius:8px;background:#fff;text-align:left;cursor:pointer; }
+    .price-grid { display:grid;grid-template-columns:1fr;gap:4px; } /* 单列＝上中下三块 */
+    .price-card { display:block;width:100%;min-width:0;box-sizing:border-box;padding:4px 7px;
+      border:1px solid #ffe2c4;border-left:3px solid #ff7800;border-radius:7px;
+      background:#fff;text-align:left;cursor:pointer;font-family:inherit; }
     .price-card:hover { border-color:#ff9d3d;background:#fff7ed; }
-    .pc-label { font-size:10px;color:#8a5a2b;white-space:nowrap; }
-    .pc-value { font-size:13px;font-weight:700;color:#1f2430;letter-spacing:-.2px;white-space:nowrap; }
-    .pc-change { font-size:10px;color:#999;white-space:nowrap; }
-    .pc-change.up { color:#d93025; }   /* 涨＝红（A 股/国内习惯） */
-    .pc-change.down { color:#16a34a; } /* 跌＝绿 */
-    .price-foot { display:flex;justify-content:space-between;align-items:center;margin-top:7px;
-      font-size:10px;color:#999; }
-    .price-foot .resetbtn { font-size:10px; }
+    .price-card.pc-miner { border-left-color:#16a34a; }
+    .price-card.pc-bem { border-left-color:#0d9488; }
+    .pc-top { display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap; }
+    .pc-label { font-size:10px;font-weight:700;color:#8a5a2b;white-space:normal;overflow-wrap:anywhere; }
+    .pc-badge { flex:0 0 auto;max-width:46%;font-size:9px;font-weight:700;color:#64748b;
+      background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:1px 6px;
+      white-space:normal;overflow-wrap:anywhere;text-align:right;line-height:1.35; }
+    .pc-badge.up { color:#d93025;background:#fef2f2;border-color:#fecaca; }   /* 涨＝红（国内习惯） */
+    .pc-badge.down { color:#16a34a;background:#f0fdf4;border-color:#bbf7d0; } /* 跌＝绿 */
+    .pc-value-row { display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;margin-top:2px; }
+    .pc-value { font-size:15px;font-weight:800;color:#1f2430;letter-spacing:-.2px;
+      white-space:normal;overflow-wrap:anywhere;line-height:1.25; }
+    .pc-value.sm { font-size:12px; }
+    .pc-inline { display:inline-flex;align-items:baseline;gap:3px; }
+    .pc-unit { font-size:9px;color:#94a3b8;white-space:normal;overflow-wrap:anywhere; }
+    .pc-sub { display:block;margin-top:2px;font-size:10.5px;font-weight:700;color:#b45309;
+      white-space:normal;overflow-wrap:anywhere;line-height:1.4; }
 
     /* 1.4.13：价格上下限提醒设置 */
     details.price-set { margin:0 0 12px;border:1px solid #ddd;border-radius:9px;padding:8px 10px;background:#fafafa; }
@@ -137,10 +150,10 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.21</span></h1>
-  <p class="sub">7 站转发 · 免 Key AI 评论 · 295 条链接核验。发送始终由你手动完成。</p>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.24</span></h1>
+  <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
-  <!-- 1.4.13：面板顶端三项实时行情，点卡片进 Firsto 交易所 -->
+  <!-- 1.4.24：只留数字的上中下三块（① TapeUP / ② 矿机日产 / ③ BEM），点卡片进对应页面 -->
   <section class="tape-prices" id="pricePanel">
     <div class="price-head">
       <strong>📈 TapeOut 实时行情</strong>
@@ -148,25 +161,31 @@
       <button id="priceRefresh" type="button" title="立即刷新行情">↻</button>
     </div>
     <div class="price-grid">
-      <button class="price-card" type="button" data-price-key="up" title="来源 tapeup.io 交易页：页面标注 BEM/UP（UP 以 BEM 计价），主值为美元折算价、副行为 BEM/UP 计价；需打开交易页自动采集，点击进入该页">
-        <span class="pc-label">TapeUP · tapeup.io</span>
-        <span class="pc-value" id="priceValueUp">—</span>
-        <span class="pc-change" id="priceChangeUp">—</span>
+      <button class="price-card pc-up" type="button" data-price-key="up" title="点击打开 TapeUP 交易页">
+        <span class="pc-top">
+          <span class="pc-label">① TapeUP</span>
+          <span class="pc-badge" id="priceChangeUp">—</span>
+        </span>
+        <span class="pc-value-row">
+          <span class="pc-value" id="priceValueUp">—</span>
+          <span class="pc-unit" id="priceUnitUp">USD</span>
+        </span>
+        <span class="pc-sub" id="priceSubUp">—</span>
       </button>
-      <button class="price-card" type="button" data-price-key="miner" title="来源 Firsto：矿机日产能价，单位 BNB；取自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」（当前有效挂单中位数）；点击进入该页面">
-        <span class="pc-label">矿机日产 · Firsto</span>
-        <span class="pc-value" id="priceValueMiner">—</span>
-        <span class="pc-change" id="priceChangeMiner">—</span>
+      <button class="price-card pc-miner" type="button" data-price-key="miner" title="点击打开矿机日产页">
+        <span class="pc-top">
+          <span class="pc-label">② 矿机日产</span>
+          <span class="pc-inline"><span class="pc-value sm" id="priceValueMiner">—</span><span class="pc-unit" id="priceUnitMiner">BNB</span></span>
+          <span class="pc-badge" id="priceChangeMiner">—</span>
+        </span>
       </button>
-      <button class="price-card" type="button" data-price-key="bem" title="来源 Firsto：$BEM 现价，单位 USD（Firsto 官方 analytics）；点击进入 Firsto 交易所">
-        <span class="pc-label">BEM · Firsto</span>
-        <span class="pc-value" id="priceValueBem">—</span>
-        <span class="pc-change" id="priceChangeBem">—</span>
+      <button class="price-card pc-bem" type="button" data-price-key="bem" title="点击打开 BEM 数据页">
+        <span class="pc-top">
+          <span class="pc-label">③ BEM</span>
+          <span class="pc-inline"><span class="pc-value sm" id="priceValueBem">—</span><span class="pc-unit" id="priceUnitBem">USD</span></span>
+          <span class="pc-badge" id="priceChangeBem">—</span>
+        </span>
       </button>
-    </div>
-    <div class="price-foot">
-      <span>点卡片进对应交易所 ↗</span>
-      <button type="button" class="resetbtn" data-info="price">行情说明</button>
     </div>
   </section>
 
@@ -216,8 +235,7 @@
       <button type="button" id="priceTest">🔔 测试弹窗</button>
     </div>
     <div id="priceStatus" class="tiny"></div>
-    <p class="tiny">留空＝不监控该方向；只在「从区间内跨到区间外」时提醒一次，不会一直弹。改完阈值记得点保存。<b>TapeUP 的阈值按 BEM/UP 计价填写</b>（即卡片副行那个 0.0264 这类数字，不是主值的美元折算价）；矿机按 BNB、BEM 按 USD。
-      <b>BEM 与矿机日产能价两项都来自 Firsto</b>：BEM 取自 Firsto 官方 analytics；矿机日产能价取自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」的同源只读接口（当前有效挂单中位数，实时，1.4.20 起不再用滞后的 24h 成交均价）。<b>TapeUP 内盘价来自 tapeup.io 交易页，与 Firsto 无关</b>：页面标注 BEM/UP（UP 以 BEM 计价，如 0.0264 BEM/UP）并给出美元折算价（如 $0.3181），需打开该页后由扩展自动采集，关闭后沿用缓存。均免登录免 Key、不上传任何本机数据。行情仅供参考，不构成投资建议。</p>
+    <p class="tiny">留空＝不监控该方向；只在「从区间内跨到区间外」时提醒一次。<b>TapeUP 阈值按 BEM/UP 填</b>（卡片副行那个数），矿机按 BNB、BEM 按 USD。改完记得点保存。</p>
   </details>
 
   <div class="me">
@@ -325,7 +343,7 @@
         <input type="checkbox" id="promoCopyOnly" />
         <label for="promoCopyOnly" style="margin:0;font-weight:400">安全模式：T 只复制推广句，我自己粘贴（默认关闭）</label>
       </div>
-      <p class="tiny" style="margin:0 0 8px">全页只出现一个 T 按钮，跟着你正在编辑的那个回复框走。左键点一下随机带入一句，再点换一句（不会重复、不会叠加）；右键去掉推广句。1.4.11 起改为「一次全量替换」，等价于自己全选后重打一遍，不再用局部选区删改，因此不会再出现文字重复或回复框不可编辑。正文含 @ / 表情 / 配图时自动改为只复制，绝不弄丢它们。</p>
+      <p class="tiny" style="margin:0 0 8px">全页只出现一个 T 按钮，跟着当前回复框走。左键随机换一句、右键去掉；写回一次全量替换，不压字、不重复、不弄丢正文。</p>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoEnabled" />
         <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的 3 条候选自动随机附一句（默认关闭）</label>
@@ -348,7 +366,7 @@
         <label for="promoCustomBEM">$BEM 话术</label>
         <textarea id="promoCustomBEM" spellcheck="false" placeholder="每行一句；填了就覆盖该主题的内置话术"></textarea>
       </details>
-      <p class="tiny">只作用于 X 评论 / 回复框，不改一键转发正文。T / AI 评论按钮在回复正文上方外侧，不压字；写回只用浏览器原生编辑命令、不直改 DOM，写入后会校验结果，异常自动恢复原文并把推广句复制到剪贴板。正文里已有两句以上推广句时停手，避免越点越乱。内置话术仅作生态与技术介绍，不含价格或收益承诺；最终回复始终由你手动点发送。
+      <p class="tiny">只作用于 X 评论 / 回复框，不改一键转发正文；写入异常自动恢复原文。内置话术不含价格或收益承诺，最终回复由你手动发送。
         <button type="button" class="infobtn" data-info="promo">推广说明</button>
       </p>
     </div>
@@ -356,11 +374,6 @@
     <div id="modeFixNote" class="mode-hint" hidden
       style="margin:0 0 10px;background:#ecfdf5;border-color:#a7f3d0;color:#065f46">
       <b>已自动修复运行模式</b>：旧「页面模式」已改为「自动」，刷新 X 页面即可。
-    </div>
-
-    <div class="mode-hint" style="margin:0 0 10px">
-      <b>当前 v1.4.21</b>：按真机页面重新校准 TapeUP 内盘价——tapeup.io 交易页显示「0.0264 BEM/UP · $0.3181 · +19.44%」，旧版用宽泛正则误抓图表坐标 / 钱包余额里的 0.286…；现在只认页面上的 BEM/UP 标签与「价 + 美元 + 百分比」组合，认不出就显示未采集，不再给错数字。UP 卡主值显示美元折算价、副行显示 BEM/UP 计价与涨跌。<b>BEM 与矿机日产价两项都来自 Firsto</b>（矿机日产价取自 /circuits/other 页顶挂单参考价），TapeUP 内盘价来自 tapeup.io，与 Firsto 无关；三张卡已直接标出来源。到 chrome://extensions 点「重新加载」→ 打开 tapeup.io 交易页（右下角浮层可当场核对采集值）→ 刷新 X 页面即可。
-      <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 
     <label for="replyInputSelector">X 回复框选择器（留空＝内置，X 改版时再填）</label>
