@@ -651,25 +651,28 @@ function renderPriceSnapshot(snap) {
     let mainText, unitText;
     if (k === 'up') {
       const live = (item.livePrice != null) ? item.livePrice : item.usdValue;
-      mainText = priceUsdFull(live) || priceApi.format(k, item.value);
+      const usdMain = priceUsdFull(live);
+      mainText = usdMain || priceApi.format(k, item.value);
       unitText = '';
-      /* 1.4.26：UP 压成一行，但页头三数仍整串完整显示（不裁切）：
-       * 0.0254 BEM/UP · $0.3154 · +19.25%，最后一段按涨红跌绿着色。 */
-      const trio = [
-        hasVal ? priceApi.format(k, item.value) + ' BEM/UP' : null,
-        item.usdValue != null ? priceUsdFull(item.usdValue) : null,
-        item.changePct != null ? priceApi.formatChange(item.changePct) : null
-      ].filter(Boolean);
+      /* 1.4.30：主值（左边大字）已经是 K 线动态价 / 页头折算价，右边副行
+       * 不再重复那个美元价，只留 BEM/UP 计价与涨跌：
+       * $0.31542257  0.0254 BEM/UP · +19.25%，涨跌仍按涨红跌绿着色。
+       * 用对象数组标记涨跌项，避免删掉一段后靠固定下标着色出错。 */
+      const parts = [];
+      // 主值偶尔会退回 BEM/UP 原值（美元价没采到），这时副行只补单位，不再重复数字
+      if (hasVal) parts.push({ text: usdMain
+        ? priceApi.format(k, item.value) + ' BEM/UP' : 'BEM/UP' });
+      if (item.changePct != null) parts.push({ text: priceApi.formatChange(item.changePct), chg: true });
       if (sEl) {
-        if (!trio.length) {
+        if (!parts.length) {
           sEl.textContent = '';
           sEl.style.display = 'none';
         } else {
           const chgCls = priceApi.isUp(item.changePct) ? 'up'
             : (priceApi.isDown(item.changePct) ? 'down' : '');
-          sEl.innerHTML = trio.map((part, i) =>
-            (i === 2 && chgCls && item.changePct != null)
-              ? '<b class="chg ' + chgCls + '">' + part + '</b>' : part
+          sEl.innerHTML = parts.map((p) =>
+            (p.chg && chgCls)
+              ? '<b class="chg ' + chgCls + '">' + p.text + '</b>' : p.text
           ).join(' · ');
           sEl.style.display = '';
         }
@@ -684,7 +687,7 @@ function renderPriceSnapshot(snap) {
     }
     if (uEl) uEl.textContent = unitText;
 
-    /* 1.4.26：UP 的涨跌已在行内三数串里（带颜色），徽标只在缓存时提示；
+    /* 1.4.26 / 1.4.30：UP 的涨跌已在行内副串里（带颜色），徽标只在缓存时提示；
      * 矿机的「挂单参考价」属口径说明，不再占并排卡片的宽度。 */
     let badge = (item.changePct != null) ? priceApi.formatChange(item.changePct) : '';
     if (k === 'up') badge = '';
@@ -794,7 +797,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.4.29 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.4.30 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

@@ -81,9 +81,9 @@
     .info-foot button { width:100%;border:none;border-radius:8px;background:#6b46c1;color:#fff;
       font-size:12px;padding:8px;cursor:pointer; }
 
-    /* 1.4.26：行情区压成两行——第一行 TapeUP 单行（动态价 + 页头三数整串），
-     * 第二行把 ② 矿机日产 / ③ BEM 并排。只留数字，整串不裁切：
-     * 行内放不下时整块挪到下一行，而不是省略号截断。 */
+    /* 1.4.26：行情区压成两行——第一行 TapeUP 单行，第二行把 ② 矿机日产 / ③ BEM 并排。
+     * 1.4.30：UP 副行去掉与主值重复的页头美元折算价，只留 BEM/UP 计价 + 涨跌。
+     * 只留数字，整串不裁切：行内放不下时整块挪到下一行，而不是省略号截断。 */
     .tape-prices { margin:0 0 8px;padding:5px 6px;border:1px solid #ffd9b3;border-radius:8px;
       background:linear-gradient(180deg,#fffaf4,#fff); }
     .price-head { display:flex;align-items:center;gap:5px;margin:0 0 4px; }
@@ -134,7 +134,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.29</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.30</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
   <!-- 1.4.26：两行紧凑行情（① TapeUP 单行 / ②③ 并排一行），只留数字，点卡片进对应页面 -->
@@ -145,7 +145,7 @@
       <button id="priceRefresh" type="button" title="立即刷新行情">↻</button>
     </div>
     <div class="price-grid">
-      <button class="price-card pc-up" type="button" data-price-key="up" title="TapeUP：前面是 K 线动态价，后面是页头 BEM/UP 计价 · 美元折算价 · 24h 涨跌；点击进入交易页">
+      <button class="price-card pc-up" type="button" data-price-key="up" title="TapeUP：前面是 K 线动态价，后面是页头 BEM/UP 计价 · 24h 涨跌；点击进入交易页">
         <span class="pc-line">
           <span class="pc-label">① TapeUP</span>
           <span class="pc-value" id="priceValueUp">—</span>
