@@ -80,7 +80,7 @@ var SITE_PROFILES = {
     referer: 'https://www.zhihu.com/',
     refererHosts: ['zhimg.com'],
     hashDefault: 'keep',
-    watermark: 'off',
+    watermark: 'detect',
     videoApi: null,
     permalink: 'generic',
     metaWords: /来自\s|关注了|赞同\s*\d+|评论\s*\d+|阅读全文|显示全部/gi,
@@ -115,7 +115,7 @@ var SITE_PROFILES = {
     referer: 'https://mp.weixin.qq.com/',
     refererHosts: ['qpic.cn'],
     hashDefault: 'keep',
-    watermark: 'off',
+    watermark: 'detect',
     videoApi: null,
     permalink: 'generic',
     metaWords: /来自\s|点击上方|关注我们|长按二维码|预览时标签不可点/gi,
@@ -149,7 +149,7 @@ var SITE_PROFILES = {
     referer: 'https://t.bilibili.com/',
     refererHosts: ['hdslb.com', 'bfsstatic.com'],
     hashDefault: 'stripTopics',
-    watermark: 'off',
+    watermark: 'detect',
     videoApi: null,
     permalink: 'generic',
     metaWords: /来自\s|关注了|转发\s*\d+|评论\s*\d+|点赞\s*\d+|赞\s*\d+/gi,
@@ -182,7 +182,7 @@ var SITE_PROFILES = {
     referer: 'https://www.douban.com/',
     refererHosts: ['doubanio.com'],
     hashDefault: 'keep',
-    watermark: 'off',
+    watermark: 'detect',
     videoApi: null,
     permalink: 'generic',
     metaWords: /来自\s|关注了|响应\s*\d+|赞\s*\d+|转发\s*\d+|来自豆瓣App/gi,
@@ -215,8 +215,9 @@ var SITE_PROFILES = {
     referer: 'https://www.xiaohongshu.com/',
     refererHosts: ['xhscdn.com'],
     hashDefault: 'stripTopics',
-    // 小红书水印压在图上且带用户号，位置不固定：不做自动去水印，避免毁图
-    watermark: 'off',
+    // 1.4.27：小红书水印压在图上且带用户号、位置不固定，全图多区域逐像素检测；
+    // 只在有把握时替换水印像素，没把握就原像素不动，避免毁图
+    watermark: 'detect',
     videoApi: null,
     permalink: 'generic',
     metaWords: /来自\s|关注了|编辑于|收藏\s*\d+|评论\s*\d+|点赞\s*\d+/gi,
@@ -271,7 +272,7 @@ var SITE_PROFILES = {
     refererHosts: ['twimg.com'],
     hashDefault: 'keep',
     // X 图片本身不带平台水印；视频多为 HLS/blob，拿不到干净 mp4，一律不做处理
-    watermark: 'off',
+    watermark: 'detect',
     videoApi: null,
     permalink: 'x',
     // X 卡片里可能有「主推文 + 引用推文」两段 tweetText，引用推文常常更长；

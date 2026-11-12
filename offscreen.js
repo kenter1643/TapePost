@@ -67,19 +67,73 @@ function base64ToU8(b64) {
   return u8;
 }
 
-async function processOne(url, inpaintOpts) {
+/* 1.4.27：4K 高保真输出。
+ * 用 createImageBitmap 的 resizeQuality:'high' 分步（每步 ≤1.6×）重采样到
+ * 长边 3840；原图已达到 4K 就保持原尺寸不缩小。PNG 无损编码，剪贴板可直接用。
+ * 像素上限防止超长图 / 多图时内存爆掉；任何一步失败都回退原尺寸，
+ * 保证「一键转发」不会因为放大而中断。 */
+const UPSCALE_MAX_EDGE = 3840;
+const UPSCALE_MAX_PIXELS = 8.4e6;   // ≈ 3840×2160，兼顾剪贴板与消息体积
+
+async function upscaleTo4K(canvas) {
+  const w = canvas.width, h = canvas.height;
+  const longEdge = Math.max(w, h);
+  const from = [w, h];
+  if (longEdge >= UPSCALE_MAX_EDGE) {
+    return { canvas, info: { from: from, to: from, reason: '原图已达 4K，保持原尺寸' } };
+  }
+  let scale = UPSCALE_MAX_EDGE / longEdge;
+  if (w * h * scale * scale > UPSCALE_MAX_PIXELS) {
+    scale = Math.sqrt(UPSCALE_MAX_PIXELS / (w * h));
+  }
+  if (scale <= 1.02) return { canvas, info: { from: from, to: from, reason: '无需放大' } };
+  const targetW = Math.round(w * scale), targetH = Math.round(h * scale);
+  let cur = canvas, curW = w, curH = h;
+  let steps = 0;
+  while ((curW < targetW || curH < targetH) && steps < 8) {
+    const step = Math.min(1.6, targetW / curW, targetH / curH);
+    curW = Math.min(targetW, Math.max(curW + 1, Math.round(curW * step)));
+    curH = Math.min(targetH, Math.max(curH + 1, Math.round(curH * step)));
+    const bmp = await createImageBitmap(cur, {
+      resizeWidth: curW, resizeHeight: curH, resizeQuality: 'high'
+    });
+    const next = new OffscreenCanvas(curW, curH);
+    next.getContext('2d').drawImage(bmp, 0, 0);
+    bmp.close && bmp.close();
+    cur = next;
+    steps++;
+  }
+  return { canvas: cur, info: { from: from, to: [curW, curH], steps: steps } };
+}
+
+async function processOne(url, inpaintOpts, hd4k) {
   const finalUrl = upgradeImageUrl(url);
   const buf = await fetchImageBytes(finalUrl);
   const { imgData, canvas, ctx } = await decodeToImageData(buf);
   let wm = null;
-  if (inpaintOpts && inpaintOpts.enabled && Inpaint && Inpaint.removeWatermark) {
-    // 自动检测 + 精确重建；检测不到水印时原图完全不动（不再无条件抹右下角矩形）
-    try { wm = Inpaint.removeWatermark(imgData, inpaintOpts); }
-    catch (e) { wm = { changed: false, reason: '去水印失败：' + String(e && e.message || e) }; }
+  if (inpaintOpts && inpaintOpts.enabled && Inpaint) {
+    // 1.4.27：所有站点逐张走全图多区域检测（右下角 / 左下角 / 顶部 / 中间），
+    // 只改疑似水印像素；旧版单区域入口保留作兼容兜底。
+    try {
+      wm = (inpaintOpts.fullScan && Inpaint.removeWatermarks)
+        ? Inpaint.removeWatermarks(imgData, inpaintOpts)
+        : Inpaint.removeWatermark(imgData, inpaintOpts);
+    } catch (e) { wm = { changed: false, reason: '去水印失败：' + String(e && e.message || e) }; }
   }
   ctx.putImageData(imgData, 0, 0);
-  const blob = await canvas.convertToBlob({ type: 'image/png' });
-  return { buf: await blob.arrayBuffer(), wm };
+  let outCanvas = canvas;
+  let up = null;
+  if (hd4k) {
+    try { const r = await upscaleTo4K(canvas); outCanvas = r.canvas; up = r.info; }
+    catch (e) { up = { from: [canvas.width, canvas.height], error: String(e && e.message || e) }; }
+  }
+  let blob = await outCanvas.convertToBlob({ type: 'image/png' });
+  // 4K PNG 对照片类图可能十几 MB；单张过大就回退原尺寸，保证转发不卡死
+  if (hd4k && blob.size > 18e6) {
+    blob = await canvas.convertToBlob({ type: 'image/png' });
+    up = Object.assign({}, up || {}, { fallback: true, reason: '单张 4K PNG 过大，回退原尺寸' });
+  }
+  return { buf: await blob.arrayBuffer(), wm, up };
 }
 
 // ---------- 视频 ----------
@@ -227,10 +281,18 @@ async function handleProcess(msg) {
   const text = payload.text || '';
 
   const results = [];
+  // 1.4.27：逐张独立处理。单张失败只影响它自己，不会让整条转发失败；
+  // 每张都记录「去水印区域」与「4K 放大前后尺寸」，方便在提示里核对。
+  const hd4k = payload.hd4k !== false;
+  // 多图总预算：4K PNG 体积大，累计到 60MB 后其余图仍逐张去水印、只是不再放大，
+  // 避免 base64 走 runtime 消息时把整条转发拖垮。
+  let budget = 60 * 1024 * 1024;
   for (const u of urls) {
     try {
-      const r = await processOne(u, inpaintOpts);
-      results.push({ ok: true, data: abToBase64(r.buf), wm: r.wm });
+      const r = await processOne(u, inpaintOpts, hd4k && budget > 0);
+      const ab = r.buf;
+      budget -= ab.byteLength;
+      results.push({ ok: true, data: abToBase64(ab), wm: r.wm, up: r.up });
     } catch (e) {
       results.push({ ok: false, error: String(e && e.message || e), url: u });
     }

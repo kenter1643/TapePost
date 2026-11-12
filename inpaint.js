@@ -330,7 +330,210 @@
     bfsFillMask(imgData.data, W, H, mask, box);
   }
 
-  const api = { removeWatermark, inpaintCorner, DEFAULTS, DEFAULT_REGION };
+  // ---------- 1.4.27：全图逐区域去水印（右下角 / 左下角 / 顶部 / 中间） ----------
+  /*
+   * 旧版只找「底部一条白字」，其它站、中间 logo、角落半透明水印一律放过。
+   * 这一版的原则是「宁可少抹一点，也不能留下处理痕迹」：
+   *   1. 整图划成 5 个候选区域，逐区域独立检测，任何区域没把握就跳过；
+   *   2. 检测基于原始像素快照，前一个区域修完不会引发连锁误检；
+   *   3. 只替换「疑似水印像素 + 1~2px 抗锯齿描边」，非水印像素一字节不动，
+   *      绝不再整块矩形覆盖（那正是旧版毁图的原因）；
+   *   4. 被替换的像素按同列上下背景做插值 + 端点羽化，保留原有明暗渐变。
+   */
+  const REGIONS = [
+    { name: '右下角', x0: 0.45, y0: 0.78, x1: 1.00, y1: 1.00, minCov: 0.0025 },
+    { name: '左下角', x0: 0.00, y0: 0.78, x1: 0.55, y1: 1.00, minCov: 0.0025 },
+    { name: '右上角', x0: 0.45, y0: 0.00, x1: 1.00, y1: 0.22, minCov: 0.0030 },
+    { name: '左上角', x0: 0.00, y0: 0.00, x1: 0.55, y1: 0.22, minCov: 0.0030 },
+    // 中间区域面积大，覆盖率阈值要按面积调低；同时把包围盒限制收紧，
+    // 避免把画面里正常的白色文字 / 高光当成水印。
+    { name: '中间',   x0: 0.20, y0: 0.20, x1: 0.80, y1: 0.80,
+      minCov: 0.0015, maxBoxWR: 0.35, maxBoxHR: 0.12 }
+  ];
+
+  const FULL_DEFAULTS = Object.assign({}, DEFAULTS, {
+    lumMin: 188,        // 半透明白水印比纯白字暗，阈值比底部专用版低
+    deltaMin: 14,       // 相对局部背景的亮度提升
+    satMax: 58,         // 水印多为白 / 灰，排除彩色高光误检
+    refDy: 12,
+    pad: 3,
+    dilate: 1,         // 只向外扩 1px 覆盖抗锯齿，扩太多会把文字连成实心块
+    maxCov: 0.12,       // 整片亮像素 = 复杂纹理，跳过
+    maxBoxWR: 0.62,
+    maxBoxHR: 0.20
+  });
+
+  // 在指定矩形里找「偏白、低饱和、明显比上方背景亮」的像素
+  function detectInRect(orig, W, H, rect, o) {
+    const rx0 = Math.max(0, Math.floor(W * rect.x0));
+    const rx1 = Math.min(W - 1, Math.ceil(W * rect.x1));
+    const ry0 = Math.max(0, Math.floor(H * rect.y0));
+    const ry1 = Math.min(H - 1, Math.ceil(H * rect.y1));
+    const rw = rx1 - rx0 + 1, rh = ry1 - ry0 + 1;
+    if (rw < 12 || rh < 6) return null;
+    const seed = new Uint8Array(rw * rh);
+    const colCount = new Int32Array(rw);
+    const rowCount = new Int32Array(rh);
+    let count = 0;
+    for (let y = ry0; y <= ry1; y++) {
+      const ry1ref = Math.max(ry0, y - o.refDy);
+      const ry2ref = Math.max(ry0, y - o.refDy * 2);
+      for (let x = rx0; x <= rx1; x++) {
+        const i = (y * W + x) * 4;
+        const r = orig[i], g = orig[i + 1], b = orig[i + 2];
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        if (mx - mn > o.satMax) continue;            // 彩色物体不是水印
+        const L = 0.299 * r + 0.587 * g + 0.114 * b;
+        // 背景参考取上方两个采样点里更暗的那个：只取 12px 上方时，
+        // 周期性笔画（文字 / logo）会正好落在另一笔上，导致整片漏检。
+        const ri1 = (ry1ref * W + x) * 4, ri2 = (ry2ref * W + x) * 4;
+        const R1 = 0.299 * orig[ri1] + 0.587 * orig[ri1 + 1] + 0.114 * orig[ri1 + 2];
+        const R2 = 0.299 * orig[ri2] + 0.587 * orig[ri2 + 1] + 0.114 * orig[ri2 + 2];
+        const R = Math.min(R1, R2);
+        if (L > o.lumMin && (L - R) > o.deltaMin) {
+          const li = (y - ry0) * rw + (x - rx0);
+          seed[li] = 1; colCount[x - rx0]++; rowCount[y - ry0]++; count++;
+        }
+      }
+    }
+    return { seed, colCount, rowCount, count, rx0, ry0, rw, rh, cov: count / (rw * rh) };
+  }
+
+  // 只改 mask 像素：按同列上下最近的非水印像素插值，端点羽化，不动其它像素
+  function fillMaskByColumn(data, W, H, mask, box) {
+    const { bx0, by0, bx1, by1 } = box;
+    const bw = bx1 - bx0 + 1;
+    const at = (x, y) => mask[(y - by0) * bw + (x - bx0)] === 1;
+    for (let x = bx0; x <= bx1; x++) {
+      let y = by0;
+      while (y <= by1) {
+        if (!at(x, y)) { y++; continue; }
+        const y0 = y;
+        while (y <= by1 && at(x, y)) y++;
+        const y1 = y - 1;
+        let ty = y0 - 1;
+        while (ty >= 0 && ty >= by0 - 2 && at(x, ty)) ty--;
+        let by = y1 + 1;
+        while (by < H && by <= by1 + 2 && at(x, by)) by++;
+        const hasT = ty >= 0 && ty < H;
+        const hasB = by < H;
+        if (!hasT && !hasB) continue;
+        const ti = (ty * W + x) * 4;
+        const bi = (by * W + x) * 4;
+        for (let yy = y0; yy <= y1; yy++) {
+          const idx = (yy * W + x) * 4;
+          let r, g, b;
+          if (hasT && hasB) {
+            const a = (yy - y0 + 1) / (y1 - y0 + 2);
+            r = data[ti] * (1 - a) + data[bi] * a;
+            g = data[ti + 1] * (1 - a) + data[bi + 1] * a;
+            b = data[ti + 2] * (1 - a) + data[bi + 2] * a;
+          } else {
+            const si = hasT ? ti : bi;
+            r = data[si]; g = data[si + 1]; b = data[si + 2];
+          }
+          // 端点 1px 羽化：让填充与未改动像素之间没有硬边
+          const edge = (yy === y0 || yy === y1) ? 0.35 : 0;
+          if (edge) {
+            r = r * (1 - edge) + data[idx] * edge;
+            g = g * (1 - edge) + data[idx + 1] * edge;
+            b = b * (1 - edge) + data[idx + 2] * edge;
+          }
+          data[idx] = r; data[idx + 1] = g; data[idx + 2] = b;
+        }
+      }
+    }
+  }
+
+  function boxesOverlap(a, b) {
+    const iw = Math.min(a.bx1, b.bx1) - Math.max(a.bx0, b.bx0) + 1;
+    const ih = Math.min(a.by1, b.by1) - Math.max(a.by0, b.by0) + 1;
+    if (iw <= 0 || ih <= 0) return false;
+    const area = (a.bx1 - a.bx0 + 1) * (a.by1 - a.by0 + 1);
+    return (iw * ih) / area > 0.4;
+  }
+
+  function scanRegion(orig, data, W, H, rect, o, done) {
+    const det = detectInRect(orig, W, H, rect, o);
+    if (!det) return { changed: false, reason: '区域过小' };
+    if (det.count === 0 || det.cov < rect.minCov) return { changed: false, reason: '未检测到水印' };
+    if (det.cov > o.maxCov) return { changed: false, reason: '疑似复杂纹理，跳过以免破坏画面' };
+
+    const colSeg = dominantRange(det.colCount, Math.max(3, Math.round(det.rw * 0.02)));
+    const rowSeg = dominantRange(det.rowCount, Math.max(3, Math.round(det.rh * 0.02)));
+    if (!colSeg || !rowSeg) return { changed: false, reason: '分布不连续' };
+
+    const box = {
+      bx0: clamp(det.rx0 + colSeg[0] - o.pad, 0, W - 1),
+      bx1: clamp(det.rx0 + colSeg[1] + o.pad, 0, W - 1),
+      by0: clamp(det.ry0 + rowSeg[0] - o.pad, 0, H - 1),
+      by1: clamp(det.ry0 + rowSeg[1] + o.pad, 0, H - 1)
+    };
+    const bw = box.bx1 - box.bx0 + 1, bh = box.by1 - box.by0 + 1;
+    if (bw < 8 || bh < 3) return { changed: false, reason: '区域过小' };
+    const maxWR = rect.maxBoxWR || o.maxBoxWR;
+    const maxHR = rect.maxBoxHR || o.maxBoxHR;
+    if (bw > W * maxWR || bh > H * maxHR) {
+      return { changed: false, reason: '包围盒异常过大，跳过' };
+    }
+    for (const d of done) {
+      if (boxesOverlap(box, d)) return { changed: false, reason: '与已处理区域重叠' };
+    }
+
+    const mask = new Uint8Array(bw * bh);
+    let rawHits = 0;
+    for (let y = box.by0; y <= box.by1; y++) {
+      for (let x = box.bx0; x <= box.bx1; x++) {
+        const lx = x - det.rx0, ly = y - det.ry0;
+        if (lx >= 0 && lx < det.rw && ly >= 0 && ly < det.rh) {
+          const v = det.seed[ly * det.rw + lx];
+          mask[(y - box.by0) * bw + (x - box.bx0)] = v;
+          rawHits += v;
+        }
+      }
+    }
+    // 用「原始笔画密度」判误检，而不是膨胀后的覆盖率：文字笔画经膨胀会连成片，
+    // 拿膨胀覆盖率判断会把正常的文字水印全部误杀（1.4.27 自检发现的坑）。
+    // 只有整块实心白（密度 > 0.5）才可能是白色物体，宁可放过也不抹花。
+    if (rawHits === 0) return { changed: false, reason: '无有效水印像素' };
+    if (rawHits / (bw * bh) > 0.5) return { changed: false, reason: '实心亮块，跳过以免破坏画面' };
+    const grown = dilateMask(mask, bw, bh, o.dilate);
+    let hit = 0;
+    for (let i = 0; i < grown.length; i++) hit += grown[i];
+    if (hit === 0) return { changed: false, reason: '无有效水印像素' };
+    fillMaskByColumn(data, W, H, grown, box);
+    return { changed: true, name: rect.name, pixels: det.count, coverage: det.cov, box: box };
+  }
+
+  /**
+   * 1.4.27 主入口：所有站点、所有图片逐张调用；右下角 / 左下角 / 顶部 / 中间
+   * 全部扫一遍，每个区域独立判定，只改疑似水印像素。
+   * @returns {{changed:boolean, reason:string, regions:Array, pixels:number, method:string}}
+   */
+  function removeWatermarks(imgData, opts) {
+    const o = Object.assign({}, FULL_DEFAULTS, opts || {});
+    const W = imgData.width, H = imgData.height, data = imgData.data;
+    if (W < 64 || H < 64) return { changed: false, reason: '图片过小，跳过', regions: [], pixels: 0 };
+    const orig = data.slice();          // 检测统一基于原图，避免连锁误检
+    const regions = [], done = [];
+    for (const rect of REGIONS) {
+      let r;
+      try { r = scanRegion(orig, data, W, H, rect, o, done); }
+      catch (e) { r = { changed: false, reason: '区域异常：' + String(e && e.message || e) }; }
+      if (r && r.changed) { regions.push(r); done.push(r.box); }
+    }
+    const pixels = regions.reduce((n, r) => n + (r.pixels || 0), 0);
+    return {
+      changed: regions.length > 0,
+      reason: regions.length ? '' : '未检测到水印',
+      regions: regions,
+      pixels: pixels,
+      method: 'region-mask-interp'
+    };
+  }
+
+  const api = { removeWatermark, removeWatermarks, inpaintCorner,
+    DEFAULTS, FULL_DEFAULTS, DEFAULT_REGION, REGIONS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.Inpaint = api;
 })(typeof self !== 'undefined' ? self : this);

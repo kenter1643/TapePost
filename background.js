@@ -100,7 +100,7 @@ async function ensureOffscreen() {
         // 必须是 chrome.offscreen.Reason 的合法枚举值（官方文档共 15 个）。
         // BLOBS: Blob/createImageBitmap/OffscreenCanvas 处理图片；CLIPBOARD: 写系统剪贴板。
         reasons: ['BLOBS', 'CLIPBOARD'],
-        justification: '在扩展上下文用 Blob、createImageBitmap 与 OffscreenCanvas 拉取并处理各站点内容图片、按检测结果为微博图片去水印，并把首图写入系统剪贴板'
+        justification: '在扩展上下文用 Blob、createImageBitmap 与 OffscreenCanvas 逐张拉取各站点内容图片、全图多区域检测并只替换水印像素，再高保真放大到 4K 后编码 PNG，并把首图写入系统剪贴板'
       });
       // createDocument 的 Promise resolve 即代表文档已创建可用，不再等 ready 消息（避免竞态）
       offscreenReady = true;

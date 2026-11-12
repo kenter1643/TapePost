@@ -7,6 +7,7 @@ const PAGE_DEFAULTS = (typeof TapeAI !== 'undefined' && TapeAI.PAGE_MODE_DEFAULT
 
 const DEFAULTS = Object.assign({
   inpaintImages: true,
+  hd4k: true,
   inpaintVideo: true,
   xDomain: 'x.com',
   hashMode: 'truncate',
@@ -129,6 +130,8 @@ function load() {
   chrome.storage.sync.get(DEFAULTS, (s) => {
     document.getElementById('hash').value = s.hashMode || 'truncate';
     document.getElementById('imgWm').checked = !!s.inpaintImages;
+    const hd4k = document.getElementById('hd4k');
+    if (hd4k) hd4k.checked = s.hd4k !== false;
     document.getElementById('videoWm').checked = !!s.inpaintVideo;
     document.getElementById('sig').checked = !!s.appendSignature;
     const source = document.getElementById('source');
@@ -207,6 +210,7 @@ function save() {
   const data = {
     hashMode: document.getElementById('hash').value,
     inpaintImages: document.getElementById('imgWm').checked,
+    hd4k: !!(document.getElementById('hd4k') || { checked: true }).checked,
     inpaintVideo: document.getElementById('videoWm').checked,
     appendSignature: document.getElementById('sig').checked,
     appendSource: !!(document.getElementById('source') || {}).checked,
@@ -484,7 +488,8 @@ const INFO = {
       'AI 评论：先点推文「回复」，按钮在填写区上方右侧，不压住正文。',
       '选中候选会写回回复框，最后一步仍由你手动点「回复」。',
       '多图弹托盘：逐张复制、拼长图或下载到临时目录。',
-      '去水印只在本机处理，检测不到水印的图片原样保留。',
+      '所有站点的每张图片都逐张在本机去水印（右下角 / 中间 / 顶部全图检测），只改水印像素；未检出的图原像素不动。',
+      '4K 输出：逐张高保真放大到长边 3840、PNG 无损；原图已达 4K 则保持原尺寸，全程不上传图片。',
       '生态面板：295 条内置清单核验链接，以本地结论为准。',
       'X 改版导致按钮不出现时，可填「回复框选择器」。'
     ]
@@ -789,7 +794,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.4.26 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.4.27 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

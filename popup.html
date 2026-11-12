@@ -134,7 +134,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.26</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.27</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
   <!-- 1.4.26：两行紧凑行情（① TapeUP 单行 / ②③ 并排一行），只留数字，点卡片进对应页面 -->
@@ -245,7 +245,12 @@
 
   <div class="row">
     <input type="checkbox" id="imgWm" />
-    <label for="imgWm" style="margin:0;font-weight:400">对所有图片去水印（微博自动检测；其他站水印位置不固定，一律原图保留）</label>
+    <label for="imgWm" style="margin:0;font-weight:400">所有图片逐张去水印（全图检测：右下角 / 左下角 / 顶部 / 中间，只改水印像素，不落痕迹）</label>
+  </div>
+
+  <div class="row">
+    <input type="checkbox" id="hd4k" />
+    <label for="hd4k" style="margin:0;font-weight:400">4K 高清输出（逐张高保真放大到长边 3840，PNG 无损；原图已达 4K 保持原尺寸）</label>
   </div>
 
   <div class="row">
