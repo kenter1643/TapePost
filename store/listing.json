@@ -1,7 +1,7 @@
 {
   "product_name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.5",
+  "version": "1.5.1",
   "manifest_description_132": "7 站点一键转发到 X：逐张全图去水印 + 4K 高清、多图托盘放大浏览；免 Key 调用 X 自带 Grok 生成 3 条评论候选；内置 295 条生态导航核验与 TapeOut 实时行情提醒。",
   "summary_132": "7 站点正文/配图整理成 X 草稿（逐张去水印 + 4K，多图可放大浏览）；免 Key 走 X 站内 Grok 生成 3 条回复候选；295 条生态导航绿标核验 + TapeOut 实时行情与上下限提醒。",
   "category": "productivity",
@@ -12,6 +12,7 @@
   "detailed_description": [
     "TapePost 是一个内容转发辅助工具：在你正在浏览的内容页上，给每条内容加一个橙色「一键转发」按钮。点击后，它提取这一条的正文与配图，清洗文字、按需去水印，把文字预填进 X 发推框，并把处理后的媒体放进剪贴板或下载到本机。最后一步始终由你手动完成 —— 扩展不会替你发布任何内容，也不调用任何自动发布接口。",
     "",
+    "【1.5.1 修复：右下角 / 浅色背景水印漏检】按真机长图反馈重写本机水印检测：瓦片扫描强制贴到图像右/下边缘（此前有 46~96px 盲区，水印恰好落在其中）、行列投影改用放宽的亮笔画种子并按瓦片中位数自适应取阈值、新增结构校验排除拼接帧之间的纯白分隔条与天花板灯、条带填充改成本机纹理重建。仍是纯本机像素计算，不上传图片、不调用云端 AI、不新增权限 / 域名 / 网络请求；未检出水印时原图像素不动。",
     "【1.5 正式版：本机图片处理、行情与多图浏览】",
     "1.5 是面向 Chrome Web Store 的正式发布版，涵盖 1.4.3–1.4.30 的全部本机改动：① 7 个来源站点的每张内容图都在扩展自己的离屏文档中逐张完成全图水印检测（局部亮度对比 + 重叠瓦片扫描，覆盖右下角、中间与拼接长图里的多帧重复水印），只重建水印像素，并高保真放大到 4K、以 PNG 无损输出；未检出水印的图原像素不动。② 多图托盘缩略图可点开全屏大图，支持左右切换、1:1 原始像素查看与 ESC / 点空白关闭。③ 弹窗新增 TapeOut 实时行情（TapeUP 内盘动态价、矿机日产、BEM）与上下限提醒；行情数字来自两个公开只读接口与同一交易页上已显示的数字，阈值与快照只存本机。④ 界面收紧为两行紧凑布局并去掉重复价格。以上全部为本机渲染与本机像素计算，图片不上传、不调用第三方 AI 或云服务；除已披露的 alarms / notifications 权限与行情域名外，不新增权限、网络请求或数据接收方。数据流向与 Privacy practices 勾选口径（Authentication information / User activity / Website content 三项）不变，详见隐私政策 1.5 段落。",
     "",
@@ -105,7 +106,7 @@
   },
   "privacy_policy_url": "https://kenter1643.github.io/TapePost/privacy.html",
   "privacy_policy_local": "docs/privacy.html",
-  "privacy_policy_note": "正式地址由 GitHub Pages 托管（仓库 kenter1643/TapePost 的 main 分支 /docs 目录），已实测 HTTP 200。1.3.3 / 1.3.4 / 1.4.0 / 1.4.1 / 1.4.2 版政策补充了「AI 功能两种运行模式」「评论候选写回回复框属于页面内 DOM 操作、不新增网络请求」与「连接自愈只刷新 / 新建标签、不上传数据」与「1.3.4 正文清洗与按钮去重均在本机完成」与「1.4.0 站内直连只向 X/Grok 发送提示词与推文正文、签名本机生成」与「1.4.1 运行模式自动纠正只改本机设置」的说明；提交前请确认商店表单填的是这个最新版。1.5 正式版已把 docs/privacy.html 与独立部署副本 store/privacy-site/index.html 同步为 1.5 口径（含 1.4.3–1.5 的本机图片处理、行情与界面说明，数据流向与权限不变），提交前请确认商店表单填的是这个最新版；独立部署副本在 store/privacy-site/index.html；产品介绍页 https://kenter1643.github.io/TapePost/ 。",
+  "privacy_policy_note": "正式地址由 GitHub Pages 托管（仓库 kenter1643/TapePost 的 main 分支 /docs 目录），已实测 HTTP 200。1.3.3 / 1.3.4 / 1.4.0 / 1.4.1 / 1.4.2 版政策补充了「AI 功能两种运行模式」「评论候选写回回复框属于页面内 DOM 操作、不新增网络请求」与「连接自愈只刷新 / 新建标签、不上传数据」与「1.3.4 正文清洗与按钮去重均在本机完成」与「1.4.0 站内直连只向 X/Grok 发送提示词与推文正文、签名本机生成」与「1.4.1 运行模式自动纠正只改本机设置」的说明；提交前请确认商店表单填的是这个最新版。1.5 正式版已把 docs/privacy.html 与独立部署副本 store/privacy-site/index.html 同步为 1.5 口径（含 1.4.3–1.5 的本机图片处理、行情与界面说明，数据流向与权限不变），1.5.1 已同步 docs/privacy.html 与独立部署副本（只改本机水印检测与重建，数据流向、权限与接收方不变）；提交前请确认商店表单填的是这个最新版；独立部署副本在 store/privacy-site/index.html；产品介绍页 https://kenter1643.github.io/TapePost/ 。",
   "assets": {
     "icon": "icons/icon128.png",
     "screenshots": [
@@ -127,20 +128,20 @@
   "pre_submit_checklist": [
     "用 Google 账号登录 Chrome Web Store Developer Dashboard，并完成一次性开发者注册（注册费 US$5）",
     "已为 Google 账号开启两步验证（2FA）并退出重登 Dashboard，否则上传会报 Enabling 2 step verification…",
-    "在 Dashboard 点「Add new item」上传 store/TapePost_1.5_store.zip（已有条目则选「上传新版本」，不要新建第二个条目）",
+    "在 Dashboard 点「Add new item」上传 store/TapePost_1.5.1_store.zip（已有条目则选「上传新版本」，不要新建第二个条目）",
     "把本文件里的名称、摘要、详细描述、分类、单一用途、逐项权限理由复制到商店表单",
     "隐私政策已托管在 GitHub Pages：https://kenter1643.github.io/TapePost/privacy.html ，直接填入表单即可（如改用自有域名，替换 privacy_policy_url 并同步更新页面）",
     "上传 128×128 图标之外的 3 张截图与 440×280 宣传图；建议替换为真机截图",
     "勾选数据使用声明：不收集个人数据、无远程代码、无第三方分析；但「是否将数据传出设备」必须选「是」—— 用户切到 API 模式时扩展会向 xAI 发送文字/链接；默认站内直连由 X 页面向 X/Grok 发送请求，详见 data_use_disclosure",
     "保存草稿并预览，确认无误后点「Submit for review」",
     "首次上架因「新开发者 + 新扩展 + https://*/* 宽泛主机权限」会进入 in-depth review，通常数天到 3 周（不是 1–3 天）；超过 3 周再联系 developer support",
-    "在「数据使用」页如实披露 xAI Grok 为第三方 AI 服务，并确认隐私政策链接指向 1.5 正式版最新版（含 AI 章节、站内直连数据流向、本机图片处理 / 行情说明、回复框回写与连接自愈说明）",
+    "在「数据使用」页如实披露 xAI Grok 为第三方 AI 服务，并确认隐私政策链接指向 1.5.1 最新版（含 AI 章节、站内直连数据流向、本机图片处理 / 行情说明、回复框回写与连接自愈说明）",
     "把 broad_host_permission_justification 粘到 Privacy 页主机访问理由 / Reviewer notes，说明 https://*/* 默认不授予、仅按单一网关域名动态申请",
     "Settings 页填写 publisher contact email 并完成邮箱验证（点验证邮件链接，状态变为 Verified）",
     "Privacy practices 页勾选 Data usage 两组复选框 + Limited Use 认证，逐项按 data_usage_form_answers 填",
     "确认 Dashboard 披露 / 隐私政策 / 代码行为三者一致（不一致可导致整个发布者实体被封）",
     "Privacy practices 第一组勾 3 项：Authentication information、User activity、Website content；其余 6 项不勾（详见 data_usage_form_answers）",
-    "确认隐私政策页已同步 1.5 正式版、站内直连与凭证读取口径（Dashboard 披露 / 隐私政策 / 代码行为三者一致）",
+    "确认隐私政策页已同步 1.5.1、站内直连与凭证读取口径（Dashboard 披露 / 隐私政策 / 代码行为三者一致）",
     "Remote code 选 No；「是否将数据传出设备」选是、「是否收集个人数据」选否；第三方 AI 服务填 X/Grok 与 xAI"
   ],
   "broad_host_permission_justification": "关于 optional_host_permissions 中的 https://*/*：该权限默认不授予、安装时不生效，唯一用途是支持「自定义 xAI 兼容网关」这一可选功能。用户在设置里手动输入一个网关域名并点「允许网关域名」后，扩展调用 chrome.permissions.request({origins:[\"https://该域名/*\"]}) 只申请这一个域名，用户可随时在 chrome://extensions 的站点访问权限里撤回。扩展从不主动遍历、注入或读取所有 https 站点：content_scripts 的 matches 是 7 个站点的固定白名单，host_permissions 是 29 条具体域名；运行时不申请、不使用全量 https://*/* 权限，也不读取浏览历史、Cookie 或其它标签页。若审核方认为该声明仍过宽，可直接移除此可选功能并删除该权限——核心功能（7 站转发、免 Key AI 评论、生态核验）不受影响。",

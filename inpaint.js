@@ -1,8 +1,23 @@
 /*
  * inpaint.js — 纯 JS 图片水印去除（不依赖 OpenCV / wasm）
  *
- * 1.4.28 检测链路：局部对比（top-hat）亮笔画 → 全图重叠瓦片扫描 → 水平水印条带
- *   → 条带内放宽掩膜（含半透明抗锯齿边缘）→ 局部真实纹理加权填充。
+ * 1.5.1 检测链路（按真机反馈重写）：局部对比（top-hat）亮笔画 + 宽松亮笔画
+ *   → 全图「贴边」重叠瓦片扫描 → 自适应行阈值找水平水印条带 → 结构校验排除
+ *   白色分隔条 / 天花板灯 / 白衣服高光 / 数字标号 → 条带纹理重建（低频按列插值 +
+ *   上下真实高频纹理补偿 + 边缘羽化）。
+ *
+ *   1.4.28 漏掉右下角水印的三个原因（真图 1200x1466 实测）：
+ *     1) 瓦片从 0 开始按固定步长滑动，最后一块不贴边：右侧缺 80~96px、底部缺
+ *        46~71px；而微博水印恰好压在距右/下边缘 10~15px 处，整块落在扫描盲区。
+ *     2) 只用严格 strong 种子做行列投影：白色细线字压在白衣服上时局部对比不足，
+ *        水印所在的行根本达不到行阈值；反而把上下帧之间的纯白分隔条当成了水印。
+ *     3) 条带没有结构校验，误检后把听诊器附近 1915 像素整块抹掉。
+ *   现在瓦片补最后一块贴边、行列投影改用宽松种子、行阈值按瓦片中位数自适应，
+ *   并用「列投影跳变数 + 梯度密度 + 强种子密度 + 最亮行占比 + 垂直连续段」联合
+ *   确认，两张真图（1200x1466 右下角双水印 / 648x1920 中间双水印）都只命中真水印。
+ *
+ * 1.4.28 检测链路（保留说明）：局部对比（top-hat）亮笔画 → 全图重叠瓦片扫描 →
+ *   水平水印条带 → 条带内放宽掩膜 → 局部真实纹理加权填充。
  *   覆盖拼接长图里任意位置的水印（右下角、中间、顶部、多帧重复水印）。
  *
  * 为什么不用「把右下角整块矩形填掉」：
@@ -364,7 +379,26 @@
     expandGap: 14, expandLimit: 90, bandPadY: 4, boxPad: 6,
     maxBoxes: 4,
     fillRadius: 6, grain: 0.8,
-    maxPixels: 20000000
+    maxPixels: 20000000,
+
+    // ---- 1.5.1：贴边扫描 + 宽松种子 + 结构校验 ----
+    rowAdapt: 1.25,      // 行阈值 = 瓦片内行投影中位数 × 该系数（白衣服上也能框出水印）
+    rowThrAbs: 8,        // 行阈值绝对下限
+    rowGapScan: 5,       // 允许笔画行中间有 5px 低值空隙
+    densScanMin: 0.05, densScanMax: 0.55, jumpsScanMin: 4, ratioScanMin: 2.5,
+    // 结构确认：真水印列投影跳变多、梯度密、强种子够、不是实心白条也不是大片灯
+    jumpsConfirm: 12, gradMin: 0.15, strongMin: 0.08, widthMin: 90,
+    maxRowDens: 0.75, vRunMax: 6, brightMax: 0.75,
+    expandGapScan: 3, expandLimitScan: 16,   // 收紧左右扩展，避免把背景吞进来稀释特征
+    // ---- 1.5.1：条带纹理重建（低频按列插值 + 上下高频补偿 + 羽化）----
+    rebuildPad: 8,       // 检测框外扩，覆盖描边/阴影
+    rebuildMargin: 12,   // 参考行离条带的距离（避开水印光晕）
+    rebuildGap: 8,       // 高频纹理取自条带上/下方 shift = 条带高 + gap
+    rebuildFade: 8,      // 重建区边缘羽化像素
+    // 高频增益按两张真图折中取 0.3：取太高会在房间 / 家具这类复杂背景上
+    // 叠出网格状斜纹，取太低则整条带被抹成模糊块。
+    lowRadius: 4, highRadius: 1, highGain: 0.3,
+    minStrokeCov: 0.06   // 条带内亮笔画占比下限，过低说明是误检，不动原图
   };
 
   /** 预计算亮度 / 饱和度 / 局部均值背景（积分图）/ 强种子笔画 */
@@ -392,15 +426,18 @@
         integ[(y1 + 1) * SW + x0] + integ[y0 * SW + x0];
       return v / ((x1 - x0 + 1) * (y1 - y0 + 1));
     };
-    const strong = new Uint8Array(N);
+    // 1.5.1：同一次局部背景计算里产出两档种子。
+    // strong 用于确认「确实是亮笔画」，soft 用于行列投影定位——白色细线字压在
+    // 白衣服上时 delta 只有 6~15，用 strong 会整行漏掉。
+    const strong = new Uint8Array(N), soft = new Uint8Array(N);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        const p = y * W + x;
-        if (satv[p] < o.satStrong && lum[p] > o.lumStrong &&
-          lum[p] - bgAt(x, y) > o.deltaStrong) strong[p] = 1;
+        const p = y * W + x, d = lum[p] - bgAt(x, y);
+        if (satv[p] < o.satStrong && lum[p] > o.lumStrong && d > o.deltaStrong) strong[p] = 1;
+        if (satv[p] < o.satBand && lum[p] > o.lumBand && d > o.deltaBand) soft[p] = 1;
       }
     }
-    return { lum, satv, bgAt, strong };
+    return { lum, satv, bgAt, strong, soft };
   }
 
   /** 找「连续密集」区间，允许 gap 空隙（字符间隙），限制最小/最大长度 */
@@ -421,8 +458,54 @@
     return out;
   }
 
-  /** 全图两档重叠瓦片扫描 → 水平水印条带（合并同行片段 + 行内左右扩展） */
-  function findWatermarkBands(strong, W, H, o) {
+  /** 1.5.1：瓦片起点强制贴边。旧版最后一档瓦片停在 limit 之前，右侧/底部
+   *  留出 46~96px 盲区，而微博水印恰好压在距边缘 10~15px 处 —— 这是右下角
+   *  水印整块漏检的主因。 */
+  function tilePositions(limit, step) {
+    const a = [];
+    if (limit <= 0) return [0];
+    for (let v = 0; v < limit; v += step) a.push(v);
+    if (a[a.length - 1] !== limit) a.push(limit);
+    return a;
+  }
+
+  /** 1.5.1：条带结构特征，用于把「实心白分隔条 / 天花板灯 / 白衣服高光 /
+   *  数字标号」与真水印区分开。真水印是细笔画文字：梯度密、列投影跳变多、
+   *  垂直连续段短、不会出现整行全亮。 */
+  function bandStructure(ctx, soft, W, box) {
+    const { x0, y0, x1, y1 } = box;
+    let strong = 0, softN = 0, n = 0, bright = 0, maxRow = 0, grad = 0;
+    const vRuns = [];
+    for (let x = x0; x <= x1; x++) {
+      let run = 0;
+      for (let y = y0; y <= y1; y++) {
+        const p = y * W + x;
+        if (soft[p]) { run++; softN++; } else { if (run) vRuns.push(run); run = 0; }
+        strong += ctx.strong[p]; n++;
+        if (ctx.lum[p] > 210) bright++;
+        if (x > x0 && x < x1 && y > y0 && y < y1) {
+          const g = Math.abs(ctx.lum[p - 1] - ctx.lum[p + 1]) +
+            Math.abs(ctx.lum[p - W] - ctx.lum[p + W]);
+          if (g > 40) grad++;
+        }
+      }
+      if (run) vRuns.push(run);
+    }
+    for (let y = y0; y <= y1; y++) {
+      let c = 0;
+      for (let x = x0; x <= x1; x++) c += soft[y * W + x];
+      maxRow = Math.max(maxRow, c / (x1 - x0 + 1));
+    }
+    vRuns.sort((a, b) => a - b);
+    return {
+      strong: strong / n, soft: softN / n,
+      vRun: vRuns.length ? vRuns[vRuns.length >> 1] : 99,
+      maxRow: maxRow, grad: grad / n, bright: bright / n
+    };
+  }
+
+  /** 1.5.1：全图贴边瓦片扫描 → 水平水印条带 → 结构确认 */
+  function findWatermarkBands(soft, W, H, o, ctx) {
     const cands = [];
     const tiles = [
       [o.tileW, o.tileH, o.stepX, o.stepY],
@@ -433,22 +516,26 @@
       const SX = Math.max(1, Math.round(t[2] * TW / t[0]));
       const SY = Math.max(1, Math.round(t[3] * TH / t[1]));
       if (TW < 40 || TH < 24) continue;
-      for (let ty = 0; ty <= H - TH; ty += SY) {
-        for (let tx = 0; tx <= W - TW; tx += SX) {
+      const txs = tilePositions(W - TW, SX), tys = tilePositions(H - TH, SY);
+      for (const ty of tys) {
+        for (const tx of txs) {
           const row = new Int32Array(TH);
           for (let y = 0; y < TH; y++) {
             let c = 0; const base = (ty + y) * W;
-            for (let x = 0; x < TW; x++) c += strong[base + tx + x];
+            for (let x = 0; x < TW; x++) c += soft[base + tx + x];
             row[y] = c;
           }
-          const rows = denseSegments(row, Math.max(4, Math.round(TW * o.rowThrRatio)),
-            o.rowGap, o.rowMin, o.rowMax);
+          // 自适应行阈值：白衣服 / 白墙区域整体偏亮，固定阈值会把整段连续行
+          // 撑爆后丢弃；按瓦片中位数取相对峰值才能把水印那十几行切出来。
+          const sorted = row.slice().sort((a, b) => a - b);
+          const thr = Math.max(o.rowThrAbs, sorted[sorted.length >> 1] * o.rowAdapt);
+          const rows = denseSegments(row, thr, o.rowGapScan, o.rowMin, o.rowMax);
           for (const seg of rows) {
             const ry0 = seg[0], ry1 = seg[1], rh = ry1 - ry0 + 1;
             const col = new Int32Array(TW);
             for (let x = 0; x < TW; x++) {
               let c = 0;
-              for (let y = ry0; y <= ry1; y++) c += strong[(ty + y) * W + tx + x];
+              for (let y = ry0; y <= ry1; y++) c += soft[(ty + y) * W + tx + x];
               col[x] = c;
             }
             const cols = denseSegments(col, Math.max(1, Math.round(rh * o.colThrRatio)),
@@ -458,15 +545,15 @@
               let hits = 0;
               for (let y = ry0; y <= ry1; y++) {
                 const base = (ty + y) * W;
-                for (let x = cx0; x <= cx1; x++) hits += strong[base + tx + x];
+                for (let x = cx0; x <= cx1; x++) hits += soft[base + tx + x];
               }
               const dens = hits / (bw * rh);
               let jumps = 0;
               for (let x = cx0 + 1; x <= cx1; x++) if ((col[x - 1] > 0) !== (col[x] > 0)) jumps++;
-              if (dens < o.densMin || dens > o.densMax || jumps < o.jumpsMin ||
-                bw / rh < o.ratioMin) continue;
+              if (dens < o.densScanMin || dens > o.densScanMax || jumps < o.jumpsScanMin ||
+                bw / rh < o.ratioScanMin) continue;
               cands.push({ x0: tx + cx0, y0: ty + ry0, x1: tx + cx1, y1: ty + ry1,
-                score: dens * 100 + jumps * 0.4 + Math.min(bw / rh, 12) * 0.5 });
+                score: dens * 100 + jumps * 0.4 + Math.min(bw / rh, 12) * 0.5, jumps: jumps });
             }
           }
         }
@@ -488,35 +575,56 @@
         hit.x0 = Math.min(hit.x0, c.x0); hit.x1 = Math.max(hit.x1, c.x1);
         hit.y0 = Math.min(hit.y0, c.y0); hit.y1 = Math.max(hit.y1, c.y1);
         hit.score = Math.max(hit.score, c.score);
-      } else merged.push({ x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, score: c.score });
+      } else merged.push({ x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1,
+        score: c.score, jumps: c.jumps });
     }
-    // 行内左右扩展：把 logo / 前后字符一起吞进来
+    // 行内左右扩展：只把 logo / 前后字符吞进来。1.4.28 允许扩 90px，
+    // 在白衣服 / 墙面上会一路扩到瓦片边缘，把背景一起算进特征导致真水印被误杀。
     const colHas = (x, y0, y1) => {
-      let c = 0;
-      for (let y = y0; y <= y1; y++) c += strong[y * W + x];
-      return c > 0;
+      for (let y = y0; y <= y1; y++) if (soft[y * W + x]) return true;
+      return false;
     };
     for (const m of merged) {
       const ey0 = Math.max(0, m.y0 - o.bandPadY), ey1 = Math.min(H - 1, m.y1 + o.bandPadY);
       let x = m.x0 - 1, gap = 0, left = m.x0;
-      while (x >= 0 && m.x0 - x <= o.expandLimit) {
+      while (x >= 0 && m.x0 - x <= o.expandLimitScan) {
         if (colHas(x, ey0, ey1)) { left = x; gap = 0; }
-        else if (++gap > o.expandGap) break;
+        else if (++gap > o.expandGapScan) break;
         x--;
       }
       x = m.x1 + 1; gap = 0;
       let right = m.x1;
-      while (x < W && x - m.x1 <= o.expandLimit) {
+      while (x < W && x - m.x1 <= o.expandLimitScan) {
         if (colHas(x, ey0, ey1)) { right = x; gap = 0; }
-        else if (++gap > o.expandGap) break;
+        else if (++gap > o.expandGapScan) break;
         x++;
       }
       m.x0 = left; m.x1 = right; m.y0 = ey0; m.y1 = ey1;
     }
-    // 去掉彼此高度重叠的重复框，只留分数最高的若干个
-    merged.sort((a, b) => b.score - a.score);
-    const kept = [];
+    // 结构确认：文字串的列投影跳变远多于白条 / 灯 / 衣服高光；
+    // 再用梯度密度、强种子密度、最亮行占比、垂直连续段排除剩余误检。
+    const scored = [];
     for (const m of merged) {
+      let jumps = 0, prev = 0;
+      for (let x = m.x0; x <= m.x1; x++) {
+        let c = 0;
+        for (let y = m.y0; y <= m.y1; y++) c += soft[y * W + x];
+        if ((prev > 0) !== (c > 0)) jumps++;
+        prev = c;
+      }
+      m.jumps = jumps;
+      if (jumps < o.jumpsConfirm || m.x1 - m.x0 + 1 < o.widthMin) continue;
+      if (ctx) {
+        const s = bandStructure(ctx, soft, W, m);
+        if (s.grad < o.gradMin || s.strong < o.strongMin ||
+          s.maxRow > o.maxRowDens || s.vRun > o.vRunMax || s.bright > o.brightMax) continue;
+        m.structure = s;
+      }
+      scored.push(m);
+    }
+    scored.sort((a, b) => b.jumps - a.jumps);
+    const kept = [];
+    for (const m of scored) {
       let dup = false;
       for (const k of kept) {
         const iw = Math.min(m.x1, k.x1) - Math.max(m.x0, k.x0);
@@ -536,6 +644,77 @@
     const v = hy < 0.33 ? '上' : (hy > 0.66 ? '下' : '中');
     const h = hx < 0.33 ? '左' : (hx > 0.66 ? '右' : '中');
     return (v === '中' && h === '中') ? '中间' : (h + v);
+  }
+
+  /** 1.5.1：某一行的盒式均值（垂直 2r+1 行累加 + 水平滑动窗口），O(r*W)。
+   *  只对真正用到的行计算并缓存，避免对 4K 整图做卷积。 */
+  function boxMeanRow(src, W, H, y, r) {
+    const acc = [new Float32Array(W), new Float32Array(W), new Float32Array(W)];
+    const out = [new Float32Array(W), new Float32Array(W), new Float32Array(W)];
+    const n = 2 * r + 1;
+    for (let dy = -r; dy <= r; dy++) {
+      const yy = clamp(y + dy, 0, H - 1), base = yy * W;
+      for (let x = 0; x < W; x++) {
+        const i = (base + x) * 4;
+        acc[0][x] += src[i]; acc[1][x] += src[i + 1]; acc[2][x] += src[i + 2];
+      }
+    }
+    for (let c = 0; c < 3; c++) {
+      const a = acc[c];
+      let sum = 0;
+      for (let x = 0; x <= Math.min(W - 1, r); x++) sum += a[x];
+      for (let x = 0; x < W; x++) {
+        const lo = Math.max(0, x - r), hi = Math.min(W - 1, x + r);
+        out[c][x] = sum / ((hi - lo + 1) * n);
+        if (x - r >= 0) sum -= a[x - r];
+        if (x + r + 1 <= W - 1) sum += a[x + r + 1];
+      }
+    }
+    return out;
+  }
+
+  /** 1.5.1：条带纹理重建。
+   *  纯「按列插值」会拉丝，「整块平移克隆」会重影，「中值滤波」会把白衣服
+   *  扩散成白块。这里拆成两层：低频取条带上下两条参考行的大半径均值按列插值
+   *  （水印光晕外，避开字母轮廓），高频取条带上下方真实像素相对 3x3 均值的
+   *  残差（保留皮肤 / 布料纹理），最后边缘羽化与原图衔接。
+   *  返回改动像素数；src 始终是原图快照，多个条带之间不互相污染。 */
+  function rebuildBand(data, src, W, H, box, o) {
+    const { bx0, by0, bx1, by1 } = box;
+    const bh = by1 - by0 + 1, shift = bh + o.rebuildGap;
+    const y0r = Math.max(0, by0 - o.rebuildMargin);
+    const y1r = Math.min(H - 1, by1 + o.rebuildMargin);
+    if (y1r <= y0r) return 0;
+    const cache = new Map();
+    const rowMean = (y, r) => {
+      const k = y + ':' + r;
+      let v = cache.get(k);
+      if (!v) { v = boxMeanRow(src, W, H, y, r); cache.set(k, v); }
+      return v;
+    };
+    const L0 = rowMean(y0r, o.lowRadius), L1 = rowMean(y1r, o.lowRadius);
+    let changed = 0;
+    for (let y = by0; y <= by1; y++) {
+      const yu = clamp(y - shift, 0, H - 1), yd = clamp(y + shift, 0, H - 1);
+      const C0 = rowMean(yu, o.highRadius), C1 = rowMean(yd, o.highRadius);
+      const a = (y - y0r) / (y1r - y0r);
+      for (let x = bx0; x <= bx1; x++) {
+        const gi = (y * W + x) * 4;
+        const iu = (yu * W + x) * 4, id = (yd * W + x) * 4;
+        const edge = Math.min(y - by0, by1 - y, x - bx0, bx1 - x);
+        let alpha = 1;
+        if (edge < o.rebuildFade) alpha = (edge + 1) / (o.rebuildFade + 1);
+        if (alpha <= 0) continue;
+        for (let c = 0; c < 3; c++) {
+          const low = L0[c][x] * (1 - a) + L1[c][x] * a;
+          const high = o.highGain * 0.5 *
+            ((src[iu + c] - C0[c][x]) + (src[id + c] - C1[c][x]));
+          data[gi + c] = src[gi + c] * (1 - alpha) + (low + high) * alpha;
+        }
+        changed++;
+      }
+    }
+    return changed;
   }
 
   /**
@@ -751,9 +930,9 @@
   }
 
   /**
-   * 1.4.28 主入口：所有站点、所有图片逐张调用。
-   * 全图瓦片扫描，任意位置（含拼接长图中间、多帧重复）的亮色水印都能各自定位；
-   * 检测不到水印时原图像素一个字节都不改。
+   * 1.5.1 主入口：所有站点、所有图片逐张调用。
+   * 贴边瓦片 + 宽松种子 + 结构校验定位任意位置（含最右下角、拼接长图中间、
+   * 多帧重复）的亮色水印，再逐条带做纹理重建；检测不到水印时原图一个字节都不改。
    * @returns {{changed:boolean, reason:string, regions:Array, pixels:number, method:string}}
    */
   function removeWatermarks(imgData, opts) {
@@ -766,7 +945,7 @@
     let ctx, bands;
     try {
       ctx = buildStrokeMask(data, W, H, o);   // 全部基于原图快照
-      bands = findWatermarkBands(ctx.strong, W, H, o);
+      bands = findWatermarkBands(ctx.soft, W, H, o, ctx);
     } catch (e) {
       return { changed: false, reason: '检测失败：' + String(e && e.message || e),
         regions: [], pixels: 0 };
@@ -774,33 +953,42 @@
     if (!bands.length) {
       return { changed: false, reason: '未检测到水印', regions: [], pixels: 0 };
     }
+    const src = data.slice();   // 原图快照：多条带重建互不污染
     const regions = [];
     for (const b of bands) {
       const box = {
-        bx0: Math.max(0, b.x0 - o.boxPad), by0: Math.max(0, b.y0 - o.boxPad),
-        bx1: Math.min(W - 1, b.x1 + o.boxPad), by1: Math.min(H - 1, b.y1 + o.boxPad)
+        bx0: Math.max(0, b.x0 - o.rebuildPad), by0: Math.max(0, b.y0 - o.rebuildPad),
+        bx1: Math.min(W - 1, b.x1 + o.rebuildPad), by1: Math.min(H - 1, b.y1 + o.rebuildPad)
       };
       const bw = box.bx1 - box.bx0 + 1, bh = box.by1 - box.by0 + 1;
       if (bw < 8 || bh < 3) continue;
-      // 条带已确认是水印：放宽阈值，把半透明抗锯齿边缘一并纳入掩膜
+      // 二次保险：条带里必须真有足够多的亮笔画，否则宁可不动原图
       const m = new Uint8Array(bw * bh);
+      let strokes = 0;
       for (let y = 0; y < bh; y++) {
         for (let x = 0; x < bw; x++) {
-          const gx = box.bx0 + x, gy = box.by0 + y, p = gy * W + gx;
-          const d = ctx.lum[p] - ctx.bgAt(gx, gy);
-          if (ctx.strong[p] || (ctx.satv[p] < o.satBand && d > o.deltaBand &&
-            ctx.lum[p] > o.lumBand)) m[y * bw + x] = 1;
+          const p = (box.by0 + y) * W + (box.bx0 + x);
+          const v = ctx.strong[p] || ctx.soft[p] ? 1 : 0;
+          m[y * bw + x] = v; strokes += v;
         }
       }
-      const grown = dilateMask(m, bw, bh, o.bandDilate);
-      let hits = 0;
-      for (let i = 0; i < grown.length; i++) hits += grown[i];
-      if (hits === 0) continue;
-      try { localTextureFill(data, W, H, grown, box, o); }
-      catch (e) { continue; }
+      if (strokes / (bw * bh) < o.minStrokeCov) continue;
+      let pixels = 0;
+      try { pixels = rebuildBand(data, src, W, H, box, o); }
+      catch (e) { pixels = 0; }
+      if (!pixels) {
+        // 极端场景（条带紧贴图像边缘导致参考行不可用）回退到逐像素纹理填充
+        try {
+          const grown = dilateMask(m, bw, bh, o.bandDilate);
+          let hits = 0;
+          for (let i = 0; i < grown.length; i++) hits += grown[i];
+          if (hits) { localTextureFill(data, W, H, grown, box, o); pixels = hits; }
+        } catch (e) { continue; }
+      }
+      if (!pixels) continue;
       regions.push({
         name: positionName((box.bx0 + box.bx1) / 2, (box.by0 + box.by1) / 2, W, H),
-        pixels: hits, coverage: hits / (bw * bh), box: box
+        pixels: pixels, coverage: pixels / (bw * bh), box: box
       });
     }
     const pixels = regions.reduce((n, r) => n + (r.pixels || 0), 0);
@@ -809,13 +997,14 @@
       reason: regions.length ? '' : '未检测到水印',
       regions: regions,
       pixels: pixels,
-      method: 'tile-tophat-local'
+      method: 'tile-edge-texture'
     };
   }
 
   const api = { removeWatermark, removeWatermarks, inpaintCorner,
     DEFAULTS, FULL_DEFAULTS, DEFAULT_REGION, REGIONS, TILE_DEFAULTS,
-    buildStrokeMask, findWatermarkBands, localTextureFill };
+    buildStrokeMask, findWatermarkBands, localTextureFill,
+    tilePositions, bandStructure, boxMeanRow, rebuildBand };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.Inpaint = api;
 })(typeof self !== 'undefined' ? self : this);
