@@ -612,7 +612,7 @@ function priceStatus(text, good) {
   el.style.color = good === false ? '#b91c1c' : (good === true ? '#15803d' : '#999');
 }
 
-/* 1.4.24：界面只留数字，来源标注、版本说明、明细行、采集明细全部去掉。
+/* 1.4.26：界面只留数字、两行排布，来源标注 / 版本说明 / 明细行 / 采集明细都不显示。
  * 数据链路不变：UP 仍取 tapeup.io 内盘，矿机日产与 BEM 仍取 Firsto。 */
 function priceClock(iso) {
   const t = Date.parse(iso);
@@ -647,20 +647,31 @@ function renderPriceSnapshot(snap) {
     if (k === 'up') {
       const live = (item.livePrice != null) ? item.livePrice : item.usdValue;
       mainText = priceUsdFull(live) || priceApi.format(k, item.value);
-      unitText = 'USD';
-      /* 页头三数整串放副行，一个都不裁：0.0254 BEM/UP · $0.3154 · +19.25% */
+      unitText = '';
+      /* 1.4.26：UP 压成一行，但页头三数仍整串完整显示（不裁切）：
+       * 0.0254 BEM/UP · $0.3154 · +19.25%，最后一段按涨红跌绿着色。 */
       const trio = [
         hasVal ? priceApi.format(k, item.value) + ' BEM/UP' : null,
         item.usdValue != null ? priceUsdFull(item.usdValue) : null,
         item.changePct != null ? priceApi.formatChange(item.changePct) : null
       ].filter(Boolean);
       if (sEl) {
-        sEl.textContent = trio.length ? trio.join(' · ') : '';
-        sEl.style.display = trio.length ? '' : 'none';
+        if (!trio.length) {
+          sEl.textContent = '';
+          sEl.style.display = 'none';
+        } else {
+          const chgCls = priceApi.isUp(item.changePct) ? 'up'
+            : (priceApi.isDown(item.changePct) ? 'down' : '');
+          sEl.innerHTML = trio.map((part, i) =>
+            (i === 2 && chgCls && item.changePct != null)
+              ? '<b class="chg ' + chgCls + '">' + part + '</b>' : part
+          ).join(' · ');
+          sEl.style.display = '';
+        }
       }
     } else {
       mainText = priceApi.format(k, item.value);
-      unitText = (k === 'miner') ? 'BNB' : 'USD';
+      unitText = (k === 'miner') ? 'BNB' : '';
     }
     if (vEl) {
       vEl.textContent = mainText;
@@ -668,10 +679,12 @@ function renderPriceSnapshot(snap) {
     }
     if (uEl) uEl.textContent = unitText;
 
-    let badge = (k === 'miner' && item.changePct == null && hasVal)
-      ? '挂单参考价' : priceApi.formatChange(item.changePct);
-    if (!hasVal) badge = '未采集';
-    if (item.stale) badge += ' · 缓存';
+    /* 1.4.26：UP 的涨跌已在行内三数串里（带颜色），徽标只在缓存时提示；
+     * 矿机的「挂单参考价」属口径说明，不再占并排卡片的宽度。 */
+    let badge = (item.changePct != null) ? priceApi.formatChange(item.changePct) : '';
+    if (k === 'up') badge = '';
+    if (item.stale) badge = badge ? badge + ' · 缓存' : '缓存';
+    if (!hasVal && k !== 'up') badge = badge ? badge + ' · 未采集' : '未采集';
     if (cEl) {
       cEl.textContent = badge;
       cEl.className = 'pc-badge' + (priceApi.isUp(item.changePct) ? ' up'
@@ -776,7 +789,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.4.25 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.4.26 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

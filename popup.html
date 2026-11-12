@@ -81,39 +81,39 @@
     .info-foot button { width:100%;border:none;border-radius:8px;background:#6b46c1;color:#fff;
       font-size:12px;padding:8px;cursor:pointer; }
 
-    /* 1.4.24：极简行情区——只留数字，去掉来源标注、版本说明、明细行、采集明细。
-     * 三块仍上中下排列；UP 多一行完整显示「0.0264 BEM/UP · $0.3181 · +19.44%」，
-     * 矿机 / BEM 各压到一行。文字允许换行，绝不 nowrap 截断。 */
-    .tape-prices { margin:0 0 8px;padding:6px 7px;border:1px solid #ffd9b3;border-radius:8px;
+    /* 1.4.26：行情区压成两行——第一行 TapeUP 单行（动态价 + 页头三数整串），
+     * 第二行把 ② 矿机日产 / ③ BEM 并排。只留数字，整串不裁切：
+     * 行内放不下时整块挪到下一行，而不是省略号截断。 */
+    .tape-prices { margin:0 0 8px;padding:5px 6px;border:1px solid #ffd9b3;border-radius:8px;
       background:linear-gradient(180deg,#fffaf4,#fff); }
-    .price-head { display:flex;align-items:center;gap:5px;margin:0 0 5px; }
+    .price-head { display:flex;align-items:center;gap:5px;margin:0 0 4px; }
     .price-head strong { flex:1;font-size:11px;color:#b45309; }
     .price-head span { font-size:9px;color:#999; }
     .price-head button { border:1px solid #ffd0a6;background:#fff;color:#d96300;border-radius:5px;
       font-size:11px;padding:0 6px;cursor:pointer;line-height:1.4; }
     .price-head button:hover { background:#fff1e4; }
-    .price-grid { display:grid;grid-template-columns:1fr;gap:4px; } /* 单列＝上中下三块 */
-    .price-card { display:block;width:100%;min-width:0;box-sizing:border-box;padding:4px 7px;
-      border:1px solid #ffe2c4;border-left:3px solid #ff7800;border-radius:7px;
+    .price-grid { display:flex;flex-direction:column;gap:4px; }       /* 两行：UP / 矿机+BEM */
+    .pc-pair { display:grid;grid-template-columns:1fr 1fr;gap:4px; }   /* ②③ 合并成一行 */
+    .price-card { display:block;width:100%;min-width:0;box-sizing:border-box;padding:3px 5px;
+      border:1px solid #ffe2c4;border-left:3px solid #ff7800;border-radius:6px;
       background:#fff;text-align:left;cursor:pointer;font-family:inherit; }
     .price-card:hover { border-color:#ff9d3d;background:#fff7ed; }
     .price-card.pc-miner { border-left-color:#16a34a; }
     .price-card.pc-bem { border-left-color:#0d9488; }
-    .pc-top { display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap; }
-    .pc-label { font-size:10px;font-weight:700;color:#8a5a2b;white-space:normal;overflow-wrap:anywhere; }
-    .pc-badge { flex:0 0 auto;max-width:46%;font-size:9px;font-weight:700;color:#64748b;
-      background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:1px 6px;
-      white-space:normal;overflow-wrap:anywhere;text-align:right;line-height:1.35; }
-    .pc-badge.up { color:#d93025;background:#fef2f2;border-color:#fecaca; }   /* 涨＝红（国内习惯） */
-    .pc-badge.down { color:#16a34a;background:#f0fdf4;border-color:#bbf7d0; } /* 跌＝绿 */
-    .pc-value-row { display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;margin-top:2px; }
-    .pc-value { font-size:15px;font-weight:800;color:#1f2430;letter-spacing:-.2px;
-      white-space:normal;overflow-wrap:anywhere;line-height:1.25; }
-    .pc-value.sm { font-size:12px; }
-    .pc-inline { display:inline-flex;align-items:baseline;gap:3px; }
-    .pc-unit { font-size:9px;color:#94a3b8;white-space:normal;overflow-wrap:anywhere; }
-    .pc-sub { display:block;margin-top:2px;font-size:10.5px;font-weight:700;color:#b45309;
-      white-space:normal;overflow-wrap:anywhere;line-height:1.4; }
+    .pc-line { display:flex;align-items:center;gap:4px;flex-wrap:wrap;line-height:1.35; }
+    .pc-label { flex:0 0 auto;font-size:9px;font-weight:700;color:#8a5a2b;white-space:nowrap; }
+    .pc-value { font-size:12px;font-weight:800;color:#1f2430;white-space:nowrap; }
+    .pc-unit { font-size:8px;color:#94a3b8;white-space:nowrap; }
+    .pc-unit:empty { display:none; }
+    .pc-sub { font-size:9px;font-weight:700;color:#b45309;white-space:nowrap; }
+    .pc-sub .chg.up { color:#d93025; }   /* 涨＝红（国内习惯） */
+    .pc-sub .chg.down { color:#16a34a; } /* 跌＝绿 */
+    .pc-badge { flex:0 0 auto;margin-left:auto;font-size:8px;font-weight:700;color:#64748b;
+      background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:0 5px;
+      white-space:nowrap;line-height:1.35; }
+    .pc-badge:empty { display:none; }
+    .pc-badge.up { color:#d93025;background:#fef2f2;border-color:#fecaca; }
+    .pc-badge.down { color:#16a34a;background:#f0fdf4;border-color:#bbf7d0; }
 
     /* 1.4.13：价格上下限提醒设置 */
     details.price-set { margin:0 0 12px;border:1px solid #ddd;border-radius:9px;padding:8px 10px;background:#fafafa; }
@@ -134,10 +134,10 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.25</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.26</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
-  <!-- 1.4.24：只留数字的上中下三块（① TapeUP / ② 矿机日产 / ③ BEM），点卡片进对应页面 -->
+  <!-- 1.4.26：两行紧凑行情（① TapeUP 单行 / ②③ 并排一行），只留数字，点卡片进对应页面 -->
   <section class="tape-prices" id="pricePanel">
     <div class="price-head">
       <strong>📈 TapeOut 实时行情</strong>
@@ -145,31 +145,32 @@
       <button id="priceRefresh" type="button" title="立即刷新行情">↻</button>
     </div>
     <div class="price-grid">
-      <button class="price-card pc-up" type="button" data-price-key="up" title="点击打开 TapeUP 交易页">
-        <span class="pc-top">
+      <button class="price-card pc-up" type="button" data-price-key="up" title="TapeUP：前面是 K 线动态价，后面是页头 BEM/UP 计价 · 美元折算价 · 24h 涨跌；点击进入交易页">
+        <span class="pc-line">
           <span class="pc-label">① TapeUP</span>
-          <span class="pc-badge" id="priceChangeUp">—</span>
-        </span>
-        <span class="pc-value-row">
           <span class="pc-value" id="priceValueUp">—</span>
-          <span class="pc-unit" id="priceUnitUp">USD</span>
-        </span>
-        <span class="pc-sub" id="priceSubUp">—</span>
-      </button>
-      <button class="price-card pc-miner" type="button" data-price-key="miner" title="点击打开矿机日产页">
-        <span class="pc-top">
-          <span class="pc-label">② 矿机日产</span>
-          <span class="pc-inline"><span class="pc-value sm" id="priceValueMiner">—</span><span class="pc-unit" id="priceUnitMiner">BNB</span></span>
-          <span class="pc-badge" id="priceChangeMiner">—</span>
+          <span class="pc-sub" id="priceSubUp">—</span>
+          <span class="pc-badge" id="priceChangeUp"></span>
         </span>
       </button>
-      <button class="price-card pc-bem" type="button" data-price-key="bem" title="点击打开 BEM 数据页">
-        <span class="pc-top">
-          <span class="pc-label">③ BEM</span>
-          <span class="pc-inline"><span class="pc-value sm" id="priceValueBem">—</span><span class="pc-unit" id="priceUnitBem">USD</span></span>
-          <span class="pc-badge" id="priceChangeBem">—</span>
-        </span>
-      </button>
+      <div class="pc-pair">
+        <button class="price-card pc-miner" type="button" data-price-key="miner" title="矿机日产价（BNB）；点击进入对应页面">
+          <span class="pc-line">
+            <span class="pc-label">② 矿机日产</span>
+            <span class="pc-value" id="priceValueMiner">—</span>
+            <span class="pc-unit" id="priceUnitMiner">BNB</span>
+            <span class="pc-badge" id="priceChangeMiner"></span>
+          </span>
+        </button>
+        <button class="price-card pc-bem" type="button" data-price-key="bem" title="$BEM 现价（USD）；点击进入对应页面">
+          <span class="pc-line">
+            <span class="pc-label">③ BEM</span>
+            <span class="pc-value" id="priceValueBem">—</span>
+            <span class="pc-unit" id="priceUnitBem"></span>
+            <span class="pc-badge" id="priceChangeBem"></span>
+          </span>
+        </button>
+      </div>
     </div>
   </section>
 
