@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：1.4.20（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
+- 版本：1.4.21（本仓库源码）　｜　Chrome Web Store 审核中：1.4.2　｜　Manifest V3　｜　Chrome 116+
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
 
@@ -20,7 +20,7 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-12）**：本仓库 `main` 是 **1.4.20**（矿机日产价改用 /circuits/other 页顶实时挂单参考价；版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板；TapeUP $UP 内盘价按 UP/BEM 计价精准抽取并带真机调试浮层）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取；1.4.20 只在**同一个已授权域名** `api-tapeout.firsto.ai` 上换了一个公开只读接口路径（`/v1/analytics/circuits` → `/v1/circuit-holders`），并把矿机卡跳转改到 `tapeout.firsto.ai/circuits/other`（普通网页跳转，不需要新权限），不新增域名、权限或网络接收方。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
+> **版本状态（2026-11-12）**：本仓库 `main` 是 **1.4.21**（按真机页面重新校准 TapeUP 内盘价为 `0.0264 BEM/UP · $0.3181 · +19.44%`，BEM 与矿机日产价两项明确标注来自 Firsto；矿机日产价改用 /circuits/other 页顶实时挂单参考价；版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板）；Chrome Web Store 首次提交审核的条目仍是 **1.4.2**。两者兼容，但代码不同。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取；1.4.20 只在**同一个已授权域名** `api-tapeout.firsto.ai` 上换了一个公开只读接口路径（`/v1/analytics/circuits` → `/v1/circuit-holders`），并把矿机卡跳转改到 `tapeout.firsto.ai/circuits/other`（普通网页跳转，不需要新权限），不新增域名、权限或网络接收方。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。要把新版发到商店，还需同步 `store/listing.json` 与商店 Privacy practices 表单（行情域名与通知用途）后再上传新包。
 
 ### 1.4.16：TapeUP $UP 价格改用 tapeup.io 内盘价
 
@@ -29,7 +29,23 @@
 1. **数据源切换**：移除 DexScreener 依赖与 `api.dexscreener.com` 主机权限；新增 `tapeup.io` 主机权限，仅用于在交易页注入内容脚本（`tapeup-price.js`）读取页面显示的内盘价。tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会返回 403/502，因此改由用户浏览器里已通过 CF 的会话去读——这是真正的内盘价格，不猜接口、不依赖第三方 DEX。
 2. **采集 + 缓存**：`tapeup-price.js` 用 `MutationObserver` + 3 秒轮询，从页面 DOM 抽价（多策略正则，按置信度打分），变化时才 `sendMessage({type:'TAPUP_PRICE'})` 回传；后台 `localSet('tapeupPriceCache')` 缓存。PRICE_GET / PRICE_REFRESH 用 `withUp()` 把缓存并入快照；超过 30 分钟未刷新标记为 `stale`，不直接拿旧值误报。
 3. **展示 / 跳转**：UP 卡片、浮层、通知点击都打开 `tapeup.io/zh/trade/token?id=1`；其余两项仍打开 Firsto 数据页。关闭交易页后沿用缓存，缓存为空时引导「请打开 tapeup.io 交易页」。
-4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价 → 刷新 X 页面 → 弹窗标题旁 / T 按钮左侧直接显示当前版本号。
+4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价（页面右下角浮层会显示抽到的 `BEM/UP · $美元 · 涨跌`）→ 刷新 X 页面 → 弹窗标题旁 / T 按钮左侧直接显示当前版本号。
+
+### 1.4.21：按真机页面重新校准 TapeUP 内盘价（BEM/UP 锚点）
+
+用户反馈「日产量和 BEM 都对了，这两个数据都来自 Firsto；另外 TapeUP 内盘的数据还是不对」。这次不再靠猜正则，直接用浏览器打开用户已通过 Cloudflare 的 `tapeup.io` 真实页面取数：
+
+| 页面 | 真机显示 |
+|---|---|
+| `/zh/trade/token?id=1` 头部 | `0.0264 BEM/UP` · `$0.3181` · `+19.44%` |
+| `/zh/trade` 列表行 | `1 TapeUP UP 1 0.0264 $0.3181 +19.44% 1,673.702 $20,158.4033 …` |
+
+1.4.17 把「数字 BEM」当价格特征，但页面上符合这个形状的还有：钱包余额 `0.00049456 BEM`、待释放 `8.78358728 BEM`、已释放 `6.00396522 BEM`、24H 交易量 `1,673.702 BEM`、流动性 `10,533.6995 BEM`、市值 `554,794.1268 BEM`、图表坐标刻度等——先到先得就抽到了不相干的 `0.286…`。
+
+1. **只认明确锚点**（`price.js` 的 `extractUp`）：详情页 `(\d+\.\d+) BEM/UP` 标签（最高分），并在其后 120 字符内取 `$` 美元折算价与百分比；交易列表行用 `TapeUP UP <ID> <价> $<美元> <涨跌%>` 三连（正则回溯避开代币 ID 与价格粘连的 `…UP10.0264…`），另留一条「价 + 美元 + 百分比」通用退路。页面上的其它「数字 BEM」只作为 `debug` 诊断候选列出（score 0，不参与选价）；**认不出锚点就返回 `null` 显示未采集，绝不拿随机小数凑数**。
+2. **两个数字都给**（`popup.js` / `popup.html`）：UP 卡主值显示页面那个大号美元价 `$0.3181`，副行显示 `0.0264 BEM/UP · +19.44%`；`usdValue` 从内容脚本 → 后台 `tapeupPriceCache` → `mergeUp` → 面板全程透传。调试浮层同步显示三个数字，真机可当场核对。
+3. **来源标注**：BEM 与矿机日产价两项都来自 **Firsto**（`api-tapeout.firsto.ai` / `tapeout.firsto.ai`），TapeUP 内盘价来自 **tapeup.io**，与 Firsto 无关。三张卡片的标签直接写明来源，行情说明与隐私文档同步。
+4. **不新增权限/域名**：仍是在已授权的 `tapeup.io` 页面注入同一份内容脚本读 DOM，无新网络请求。
 
 ### 1.4.20：矿机日产价改从 `/circuits/other` 取实时参考价
 
@@ -93,6 +109,8 @@ simple lunch. If you...
 
 ### 1.4.17：修正内盘价抽取（UP 以 BEM 计价，非 UP/USDT）
 
+> ⚠️ **此章结论已被 1.4.21 推翻**：当时把页面上的「数字 BEM」当成盘面实时价特征，并误记 `0.286182409 BEM` 为真实价格；真机核对后，页面头部其实是 `0.0264 BEM/UP · $0.3181 · +19.44%`，`0.286…` 是图表坐标一类的无关数字。1.4.21 已改为按 `BEM/UP` 标签 / 「价 + 美元 + 百分比」锚点取价。以下保留为当时的排查记录。
+
 用户反馈「内盘价格不对」。核查真实 tapeup.io 交易页后发现根因：内盘交易对是 **UP/BEM**（用 BEM 买 UP），而上一版误以为是 UP/USDT，正则全在找「最新价 / UP-USDT」等页面上根本不存在的标签，于是兜底抽到了钱包余额或交易记录里的错数字。
 
 1. **单位与标签**：`META.up` 单位由 USD 改为 BEM，去掉 `$` 前缀；盘面实时价在页面上以「数字 BEM」呈现（如 `0.286182409 BEM`），而钱包余额是「$BEM 数字」（单位在前、带 `$`），两者顺序相反，`extractUp` 据此精准区分并排除钱包余额与交易记录干扰。
@@ -126,7 +144,7 @@ simple lunch. If you...
 
 在 TapePost 面板最上方加了一排行情卡片，并可给每项设上下限，越界时右下角弹窗、点击直达 Firsto 交易所。
 
-> 注：以下是 1.4.13 当时的实现。**1.4.20 起矿机日产价已改为 `/circuits/other` 页顶实时挂单参考价**（接口 `/v1/circuit-holders`、跳转 `tapeout.firsto.ai/circuits/other`、不再显示 24h 涨跌），详见上方 1.4.20 章节；BEM 与 TapeUP 内盘价口径不变。
+> 注：以下是 1.4.13 当时的实现。**1.4.20 起矿机日产价已改为 `/circuits/other` 页顶实时挂单参考价**（接口 `/v1/circuit-holders`、跳转 `tapeout.firsto.ai/circuits/other`、不再显示 24h 涨跌）；**1.4.21 起 TapeUP 内盘价改为按页面 `BEM/UP` 锚点抽取，并同时给出美元折算价**。BEM 口径不变。三项来源：BEM / 矿机日产价来自 Firsto，TapeUP 内盘价来自 tapeup.io。
 
 1. **三项数据都有公开只读来源**：`$BEM` 与「矿机日产能价」取 Firsto 官方 analytics（`/v1/analytics/bem`、`/v1/analytics/circuits`，后者取 24h 内最近一个有效 `dailyCapacityPriceWei`，按官网图表口径 `BigInt/1e18` 换算为 BNB）；`TapeUP $UP` 取 tapeup.io 交易页（UP 以 BEM 计价，即 UP/BEM 内盘价；详见 1.4.17 修正）显示的内盘价——tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会被拦，因此由扩展的内容脚本在用户浏览器（已通过 CF）里读取页面显示的内盘价并回传后台缓存。全部免登录、免 API Key、不上传任何本机数据。
 2. **卡片可点**：TapeUP → `tapeup.io/zh/trade/token?id=1`（点击打开交易页，由扩展读取内盘价），矿机日产 → `firsto.ai/data/circuits`，BEM → `firsto.ai/data/bem`；涨红跌绿，显示 24h 变化、更新时间，↻ 可立即刷新。点开面板读 2 分钟内缓存，后台默认每 5 分钟查一次（可设 1/5/15/30 分钟）。

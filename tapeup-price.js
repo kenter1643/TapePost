@@ -7,9 +7,10 @@
  * 打开交易页时已经拿到有效会话，内容脚本就能直接读到页面显示的内盘价——这是真正的内盘价格，
  * 不依赖任何外部 DEX / 第三方接口，也不猜接口路径。
  *
- * 内盘价特征：UP 以 BEM 计价。盘面实时价在页面上显示为「数字 BEM」（数字在前、BEM 单位在后、
- * 前面没有 $，如 "0.286182409 BEM"）；而钱包余额是「$BEM 数字」（单位在前、带 $）。两者顺序
- * 相反，price.js 的 extractUp 据此精准区分，避免把钱包余额 / 交易记录当成价格。
+ * 1.4.21 真机校准：页面头部价格是「0.0264 BEM/UP  $0.3181  +19.44%」——
+ * BEM 计价的内盘价 + 美元折算价 + 24h 涨跌。extractUp 只认 BEM/UP 标签或列表行
+ * 「价 $美元 百分比」三连；钱包余额（$BEM0.00049456）、待释放（8.78358728 BEM）、
+ * 统计区大数字、图表坐标一律不参与选价，认不出就返回 null 不乱猜。
  *
  * 运行于 ISOLATED world，与 tapeup.io 自身脚本互不干扰；TapePrice 由同 world 的 price.js 提供。
  *
@@ -44,7 +45,9 @@
     var el = document.getElementById('__tpup_probe');
     if (!el) return;
     if (!r) { el.textContent = 'TapePost内盘: 未采集'; return; }
-    var head = 'TapePost内盘: ' + (r.value != null ? r.value + ' BEM' : '—');
+    var head = 'TapePost内盘: ' + (r.value != null ? r.value + ' BEM/UP' : '—');
+    if (r.usdValue != null) head += ' · $' + r.usdValue;
+    if (r.changePct != null) head += ' · ' + (r.changePct >= 0 ? '+' : '') + r.changePct + '%';
     if (!el.__open) {
       el.style.maxHeight = '22px';
       el.textContent = head + ' ▾';
@@ -54,7 +57,8 @@
     var lines = [head + ' ▴', '— 候选 —'];
     if (r.debug && r.debug.candidates && r.debug.candidates.length) {
       r.debug.candidates.slice(0, 8).forEach(function (c) {
-        lines.push((c.score >= 90 ? '★ ' : '  ') + c.value + '   ' + (c.ctx || ''));
+        lines.push((c.score >= 90 ? '★ ' : '  ') + c.value +
+          (c.usdValue != null ? ' ($' + c.usdValue + ')' : '') + '   ' + (c.ctx || ''));
       });
     } else {
       lines.push('（无候选，页面可能还没渲染价格 / 不是交易页）');
@@ -66,7 +70,7 @@
     var r = T.extractUp(document);
     paintProbe(r);
     if (!r || r.value == null) return;
-    var sig = JSON.stringify([r.value, r.changePct]);
+    var sig = JSON.stringify([r.value, r.usdValue, r.changePct]);
     if (sig === lastSig) return;
     lastSig = sig;
     try {
@@ -74,6 +78,7 @@
         type: 'TAPUP_PRICE',
         payload: {
           value: r.value,
+          usdValue: r.usdValue,
           changePct: r.changePct,
           asOf: r.asOf,
           at: Date.now(),

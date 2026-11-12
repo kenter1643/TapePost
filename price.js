@@ -3,12 +3,15 @@
  *
  * 1.4.13：面板顶端展示三项实时价格，并支持上下限提醒。
  * 数据来源（公开只读、免登录免 Key、不上传任何用户数据）：
+ *   【以下两项都来自 Firsto（api-tapeout.firsto.ai / tapeout.firsto.ai）】
  *   · Firsto 官方 analytics：/v1/analytics/bem        → $BEM 现价（USD，8 位定点）
  *   · Firsto 电路市场：/v1/circuit-holders?page=1    → 矿机日产能价（BNB，wei 18 位定点）
  *     即 https://tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」，
  *     口径是当前有效挂单的日产能价中位数（marketStats.dailyCapacityPriceWei），
  *     不是 /v1/analytics/circuits 的 24h 小时成交序列（那是历史成交均价，会滞后）。
- *   · TapeUP $UP 内盘价：来自 tapeup.io 交易页（UP 以 BEM 计价，即 UP/BEM 现货对，用 BEM 买 UP）——
+ *   【此项来自 tapeup.io，与 Firsto 无关】
+ *   · TapeUP $UP 内盘价：来自 tapeup.io 交易页（UP 以 BEM 计价，页面标注 BEM/UP，
+ *     同时给出美元折算价）。真机页面示例：0.0264 BEM/UP · $0.3181 · +19.44%。
  *     该站整站 Cloudflare 防护，后台直接 fetch 会被拦，因此由内容脚本在用户浏览器
  *     （已通过 CF）里读取页面显示的内盘价，再回传后台缓存。详见 tapeup-price.js。
  *
@@ -37,9 +40,10 @@ var TapePrice = (function () {
   };
 
   var META = {
-    up:    { label: 'TapeUP·内盘', symbol: 'UP', unit: 'BEM', digits: 8, prefix: '', source: 'tapeup.io' },
-    miner: { label: '矿机日产价', symbol: 'TapeOut', unit: 'BNB', digits: 3, prefix: '', source: 'Firsto circuits/other' },
-    bem:   { label: 'BEM', symbol: '$BEM', unit: 'USD', digits: 2, prefix: '$', source: 'Firsto analytics' }
+    // up.value 是 BEM 计价的内盘价（BEM/UP）；usdValue 是页面给出的美元折算价，另存。
+    up:    { label: 'TapeUP·内盘', symbol: 'UP', unit: 'BEM/UP', digits: 4, prefix: '', source: 'tapeup.io' },
+    miner: { label: '矿机日产价', symbol: 'TapeOut', unit: 'BNB', digits: 3, prefix: '', source: 'Firsto' },
+    bem:   { label: 'BEM', symbol: '$BEM', unit: 'USD', digits: 2, prefix: '$', source: 'Firsto' }
   };
   // 面板展示顺序 / 三张卡
   var KEYS = ['up', 'miner', 'bem'];
@@ -198,48 +202,75 @@ var TapePrice = (function () {
     return isFinite(n) ? n : null;
   }
 
+  /* 1.4.21：真机校准（2026-11-12，tapeup.io/zh/trade 与 /zh/trade/token?id=1）。
+   * 页面头部价格是「0.0264 BEM/UP  $0.3181  +19.44%」：BEM 计价 + 美元折算 + 24h 涨跌。
+   * 旧版用「数字 BEM」宽泛正则，会抓到图表坐标 / 钱包余额（0.00049456）/ 待释放
+   * （8.78358728）/ 统计区大数字，才一直给出错误的 0.286...。
+   * 现在只认明确锚点：详情页的 BEM/UP 标签、列表行的「价 $美元 百分比」三连。
+   * 认不出就返回 null（面板显示未采集），绝不再拿页面上的随机小数凑数。 */
   function extractUp(source) {
     var text = toPageText(source);
-    if (!text) return { value: null, changePct: null, asOf: null, debug: { textLen: 0, candidates: [] } };
-    var debug = { textLen: text.length, candidates: [], note: 'UP/BEM 内盘' };
+    if (!text) {
+      return { value: null, usdValue: null, changePct: null, asOf: null,
+        debug: { textLen: 0, candidates: [], note: 'BEM/UP 锚点' } };
+    }
+    var debug = { textLen: text.length, candidates: [], note: 'BEM/UP 锚点' };
     var best = null;
 
-    function consider(value, score, ctx) {
+    function consider(value, usd, pct, score, ctx) {
       var v = stripNum(value);
       if (v == null || v <= 0) return;
-      if (score > (best ? best.score : -1)) best = { value: v, score: score, ctx: ctx };
-      debug.candidates.push({ value: v, score: score, ctx: ctx });
+      var cand = {
+        value: v,
+        usdValue: (usd == null ? null : stripNum(usd)),
+        changePct: (pct == null ? null : stripNum(String(pct).replace('%', ''))),
+        score: score, ctx: ctx
+      };
+      debug.candidates.push(cand);
+      // score 0 只作真机诊断（记录页面上出现过的「数字 BEM」），不参与选价
+      if (score >= 10 && score > (best ? best.score : -1)) best = cand;
     }
 
-    // 内盘价特征：UP 以 BEM 计价（不是 USDT/USD）。盘面实时价在交易页显示为
-    // 「数字 BEM」——数字在前、BEM 单位在后、前面没有 $ 符号；而钱包余额是
-    // 「$BEM 数字」——单位在前（带 $），两者顺序相反，据此精准区分。
-    // 优先取小数尾数非全 0 的（实时价特征），排开坐标轴规整刻度 0.28 / 0.30 等
-    var liveRe = /(\d{1,3}\.\d*?[1-9]\d*)\s*BEM\b/gi;
     var m;
-    while ((m = liveRe.exec(text)) !== null) consider(m[1], 92, 'panel-live:' + m[0].trim().slice(0, 22));
-    // 兜底：任意「数字 BEM」（含规整刻度），低分
-    var anyBemRe = /(\d{1,3}\.\d{2,})\s*BEM\b/gi;
-    while ((m = anyBemRe.exec(text)) !== null) consider(m[1], 50, 'panel-any:' + m[0].trim().slice(0, 22));
-    // 退路：交易活动记录里「买入/卖出」后的成交价（BEM 计价）
-    var tradeRe = /(?:买入|卖出|Buy|Sell)\D{0,40}?(\d{1,3}\.\d{2,})/gi;
-    while ((m = tradeRe.exec(text)) !== null) consider(m[1], 40, 'trade:' + m[0].replace(/\s+/g, ' ').slice(0, 28));
 
-    // 涨跌：盘面价附近带 +/- 的百分比（取第一个）
-    var chg = null;
-    var chgRe = /([+-]?\d{1,3}(?:\.\d{1,2})?\s*%)/g;
-    var m5;
-    while ((m5 = chgRe.exec(text)) !== null) { chg = m5[1]; break; }
+    // 策略 A（最高）：详情页头部「0.0264 BEM/UP」，紧随其后的 $ 折算价与百分比
+    var headRe = /(\d{1,3}\.\d{2,12})\s*BEM\s*\/\s*UP/gi;
+    while ((m = headRe.exec(text)) !== null) {
+      var tail = text.slice(m.index + m[0].length, m.index + m[0].length + 120);
+      var usdM = /\$\s*([\d,.]+)/.exec(tail);
+      var pctM = /([+-]\d{1,3}(?:\.\d{1,2})?)\s*%/.exec(tail);
+      consider(m[1], usdM ? usdM[1] : null, pctM ? pctM[1] : null,
+        100, 'BEM/UP:' + m[0].replace(/\s+/g, ' ').trim().slice(0, 24));
+    }
+
+    // 策略 B1：交易列表行「1TapeUPUP1 0.0264 $0.3181 +19.44%」
+    // 代币 ID 会和价格粘在一起（…UP10.0264…），用 TapeUP + UP + ID 锚点让正则回溯出 0.0264
+    var rowRe = /TapeUP\s*UP\s*\d+\s*(\d{1,3}\.\d{2,12})\s*\$\s*([\d,.]+)\s*([+-]\d{1,3}(?:\.\d{1,2})?)\s*%/gi;
+    while ((m = rowRe.exec(text)) !== null) {
+      consider(m[1], m[2], m[3], 95, 'list-row:' + m[0].replace(/\s+/g, ' ').trim().slice(0, 30));
+    }
+
+    // 策略 B2：通用三连「价 $美元 百分比」（页面改版、ID 不粘连时的退路）
+    // 只收 < 1 的候选，避免把「10.0264」这类 ID 粘连值当价格
+    var triRe = /(\d{1,3}\.\d{2,12})\s*\$\s*([\d,.]+)\s*([+-]\d{1,3}(?:\.\d{1,2})?)\s*%/g;
+    while ((m = triRe.exec(text)) !== null) {
+      if (stripNum(m[1]) >= 1) continue;
+      consider(m[1], m[2], m[3], 80, 'usd-pct:' + m[0].replace(/\s+/g, ' ').trim().slice(0, 30));
+    }
+
+    // 诊断候选：把页面上所有「数字 BEM」列出来（含钱包余额、统计区），仅供真机排查
+    var bemRe = /(\d{1,3}\.\d{2,12})\s*BEM\b/gi;
+    while ((m = bemRe.exec(text)) !== null) {
+      consider(m[1], null, null, 0, 'diagnostic:' + m[0].replace(/\s+/g, ' ').trim().slice(0, 22));
+    }
 
     if (!best) {
-      return { value: null, changePct: null, asOf: null, debug: debug };
+      return { value: null, usdValue: null, changePct: null, asOf: null, debug: debug };
     }
-    var changePct = null;
-    if (chg != null) {
-      var cn = stripNum(chg.replace('%', ''));
-      if (cn != null) changePct = cn;
-    }
-    return { value: best.value, changePct: changePct, asOf: null, source: 'tapeup.io 内盘', debug: debug };
+    return {
+      value: best.value, usdValue: best.usdValue, changePct: best.changePct,
+      asOf: null, source: 'tapeup.io 内盘', debug: debug
+    };
   }
 
   // 把内容脚本采集到的内盘价并入快照（按新鲜度给 stale 标记，过期则沿用上一次、不直接拿旧值误报）
@@ -253,7 +284,8 @@ var TapePrice = (function () {
 
     if (fresh) {
       return {
-        item: { key: 'up', value: num(upCache.value), changePct: num(upCache.changePct),
+        item: { key: 'up', value: num(upCache.value), usdValue: num(upCache.usdValue),
+          changePct: num(upCache.changePct),
           asOf: upCache.asOf || null, stale: false, source: 'tapeup.io 内盘',
           debug: (upCache && upCache.debug) ? upCache.debug : null },
         error: null
@@ -261,7 +293,8 @@ var TapePrice = (function () {
     }
     if (upCache && num(upCache.value) > 0) {
       return {
-        item: { key: 'up', value: num(upCache.value), changePct: num(upCache.changePct),
+        item: { key: 'up', value: num(upCache.value), usdValue: num(upCache.usdValue),
+          changePct: num(upCache.changePct),
           asOf: upCache.asOf || null, stale: true, source: 'tapeup.io 内盘',
           debug: (upCache && upCache.debug) ? upCache.debug : null },
         error: 'TapeUP 内盘价沿用缓存（请打开 tapeup.io 交易页刷新）'
@@ -271,7 +304,7 @@ var TapePrice = (function () {
       return { item: Object.assign({}, old.up, { stale: true, debug: (old.up && old.up.debug) ? old.up.debug : null }), error: 'TapeUP 内盘价暂无采集（请打开 tapeup.io 交易页）' };
     }
     return {
-      item: { key: 'up', value: null, changePct: null, asOf: null, stale: true, source: 'tapeup.io 内盘' },
+      item: { key: 'up', value: null, usdValue: null, changePct: null, asOf: null, stale: true, source: 'tapeup.io 内盘' },
       error: 'TapeUP 内盘价暂无采集（请打开 tapeup.io 交易页）'
     };
   }

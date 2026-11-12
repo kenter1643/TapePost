@@ -137,7 +137,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.20</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.21</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 295 条链接核验。发送始终由你手动完成。</p>
 
   <!-- 1.4.13：面板顶端三项实时行情，点卡片进 Firsto 交易所 -->
@@ -148,18 +148,18 @@
       <button id="priceRefresh" type="button" title="立即刷新行情">↻</button>
     </div>
     <div class="price-grid">
-      <button class="price-card" type="button" data-price-key="up" title="tapeup.io 内盘价（需打开交易页自动采集）；点击进入 tapeup.io UP/BEM 内盘交易页">
-        <span class="pc-label">TapeUP·内盘</span>
+      <button class="price-card" type="button" data-price-key="up" title="来源 tapeup.io 交易页：页面标注 BEM/UP（UP 以 BEM 计价），主值为美元折算价、副行为 BEM/UP 计价；需打开交易页自动采集，点击进入该页">
+        <span class="pc-label">TapeUP · tapeup.io</span>
         <span class="pc-value" id="priceValueUp">—</span>
         <span class="pc-change" id="priceChangeUp">—</span>
       </button>
-      <button class="price-card" type="button" data-price-key="miner" title="矿机日产能价，单位 BNB；取自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」（当前有效挂单中位数）；点击进入该页面">
-        <span class="pc-label">矿机日产 · BNB</span>
+      <button class="price-card" type="button" data-price-key="miner" title="来源 Firsto：矿机日产能价，单位 BNB；取自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」（当前有效挂单中位数）；点击进入该页面">
+        <span class="pc-label">矿机日产 · Firsto</span>
         <span class="pc-value" id="priceValueMiner">—</span>
         <span class="pc-change" id="priceChangeMiner">—</span>
       </button>
-      <button class="price-card" type="button" data-price-key="bem" title="点击进入 Firsto 交易所">
-        <span class="pc-label">BEM · USD</span>
+      <button class="price-card" type="button" data-price-key="bem" title="来源 Firsto：$BEM 现价，单位 USD（Firsto 官方 analytics）；点击进入 Firsto 交易所">
+        <span class="pc-label">BEM · Firsto</span>
         <span class="pc-value" id="priceValueBem">—</span>
         <span class="pc-change" id="priceChangeBem">—</span>
       </button>
@@ -186,7 +186,7 @@
     </select>
     <div class="pb-grid">
       <span></span><span>下限 ≤</span><span>上限 ≥</span>
-      <label for="priceUpMin">TapeUP $</label>
+      <label for="priceUpMin">TapeUP BEM/UP</label>
       <input id="priceUpMin" type="number" step="any" min="0" placeholder="留空" />
       <input id="priceUpMax" type="number" step="any" min="0" placeholder="留空" />
       <label for="priceMinerMin">矿机 BNB</label>
@@ -216,8 +216,8 @@
       <button type="button" id="priceTest">🔔 测试弹窗</button>
     </div>
     <div id="priceStatus" class="tiny"></div>
-    <p class="tiny">留空＝不监控该方向；只在「从区间内跨到区间外」时提醒一次，不会一直弹。改完阈值记得点保存。
-      BEM 来自 Firsto 官方 analytics；矿机日产能价来自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」的同源只读接口（当前有效挂单中位数，实时，1.4.20 起不再用滞后的 24h 成交均价）；TapeUP $UP 内盘价来自 tapeup.io 交易页（UP 以 BEM 计价，即 UP/BEM，需打开该页后由扩展自动采集，关闭后沿用缓存）。均免登录免 Key、不上传任何本机数据。行情仅供参考，不构成投资建议。</p>
+    <p class="tiny">留空＝不监控该方向；只在「从区间内跨到区间外」时提醒一次，不会一直弹。改完阈值记得点保存。<b>TapeUP 的阈值按 BEM/UP 计价填写</b>（即卡片副行那个 0.0264 这类数字，不是主值的美元折算价）；矿机按 BNB、BEM 按 USD。
+      <b>BEM 与矿机日产能价两项都来自 Firsto</b>：BEM 取自 Firsto 官方 analytics；矿机日产能价取自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」的同源只读接口（当前有效挂单中位数，实时，1.4.20 起不再用滞后的 24h 成交均价）。<b>TapeUP 内盘价来自 tapeup.io 交易页，与 Firsto 无关</b>：页面标注 BEM/UP（UP 以 BEM 计价，如 0.0264 BEM/UP）并给出美元折算价（如 $0.3181），需打开该页后由扩展自动采集，关闭后沿用缓存。均免登录免 Key、不上传任何本机数据。行情仅供参考，不构成投资建议。</p>
   </details>
 
   <div class="me">
@@ -359,7 +359,7 @@
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
-      <b>当前 v1.4.20</b>：矿机日产价改从 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」取数（同源只读接口 /v1/circuit-holders，当前有效挂单中位数，实时），不再用会滞后的 24h 小时成交均价；点矿机卡直达该页面。因参考价无同口径 24h 序列，矿机卡不再显示涨跌，改标「挂单参考价」。版本号仍常驻显示在 TapePost 旁边（弹窗标题右侧、X 页面 T 按钮左侧、生态面板标题旁），统一从 manifest 读取。到 chrome://extensions 点「重新加载」后刷新一次 X 页面即可。
+      <b>当前 v1.4.21</b>：按真机页面重新校准 TapeUP 内盘价——tapeup.io 交易页显示「0.0264 BEM/UP · $0.3181 · +19.44%」，旧版用宽泛正则误抓图表坐标 / 钱包余额里的 0.286…；现在只认页面上的 BEM/UP 标签与「价 + 美元 + 百分比」组合，认不出就显示未采集，不再给错数字。UP 卡主值显示美元折算价、副行显示 BEM/UP 计价与涨跌。<b>BEM 与矿机日产价两项都来自 Firsto</b>（矿机日产价取自 /circuits/other 页顶挂单参考价），TapeUP 内盘价来自 tapeup.io，与 Firsto 无关；三张卡已直接标出来源。到 chrome://extensions 点「重新加载」→ 打开 tapeup.io 交易页（右下角浮层可当场核对采集值）→ 刷新 X 页面即可。
       <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 
