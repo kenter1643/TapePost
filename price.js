@@ -4,7 +4,10 @@
  * 1.4.13：面板顶端展示三项实时价格，并支持上下限提醒。
  * 数据来源（公开只读、免登录免 Key、不上传任何用户数据）：
  *   · Firsto 官方 analytics：/v1/analytics/bem        → $BEM 现价（USD，8 位定点）
- *   · Firsto 官方 analytics：/v1/analytics/circuits   → 矿机日产能价（BNB，wei 18 位定点，与官网图表 ds() 一致）
+ *   · Firsto 电路市场：/v1/circuit-holders?page=1    → 矿机日产能价（BNB，wei 18 位定点）
+ *     即 https://tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」，
+ *     口径是当前有效挂单的日产能价中位数（marketStats.dailyCapacityPriceWei），
+ *     不是 /v1/analytics/circuits 的 24h 小时成交序列（那是历史成交均价，会滞后）。
  *   · TapeUP $UP 内盘价：来自 tapeup.io 交易页（UP 以 BEM 计价，即 UP/BEM 现货对，用 BEM 买 UP）——
  *     该站整站 Cloudflare 防护，后台直接 fetch 会被拦，因此由内容脚本在用户浏览器
  *     （已通过 CF）里读取页面显示的内盘价，再回传后台缓存。详见 tapeup-price.js。
@@ -17,17 +20,17 @@
 var TapePrice = (function () {
   var FIRSTO_API = 'https://api-tapeout.firsto.ai';
 
-  // 后台定时拉取的接口（BEM / 矿机日产价来自 Firsto 官方 analytics，公开只读）。
+  // 后台定时拉取的接口（BEM 来自 analytics；矿机日产价来自 /circuits/other 页顶参考价的同源接口）。
   // TapeUP $UP 内盘价不走后台 fetch（tapeup.io 整站 Cloudflare 防护），改由内容脚本采集，见下方 mergeUp。
   var ENDPOINTS = {
     bem: FIRSTO_API + '/v1/analytics/bem?range=24h',
-    miner: FIRSTO_API + '/v1/analytics/circuits?range=24h'
+    miner: FIRSTO_API + '/v1/circuit-holders?page=1'
   };
 
   // 点击卡片 / 点击提醒弹窗要去的页面
   var LINKS = {
     up: 'https://tapeup.io/zh/trade/token?id=1',   // TapeUP $UP 内盘交易页（UP 以 BEM 计价）
-    miner: 'https://firsto.ai/data/circuits',
+    miner: 'https://tapeout.firsto.ai/circuits/other',  // 1.4.20：官方电路市场（页顶「日产能价参考价」）
     bem: 'https://firsto.ai/data/bem',
     home: 'https://firsto.ai/',
     tapeupHome: 'https://tapeup.io/'
@@ -35,7 +38,7 @@ var TapePrice = (function () {
 
   var META = {
     up:    { label: 'TapeUP·内盘', symbol: 'UP', unit: 'BEM', digits: 8, prefix: '', source: 'tapeup.io' },
-    miner: { label: '矿机日产价', symbol: 'TapeOut', unit: 'BNB', digits: 3, prefix: '', source: 'Firsto analytics' },
+    miner: { label: '矿机日产价', symbol: 'TapeOut', unit: 'BNB', digits: 3, prefix: '', source: 'Firsto circuits/other' },
     bem:   { label: 'BEM', symbol: '$BEM', unit: 'USD', digits: 2, prefix: '$', source: 'Firsto analytics' }
   };
   // 面板展示顺序 / 三张卡
@@ -122,7 +125,31 @@ var TapePrice = (function () {
   }
 
   function parseMiner(json) {
-    if (!isObj(json) || !Array.isArray(json.series)) return null;
+    if (!isObj(json)) return null;
+
+    /* 1.4.20：官网 /circuits/other 页顶「日产能价参考价」的数据源。
+     * 该页 circuit-market-stats 组件读 snapshot.marketStats.dailyCapacityPriceWei，
+     * 口径是「当前有效挂单中最低 5 个不同卖家日产能价的中位数」，是实时价；
+     * referenceDailyCapacityPriceWei 是同一口径的新版字段名，优先取它。
+     * 旧版 /v1/analytics/circuits?range=24h 给的是小时成交序列，最后一个非空点
+     * 可能是几小时前的成交均价（真机 7.207 vs 页面 7.520），已不再作为主来源。
+     * changePct 置 null：挂单参考价没有 24h 同口径序列可比，拿最近成交价算
+     * 会把「溢价」误显示成「24h 涨幅」，面板改显示「挂单参考价」。 */
+    var ms = isObj(json.marketStats) ? json.marketStats : null;
+    if (ms) {
+      var ref = atomic(ms.referenceDailyCapacityPriceWei, 18);
+      var live = atomic(ms.dailyCapacityPriceWei, 18);
+      var sale = atomic(ms.recentSaleDailyCapacityPriceWei, 18);
+      var value = ref != null ? ref : (live != null ? live : sale);
+      if (value == null) return null;
+      return {
+        key: 'miner', value: value, changePct: null,
+        asOf: json.asOf || null, source: 'Firsto circuits/other'
+      };
+    }
+
+    /* 旧格式兼容：接口改版 / 上游回退到 analytics 时仍能出数，不让面板闪成空。 */
+    if (!Array.isArray(json.series)) return null;
     var vals = [];
     json.series.forEach(function (row) {
       // 真实接口里常见 all 对象存在但 dailyCapacityPriceWei 为 null，
@@ -282,7 +309,8 @@ var TapePrice = (function () {
 
   /*
    * 后台定时拉取 BEM / 矿机日产价（并发、互不牵连），再把内容脚本采集的 TapeUP 内盘价并入。
-   * 某项失败 / 暂无成交样本时沿用上一次缓存并打 stale，不让面板闪成 "--"，也不拿旧值误报。
+   * 矿机日产价走 /v1/circuit-holders 的实时挂单参考价；某项失败 / 暂无有效报价时
+   * 沿用上一次缓存并打 stale，不让面板闪成 "--"，也不拿旧值误报。
    */
   function fetchSnapshot(fetchImpl, prev, cachedUp) {
     var f = fetchImpl || (typeof fetch === 'function' ? fetch : null);
@@ -307,10 +335,10 @@ var TapePrice = (function () {
             items[k] = Object.assign({}, parsed, { stale: false });
           } else if (isObj(old[k]) && old[k].value != null) {
             items[k] = Object.assign({}, old[k], { stale: true });
-            errors.push(META[k].label + '：' + (r && r.ok ? '暂无最新成交样本' : '接口暂不可用 ' + r.error));
+            errors.push(META[k].label + '：' + (r && r.ok ? (k === 'miner' ? '暂无有效挂单参考价' : '暂无最新成交样本') : '接口暂不可用 ' + r.error));
           } else {
             items[k] = { key: k, value: null, changePct: null, asOf: null, stale: true };
-            errors.push(META[k].label + '：' + (r && r.ok ? '暂无最新成交样本' : '接口暂不可用 ' + (r && r.error)));
+            errors.push(META[k].label + '：' + (r && r.ok ? (k === 'miner' ? '暂无有效挂单参考价' : '暂无最新成交样本') : '接口暂不可用 ' + (r && r.error)));
           }
         });
         var up = mergeUp(prev, cachedUp);

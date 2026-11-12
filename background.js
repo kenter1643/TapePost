@@ -1052,8 +1052,9 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
 /* =====================================================================
  * 1.4.13：TapeOut 行情卡片 + 价格上下限提醒
  *
- *  · 定时（chrome.alarms）抓 Firsto 官方 analytics（BEM / 矿机日产价）；
- *    TapeUP $UP 内盘价不走后台 fetch（tapeup.io 整站 Cloudflare 防护），由内容脚本采集后缓存；
+ *  · 定时（chrome.alarms）抓 BEM（analytics）与矿机日产价（1.4.20 起改 /v1/circuit-holders，
+ *    即 /circuits/other 页顶实时挂单参考价）；TapeUP $UP 内盘价不走后台 fetch
+ *    （tapeup.io 整站 Cloudflare 防护），由内容脚本采集后缓存；
  *  · 价格越过设定的上/下限时，发系统通知 + 给所有标签页广播右下角浮层；
  *  · 通知点击直接打开 Firsto 交易所对应数据页；
  *  · 只有「从区间内跨到区间外」提醒一次，不会每分钟重复轰炸（见 price.js）。

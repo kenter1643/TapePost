@@ -137,7 +137,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.19</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.20</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 295 条链接核验。发送始终由你手动完成。</p>
 
   <!-- 1.4.13：面板顶端三项实时行情，点卡片进 Firsto 交易所 -->
@@ -153,7 +153,7 @@
         <span class="pc-value" id="priceValueUp">—</span>
         <span class="pc-change" id="priceChangeUp">—</span>
       </button>
-      <button class="price-card" type="button" data-price-key="miner" title="矿机日产能价，单位 BNB（Firsto 官方 analytics）；点击进入 Firsto">
+      <button class="price-card" type="button" data-price-key="miner" title="矿机日产能价，单位 BNB；取自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」（当前有效挂单中位数）；点击进入该页面">
         <span class="pc-label">矿机日产 · BNB</span>
         <span class="pc-value" id="priceValueMiner">—</span>
         <span class="pc-change" id="priceChangeMiner">—</span>
@@ -217,7 +217,7 @@
     </div>
     <div id="priceStatus" class="tiny"></div>
     <p class="tiny">留空＝不监控该方向；只在「从区间内跨到区间外」时提醒一次，不会一直弹。改完阈值记得点保存。
-      BEM / 矿机日产能价来自 Firsto 官方 analytics（公开只读）；TapeUP $UP 内盘价来自 tapeup.io 交易页（UP 以 BEM 计价，即 UP/BEM，需打开该页后由扩展自动采集，关闭后沿用缓存）。均免登录免 Key、不上传任何本机数据。行情仅供参考，不构成投资建议。</p>
+      BEM 来自 Firsto 官方 analytics；矿机日产能价来自 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」的同源只读接口（当前有效挂单中位数，实时，1.4.20 起不再用滞后的 24h 成交均价）；TapeUP $UP 内盘价来自 tapeup.io 交易页（UP 以 BEM 计价，即 UP/BEM，需打开该页后由扩展自动采集，关闭后沿用缓存）。均免登录免 Key、不上传任何本机数据。行情仅供参考，不构成投资建议。</p>
   </details>
 
   <div class="me">
@@ -359,7 +359,7 @@
     </div>
 
     <div class="mode-hint" style="margin:0 0 10px">
-      <b>当前 v1.4.19</b>：版本号现在直接显示在「TapePost」旁边——弹窗标题右侧、X 页面 T 按钮左侧、生态面板标题旁都常驻显示，打开即可核对重载是否生效，不用再把鼠标悬在按钮上看提示；三处数值统一从 manifest 读取。1.4.18 的 AI 评论极简提示词、1.4.17 的 TapeUP 内盘价（UP/BEM 计价）、1.4.13 的行情卡片与价格提醒均保持不变；到 chrome://extensions 点「重新加载」后刷新一次 X 页面即可。
+      <b>当前 v1.4.20</b>：矿机日产价改从 tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」取数（同源只读接口 /v1/circuit-holders，当前有效挂单中位数，实时），不再用会滞后的 24h 小时成交均价；点矿机卡直达该页面。因参考价无同口径 24h 序列，矿机卡不再显示涨跌，改标「挂单参考价」。版本号仍常驻显示在 TapePost 旁边（弹窗标题右侧、X 页面 T 按钮左侧、生态面板标题旁），统一从 manifest 读取。到 chrome://extensions 点「重新加载」后刷新一次 X 页面即可。
       <button type="button" class="infobtn" data-info="versions">版本说明</button>
     </div>
 
