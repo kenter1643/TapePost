@@ -401,7 +401,6 @@ async function runVerify() {
 }
 
 function initPanel() {
-  if (ME && ME.community) document.getElementById('meBadge').textContent = ME.community;
   renderStats();
   renderCards();
   renderReference();

@@ -1,10 +1,5 @@
 'use strict';
 
-const ACCOUNT = (typeof X_ACCOUNT !== 'undefined') ? X_ACCOUNT : {
-  name: '昆哥', handle: 'YikunChen1983', url: 'https://x.com/YikunChen1983',
-  community: 'TapeOut社区成员：昆哥'
-};
-
 // 已取消「需去水印作者 UID」列表；图片/视频都改由全局开关控制。
 // 换用新 key，让旧版保存的 alwaysInpaint / watermarkUids 自动失效，避免旧设置盖掉新默认值。
 const PAGE_DEFAULTS = (typeof TapeAI !== 'undefined' && TapeAI.PAGE_MODE_DEFAULTS)
@@ -81,38 +76,6 @@ function sendBg(msg, cb) {
     });
   } catch (e) {
     try { done(null, e); } catch (e2) {}
-  }
-}
-
-function renderAccount() {
-  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
-  set('meAvatar', (ACCOUNT.name || '昆').slice(0, 1));
-  set('meName', ACCOUNT.name);
-  set('meHandle', '@' + ACCOUNT.handle);
-  // 社区身份标注：只展示在设置面板，不追加到转发正文（不影响已验证的清洗结果）
-  const badge = document.getElementById('meBadge');
-  if (badge) {
-    const label = ACCOUNT.community || '';
-    badge.textContent = label;
-    badge.hidden = !label;
-  }
-  const link = document.getElementById('meLink');
-  if (link) {
-    link.href = ACCOUNT.url;
-    link.textContent = ACCOUNT.url.replace(/^https?:\/\//, '') + ' ↗';
-  }
-  const copy = document.getElementById('copyLink');
-  if (copy) {
-    copy.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(ACCOUNT.url);
-        copy.textContent = '已复制 ✓';
-        setTimeout(() => { copy.textContent = '复制主页链接'; }, 1500);
-      } catch (e) {
-        copy.textContent = '复制失败，请手动复制';
-        setTimeout(() => { copy.textContent = '复制主页链接'; }, 1800);
-      }
-    });
   }
 }
 
@@ -450,7 +413,6 @@ function runDiagnostics() {
   }
 }
 
-renderAccount();
 const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
 bind('save', save);
 bind('check', runDiagnostics);
@@ -814,7 +776,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.4.24 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.4.25 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

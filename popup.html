@@ -12,23 +12,7 @@
               letter-spacing: .2px; white-space: nowrap; }
     .sub { font-size: 12px; color: #888; margin: 0 0 12px; line-height: 1.5; }
 
-    .me { display: flex; align-items: center; gap: 10px; padding: 10px; margin: 0 0 12px;
-          border: 1px solid #ffd9b3; border-radius: 10px; background: #fff8f1; }
-    .avatar { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 50%; background: #ff7800;
-              color: #fff; font-size: 18px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-    .me-info { min-width: 0; flex: 1; }
-    .me-name { font-size: 14px; font-weight: 700; line-height: 1.3; }
-    .me-name span { font-size: 12px; font-weight: 400; color: #888; }
-    .me-link { font-size: 12px; color: #1a7fd4; text-decoration: none; display: block; margin-top: 2px; }
-    .me-link:hover { text-decoration: underline; }
-    .mini { width: auto; margin: 6px 0 0; padding: 3px 8px; font-size: 11px; font-weight: 500;
-            border: 1px solid #ffd0a6; border-radius: 6px; background: #fff; color: #d96300; cursor: pointer; }
-    .mini:hover { background: #fff1e4; }
-    .me-badge { display: inline-block; margin: 8px 0 0; padding: 4px 9px; border-radius: 6px;
-                background: linear-gradient(90deg, #ff7800, #ff9d3d); color: #fff;
-                font-size: 11px; font-weight: 700; letter-spacing: .3px; line-height: 1.4;
-                box-shadow: 0 2px 6px rgba(255,120,0,.25); }
-    .me-badge[hidden] { display: none; }
+    /* 1.4.25：个人介绍卡（头像 / 名字 / 主页链接 / 社区徽章）已整体移除 */
 
     label { display: block; font-size: 13px; margin: 10px 0 4px; font-weight: 600; }
     .sites { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 6px 0 2px; }
@@ -150,7 +134,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.24</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.4.25</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
   <!-- 1.4.24：只留数字的上中下三块（① TapeUP / ② 矿机日产 / ③ BEM），点卡片进对应页面 -->
@@ -237,16 +221,6 @@
     <div id="priceStatus" class="tiny"></div>
     <p class="tiny">留空＝不监控该方向；只在「从区间内跨到区间外」时提醒一次。<b>TapeUP 阈值按 BEM/UP 填</b>（卡片副行那个数），矿机按 BNB、BEM 按 USD。改完记得点保存。</p>
   </details>
-
-  <div class="me">
-    <div class="avatar" id="meAvatar">昆</div>
-    <div class="me-info">
-      <div class="me-name"><strong id="meName">昆哥</strong> <span id="meHandle">@YikunChen1983</span></div>
-      <a class="me-link" id="meLink" href="https://x.com/YikunChen1983" target="_blank">x.com/YikunChen1983 ↗</a>
-      <button class="mini" id="copyLink" type="button">复制主页链接</button>
-      <div class="me-badge" id="meBadge">TapeOut社区成员：昆哥</div>
-    </div>
-  </div>
 
   <button id="openPanel" type="button">🛡 打开 TapeOut 生态面板（295 条绿标 + 链接核验）</button>
 
