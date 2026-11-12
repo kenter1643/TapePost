@@ -112,8 +112,9 @@ async function processOne(url, inpaintOpts, hd4k) {
   const { imgData, canvas, ctx } = await decodeToImageData(buf);
   let wm = null;
   if (inpaintOpts && inpaintOpts.enabled && Inpaint) {
-    // 1.4.27：所有站点逐张走全图多区域检测（右下角 / 左下角 / 顶部 / 中间），
-    // 只改疑似水印像素；旧版单区域入口保留作兼容兜底。
+    // 1.4.28：所有站点逐张走「局部对比 + 全图重叠瓦片扫描」，拼接长图中间、
+    // 多帧重复、任意位置的水印都能各自定位；只改水印条带掩膜像素。
+    // 旧版单区域入口保留作兼容兜底。
     try {
       wm = (inpaintOpts.fullScan && Inpaint.removeWatermarks)
         ? Inpaint.removeWatermarks(imgData, inpaintOpts)

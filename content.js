@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.4.27';
+  return 'v1.4.28';
 })();
 
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值
@@ -39,8 +39,8 @@ const PAGE_PATH = (typeof location !== 'undefined' && location && location.pathn
 
 const SETTINGS_DEFAULT = {
   // 已取消「需去水印作者 UID」列表，图片/视频都由全局开关控制
-  inpaintImages: true,           // 1.4.27：所有站点所有图片逐张去水印（全图多区域）
-  hd4k: true,                    // 1.4.27：逐张高保真放大到 4K（长边 3840），PNG 无损
+  inpaintImages: true,           // 1.4.28：所有站点所有图片逐张去水印（全图多区域）
+  hd4k: true,                    // 1.4.28：逐张高保真放大到 4K（长边 3840），PNG 无损
   inpaintVideo: true,            // 对所有视频去水印（优先取 HD 原片）
   xDomain: 'x.com',
   hashMode: 'truncate',          // truncate(删 # 及后) | stripTopics(只删话题块) | keep(不动)
@@ -1053,7 +1053,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.27';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.4.28';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1644,7 +1644,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.4.27 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost v1.4.28 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
@@ -1839,7 +1839,7 @@ async function onRepost(card, btn) {
   const inpaintImages = !!settings.inpaintImages;
   const hd4k = settings.hd4k !== false;
   const inpaintVideo = !!settings.inpaintVideo;
-  /* 1.4.27：不再按站点跳过——7 个站点的每张内容图都逐张走全图多区域检测
+  /* 1.4.28：不再按站点跳过——7 个站点的每张内容图都逐张走全图多区域检测
    * （右下角 / 左下角 / 顶部 / 中间），检测不到水印的图仍照常输出 4K 版本。 */
   const wmEnabled = inpaintImages;
   // 视频 HD 原片接口是微博专属，其他站直接取页面直链
@@ -2328,9 +2328,12 @@ async function handleResult(msg) {
   const video = msg.video || null;
   const wmDone = results.filter((r) => r.ok && r.wm && r.wm.changed).length;
   const wmSkip = results.filter((r) => r.ok && r.wm && !r.wm.changed).length;
-  // 1.4.27：逐张核对用了几处水印区域、几张真正放大到 4K
+  // 1.4.28：逐张核对命中几处水印、具体在画面哪个方位、几张真正放大到 4K
   const wmRegions = results.reduce((n, r) =>
     n + ((r.ok && r.wm && r.wm.regions && r.wm.regions.length) || 0), 0);
+  const wmPlaces = [...new Set(results.reduce((arr, r) => arr.concat(
+    ((r.ok && r.wm && r.wm.regions) || []).map((x) => x.name).filter(Boolean)), []))]
+    .slice(0, 4).join(' / ');
   const upDone = results.filter((r) =>
     r.ok && r.up && r.up.to && r.up.from && r.up.to[0] > r.up.from[0]).length;
 
@@ -2401,7 +2404,7 @@ async function handleResult(msg) {
   if (!opened && !multi) tip += '（X 弹窗被拦截/打不开，已尝试把文字复制到剪贴板）';
   if (!images.length && !video) tip += ' 无媒体，仅文字。';
   if (wmDone || wmSkip || upDone) {
-    tip += ` 图片逐张处理：去水印 ${wmDone} 张（命中 ${wmRegions} 处：右下角 / 中间 / 顶部等）` +
+    tip += ` 图片逐张处理：去水印 ${wmDone} 张（命中 ${wmRegions} 处${wmPlaces ? '：' + wmPlaces : ''}）` +
       (wmSkip ? `、${wmSkip} 张未检出（原图像素不动）` : '') +
       (upDone ? `；4K 输出 ${upDone} 张` : '') + '。';
   }

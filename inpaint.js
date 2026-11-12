@@ -1,5 +1,9 @@
 /*
- * inpaint.js — 纯 JS 微博水印去除（不依赖 OpenCV / wasm）
+ * inpaint.js — 纯 JS 图片水印去除（不依赖 OpenCV / wasm）
+ *
+ * 1.4.28 检测链路：局部对比（top-hat）亮笔画 → 全图重叠瓦片扫描 → 水平水印条带
+ *   → 条带内放宽掩膜（含半透明抗锯齿边缘）→ 局部真实纹理加权填充。
+ *   覆盖拼接长图里任意位置的水印（右下角、中间、顶部、多帧重复水印）。
  *
  * 为什么不用「把右下角整块矩形填掉」：
  *   实测微博水印只是底部一条白色文字 + logo（约 y>=0.95H、高 40px 左右），
@@ -330,6 +334,247 @@
     bfsFillMask(imgData.data, W, H, mask, box);
   }
 
+  // ---------- 1.4.28：局部对比 + 全图瓦片扫描，任意位置水印 ----------
+  /*
+   * 1.4.27 的「整块大区域做行列投影」有致命缺陷：区域里只要有一片更亮的
+   * 天花板灯 / 白墙 / 反光，投影就会把那片大亮块当成水印，包围盒被撑爆后整块跳过；
+   * 真正的小水印（例如拼接长图中间的「微博眼睛 + @用户名」）反而漏掉。
+   *
+   * 1.4.28 改为两步：
+   *   1. 用积分图算每个像素的局部均值背景，只保留「比周围明显亮的低饱和细笔画」
+   *      （top-hat）。大片均匀亮区的 L≈背景，会被自然抵消，不会被误判成水印。
+   *   2. 把整图划成两档重叠瓦片（256x160 / 384x240），每块只找「水平细条带」：
+   *      宽高比 ≥2.5、笔画稀疏但成串、列投影多次跳变。灯、白墙、噪点都不满足。
+   *      瓦片覆盖全图，因此拼接长图里任意 y 位置、重复出现的水印都能各自框出。
+   *   3. 条带确认后，在条带内放宽阈值重建掩膜，把半透明抗锯齿边缘一起纳入；
+   *      再对每个掩膜像素，用周围真实背景像素的距离加权平均 + 轻微颗粒重建，
+   *      只改掩膜像素，不整块矩形覆盖，避免拉丝 / 斑块 / 糊块。
+   */
+  const TILE_DEFAULTS = {
+    radiusMin: 5, radiusMax: 14,   // 局部背景半径 = clamp(min(W,H)/90, ...)
+    lumStrong: 175, deltaStrong: 18, satStrong: 40,   // 亮笔画（强种子）
+    lumBand: 140, deltaBand: 6, satBand: 70,          // 条带内放宽：覆盖半透明边缘
+    bandDilate: 1,
+    tileW: 256, tileH: 160, stepX: 96, stepY: 70,     // 第一档瓦片
+    tileW2: 384, tileH2: 240, stepX2: 144, stepY2: 105, // 第二档瓦片
+    rowThrRatio: 0.022, rowGap: 3, rowMin: 5, rowMax: 50,
+    colGap: 8, colMin: 35, colMax: 340, colThrRatio: 0.18,
+    densMin: 0.03, densMax: 0.45, jumpsMin: 4, ratioMin: 2.5,
+    mergeY: 14, mergeX: 36,
+    expandGap: 14, expandLimit: 90, bandPadY: 4, boxPad: 6,
+    maxBoxes: 4,
+    fillRadius: 6, grain: 0.8,
+    maxPixels: 20000000
+  };
+
+  /** 预计算亮度 / 饱和度 / 局部均值背景（积分图）/ 强种子笔画 */
+  function buildStrokeMask(data, W, H, o) {
+    const N = W * H;
+    const lum = new Float32Array(N), satv = new Float32Array(N);
+    for (let p = 0; p < N; p++) {
+      const i = p * 4, r = data[i], g = data[i + 1], b = data[i + 2];
+      lum[p] = 0.299 * r + 0.587 * g + 0.114 * b;
+      satv[p] = Math.max(r, g, b) - Math.min(r, g, b);
+    }
+    const rad = clamp(Math.round(Math.min(W, H) / 90), o.radiusMin, o.radiusMax);
+    const SW = W + 1, integ = new Float64Array(SW * (H + 1));
+    for (let y = 0; y < H; y++) {
+      let row = 0;
+      for (let x = 0; x < W; x++) {
+        row += lum[y * W + x];
+        integ[(y + 1) * SW + x + 1] = integ[y * SW + x + 1] + row;
+      }
+    }
+    const bgAt = (x, y) => {
+      const x0 = Math.max(0, x - rad), x1 = Math.min(W - 1, x + rad);
+      const y0 = Math.max(0, y - rad), y1 = Math.min(H - 1, y + rad);
+      const v = integ[(y1 + 1) * SW + x1 + 1] - integ[y0 * SW + x1 + 1] -
+        integ[(y1 + 1) * SW + x0] + integ[y0 * SW + x0];
+      return v / ((x1 - x0 + 1) * (y1 - y0 + 1));
+    };
+    const strong = new Uint8Array(N);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const p = y * W + x;
+        if (satv[p] < o.satStrong && lum[p] > o.lumStrong &&
+          lum[p] - bgAt(x, y) > o.deltaStrong) strong[p] = 1;
+      }
+    }
+    return { lum, satv, bgAt, strong };
+  }
+
+  /** 找「连续密集」区间，允许 gap 空隙（字符间隙），限制最小/最大长度 */
+  function denseSegments(counts, thr, gap, minLen, maxLen) {
+    const out = [];
+    let start = -1, last = -1;
+    for (let i = 0; i < counts.length; i++) {
+      if (counts[i] >= thr) {
+        if (start < 0) start = i;
+        else if (i - last > gap) {
+          if (last - start + 1 >= minLen && last - start + 1 <= maxLen) out.push([start, last]);
+          start = i;
+        }
+        last = i;
+      }
+    }
+    if (start >= 0 && last - start + 1 >= minLen && last - start + 1 <= maxLen) out.push([start, last]);
+    return out;
+  }
+
+  /** 全图两档重叠瓦片扫描 → 水平水印条带（合并同行片段 + 行内左右扩展） */
+  function findWatermarkBands(strong, W, H, o) {
+    const cands = [];
+    const tiles = [
+      [o.tileW, o.tileH, o.stepX, o.stepY],
+      [o.tileW2, o.tileH2, o.stepX2, o.stepY2]
+    ];
+    for (const t of tiles) {
+      const TW = Math.min(t[0], W), TH = Math.min(t[1], H);
+      const SX = Math.max(1, Math.round(t[2] * TW / t[0]));
+      const SY = Math.max(1, Math.round(t[3] * TH / t[1]));
+      if (TW < 40 || TH < 24) continue;
+      for (let ty = 0; ty <= H - TH; ty += SY) {
+        for (let tx = 0; tx <= W - TW; tx += SX) {
+          const row = new Int32Array(TH);
+          for (let y = 0; y < TH; y++) {
+            let c = 0; const base = (ty + y) * W;
+            for (let x = 0; x < TW; x++) c += strong[base + tx + x];
+            row[y] = c;
+          }
+          const rows = denseSegments(row, Math.max(4, Math.round(TW * o.rowThrRatio)),
+            o.rowGap, o.rowMin, o.rowMax);
+          for (const seg of rows) {
+            const ry0 = seg[0], ry1 = seg[1], rh = ry1 - ry0 + 1;
+            const col = new Int32Array(TW);
+            for (let x = 0; x < TW; x++) {
+              let c = 0;
+              for (let y = ry0; y <= ry1; y++) c += strong[(ty + y) * W + tx + x];
+              col[x] = c;
+            }
+            const cols = denseSegments(col, Math.max(1, Math.round(rh * o.colThrRatio)),
+              o.colGap, o.colMin, o.colMax);
+            for (const cs of cols) {
+              const cx0 = cs[0], cx1 = cs[1], bw = cx1 - cx0 + 1;
+              let hits = 0;
+              for (let y = ry0; y <= ry1; y++) {
+                const base = (ty + y) * W;
+                for (let x = cx0; x <= cx1; x++) hits += strong[base + tx + x];
+              }
+              const dens = hits / (bw * rh);
+              let jumps = 0;
+              for (let x = cx0 + 1; x <= cx1; x++) if ((col[x - 1] > 0) !== (col[x] > 0)) jumps++;
+              if (dens < o.densMin || dens > o.densMax || jumps < o.jumpsMin ||
+                bw / rh < o.ratioMin) continue;
+              cands.push({ x0: tx + cx0, y0: ty + ry0, x1: tx + cx1, y1: ty + ry1,
+                score: dens * 100 + jumps * 0.4 + Math.min(bw / rh, 12) * 0.5 });
+            }
+          }
+        }
+      }
+    }
+    if (!cands.length) return [];
+    // 同一水平行的相邻片段合并（字符间隙 / 瓦片边界会把一串文字切开）
+    cands.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
+    const merged = [];
+    for (const c of cands) {
+      let hit = null;
+      for (const m of merged) {
+        const cy = (c.y0 + c.y1) / 2, my = (m.y0 + m.y1) / 2;
+        if (Math.abs(cy - my) < o.mergeY && c.x0 - m.x1 < o.mergeX && m.x0 - c.x1 < o.mergeX) {
+          hit = m; break;
+        }
+      }
+      if (hit) {
+        hit.x0 = Math.min(hit.x0, c.x0); hit.x1 = Math.max(hit.x1, c.x1);
+        hit.y0 = Math.min(hit.y0, c.y0); hit.y1 = Math.max(hit.y1, c.y1);
+        hit.score = Math.max(hit.score, c.score);
+      } else merged.push({ x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, score: c.score });
+    }
+    // 行内左右扩展：把 logo / 前后字符一起吞进来
+    const colHas = (x, y0, y1) => {
+      let c = 0;
+      for (let y = y0; y <= y1; y++) c += strong[y * W + x];
+      return c > 0;
+    };
+    for (const m of merged) {
+      const ey0 = Math.max(0, m.y0 - o.bandPadY), ey1 = Math.min(H - 1, m.y1 + o.bandPadY);
+      let x = m.x0 - 1, gap = 0, left = m.x0;
+      while (x >= 0 && m.x0 - x <= o.expandLimit) {
+        if (colHas(x, ey0, ey1)) { left = x; gap = 0; }
+        else if (++gap > o.expandGap) break;
+        x--;
+      }
+      x = m.x1 + 1; gap = 0;
+      let right = m.x1;
+      while (x < W && x - m.x1 <= o.expandLimit) {
+        if (colHas(x, ey0, ey1)) { right = x; gap = 0; }
+        else if (++gap > o.expandGap) break;
+        x++;
+      }
+      m.x0 = left; m.x1 = right; m.y0 = ey0; m.y1 = ey1;
+    }
+    // 去掉彼此高度重叠的重复框，只留分数最高的若干个
+    merged.sort((a, b) => b.score - a.score);
+    const kept = [];
+    for (const m of merged) {
+      let dup = false;
+      for (const k of kept) {
+        const iw = Math.min(m.x1, k.x1) - Math.max(m.x0, k.x0);
+        const ih = Math.min(m.y1, k.y1) - Math.max(m.y0, k.y0);
+        if (iw > 0 && ih > 0 && (iw * ih) / Math.min(
+          (m.x1 - m.x0 + 1) * (m.y1 - m.y0 + 1),
+          (k.x1 - k.x0 + 1) * (k.y1 - k.y0 + 1)) > 0.4) { dup = true; break; }
+      }
+      if (!dup) kept.push(m);
+      if (kept.length >= o.maxBoxes) break;
+    }
+    return kept;
+  }
+
+  function positionName(cx, cy, W, H) {
+    const hx = cx / W, hy = cy / H;
+    const v = hy < 0.33 ? '上' : (hy > 0.66 ? '下' : '中');
+    const h = hx < 0.33 ? '左' : (hx > 0.66 ? '右' : '中');
+    return (v === '中' && h === '中') ? '中间' : (h + v);
+  }
+
+  /**
+   * 局部真实纹理加权填充：每个掩膜像素只由它周围非掩膜的真实背景像素决定，
+   * 按距离加权（并略偏水平），加一点确定性颗粒，避免按列插值的拉丝、
+   * 也避免从边界向内扩散带来的斑块。
+   */
+  function localTextureFill(data, W, H, mask, box, o) {
+    const src = data.slice();
+    const { bx0, by0, bx1, by1 } = box, bw = bx1 - bx0 + 1, R = o.fillRadius;
+    const inM = (x, y) => {
+      if (x < bx0 || x > bx1 || y < by0 || y > by1) return false;
+      return mask[(y - by0) * bw + (x - bx0)] === 1;
+    };
+    for (let y = by0; y <= by1; y++) {
+      for (let x = bx0; x <= bx1; x++) {
+        if (!inM(x, y)) continue;
+        let r = 0, g = 0, b = 0, wsum = 0;
+        for (let dy = -R; dy <= R; dy++) {
+          for (let dx = -R; dx <= R; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H || inM(nx, ny)) continue;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > R * R || d2 === 0) continue;
+            const w = (1 / (d2 + 1)) * (1 + 0.6 * Math.exp(-Math.abs(dy) / 2));
+            const ni = (ny * W + nx) * 4;
+            r += src[ni] * w; g += src[ni + 1] * w; b += src[ni + 2] * w; wsum += w;
+          }
+        }
+        if (wsum === 0) continue;
+        const idx = (y * W + x) * 4;
+        const j = ((((x * 73856093) ^ (y * 19349663)) % 7) - 3) * o.grain;
+        data[idx] = r / wsum + j;
+        data[idx + 1] = g / wsum + j;
+        data[idx + 2] = b / wsum + j;
+      }
+    }
+  }
+
   // ---------- 1.4.27：全图逐区域去水印（右下角 / 左下角 / 顶部 / 中间） ----------
   /*
    * 旧版只找「底部一条白字」，其它站、中间 logo、角落半透明水印一律放过。
@@ -506,21 +751,57 @@
   }
 
   /**
-   * 1.4.27 主入口：所有站点、所有图片逐张调用；右下角 / 左下角 / 顶部 / 中间
-   * 全部扫一遍，每个区域独立判定，只改疑似水印像素。
+   * 1.4.28 主入口：所有站点、所有图片逐张调用。
+   * 全图瓦片扫描，任意位置（含拼接长图中间、多帧重复）的亮色水印都能各自定位；
+   * 检测不到水印时原图像素一个字节都不改。
    * @returns {{changed:boolean, reason:string, regions:Array, pixels:number, method:string}}
    */
   function removeWatermarks(imgData, opts) {
-    const o = Object.assign({}, FULL_DEFAULTS, opts || {});
+    const o = Object.assign({}, TILE_DEFAULTS, opts || {});
     const W = imgData.width, H = imgData.height, data = imgData.data;
     if (W < 64 || H < 64) return { changed: false, reason: '图片过小，跳过', regions: [], pixels: 0 };
-    const orig = data.slice();          // 检测统一基于原图，避免连锁误检
-    const regions = [], done = [];
-    for (const rect of REGIONS) {
-      let r;
-      try { r = scanRegion(orig, data, W, H, rect, o, done); }
-      catch (e) { r = { changed: false, reason: '区域异常：' + String(e && e.message || e) }; }
-      if (r && r.changed) { regions.push(r); done.push(r.box); }
+    if (W * H > o.maxPixels) {
+      return { changed: false, reason: '图片过大，跳过本机处理', regions: [], pixels: 0 };
+    }
+    let ctx, bands;
+    try {
+      ctx = buildStrokeMask(data, W, H, o);   // 全部基于原图快照
+      bands = findWatermarkBands(ctx.strong, W, H, o);
+    } catch (e) {
+      return { changed: false, reason: '检测失败：' + String(e && e.message || e),
+        regions: [], pixels: 0 };
+    }
+    if (!bands.length) {
+      return { changed: false, reason: '未检测到水印', regions: [], pixels: 0 };
+    }
+    const regions = [];
+    for (const b of bands) {
+      const box = {
+        bx0: Math.max(0, b.x0 - o.boxPad), by0: Math.max(0, b.y0 - o.boxPad),
+        bx1: Math.min(W - 1, b.x1 + o.boxPad), by1: Math.min(H - 1, b.y1 + o.boxPad)
+      };
+      const bw = box.bx1 - box.bx0 + 1, bh = box.by1 - box.by0 + 1;
+      if (bw < 8 || bh < 3) continue;
+      // 条带已确认是水印：放宽阈值，把半透明抗锯齿边缘一并纳入掩膜
+      const m = new Uint8Array(bw * bh);
+      for (let y = 0; y < bh; y++) {
+        for (let x = 0; x < bw; x++) {
+          const gx = box.bx0 + x, gy = box.by0 + y, p = gy * W + gx;
+          const d = ctx.lum[p] - ctx.bgAt(gx, gy);
+          if (ctx.strong[p] || (ctx.satv[p] < o.satBand && d > o.deltaBand &&
+            ctx.lum[p] > o.lumBand)) m[y * bw + x] = 1;
+        }
+      }
+      const grown = dilateMask(m, bw, bh, o.bandDilate);
+      let hits = 0;
+      for (let i = 0; i < grown.length; i++) hits += grown[i];
+      if (hits === 0) continue;
+      try { localTextureFill(data, W, H, grown, box, o); }
+      catch (e) { continue; }
+      regions.push({
+        name: positionName((box.bx0 + box.bx1) / 2, (box.by0 + box.by1) / 2, W, H),
+        pixels: hits, coverage: hits / (bw * bh), box: box
+      });
     }
     const pixels = regions.reduce((n, r) => n + (r.pixels || 0), 0);
     return {
@@ -528,12 +809,13 @@
       reason: regions.length ? '' : '未检测到水印',
       regions: regions,
       pixels: pixels,
-      method: 'region-mask-interp'
+      method: 'tile-tophat-local'
     };
   }
 
   const api = { removeWatermark, removeWatermarks, inpaintCorner,
-    DEFAULTS, FULL_DEFAULTS, DEFAULT_REGION, REGIONS };
+    DEFAULTS, FULL_DEFAULTS, DEFAULT_REGION, REGIONS, TILE_DEFAULTS,
+    buildStrokeMask, findWatermarkBands, localTextureFill };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.Inpaint = api;
 })(typeof self !== 'undefined' ? self : this);
