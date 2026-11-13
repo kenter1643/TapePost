@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.6.1';
+  return 'v1.5.2';
 })();
 
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值
@@ -133,7 +133,7 @@ function injectStyle() {
     display:inline-flex;align-items:center;gap:4px;
   }
   .wbx-btn-group .wbx-repost-btn,.wbx-btn-group .wbx-comment-btn{position:static;}
-  /* 1.6.1：视频播放器图层层级很高，普通 z-index:20 的按钮会被封面盖住 */
+  /* 1.5.2：视频播放器图层层级很高，普通 z-index:20 的按钮会被封面盖住 */
   .wbx-btn-group.wbx-btn-group-video{top:6px;right:8px;z-index:2147483000;}
   .wbx-comment-btn{
     display:inline-flex;align-items:center;gap:2px;
@@ -379,7 +379,7 @@ function injectStyle() {
   #wbx-lightbox.wbx-lb-actual .wbx-lb-img{
     max-width:none !important;max-height:none !important;cursor:zoom-out !important;
   }
-  /* 1.6.1：视频内容专属的悬浮转发条。
+  /* 1.5.2：视频内容专属的悬浮转发条。
    * 微博首页视频播放器 / /tv 视频频道没有正文节点、图层还自带高层级，
    * 普通卡片按钮会被裁掉或压在封面下。这里独立一套入口，挂在视频单元
    * 右上角，层级拉到最高，保证「一键转发」在视频上看得见、点得到。 */
@@ -400,7 +400,7 @@ function injectStyle() {
   .wbx-video-entry .wbx-fwd-btn:hover{background:#ff8c1a;}
   .wbx-video-entry .wbx-clip-btn{background:#1da1f2;box-shadow:0 1px 3px rgba(29,161,242,.5);}
   .wbx-video-entry .wbx-clip-btn:hover{background:#1589d1;}
-  /* 1.6：视频工作台 + 卡片上的「视频剪辑」快捷入口 */
+  /* 1.5.2：视频工作台 + 卡片上的「视频剪辑」快捷入口 */
   .wbx-video-btn{
     display:inline-flex;align-items:center;gap:2px;
     padding:0 6px;height:18px;border:none;border-radius:8px;cursor:pointer;
@@ -516,7 +516,7 @@ function upgradeImageUrl(url) {
  * 同一个内容单元解析，保证「看到哪条就转哪条」。
  */
 /*
- * 1.6.1：视频信号。
+ * 1.5.2：视频信号。
  * 微博的视频有三套完全不一样的 DOM：
  *   ① 首页信息流：article 里是播放器封面 + 「xxx的微博视频」链接，播放前没有 <video>；
  *   ② /tv 视频频道：网格卡片，既没有 article 也没有 feed_list 属性；
@@ -875,7 +875,7 @@ function findMediaRoot(card) {
         n.querySelector(VIDEO_SIGNAL_SEL))) return n;
     } catch (e) {}
   }
-  /* 1.6.1：播放器封面是 CSS 背景图、播放前没有 <video> 时，
+  /* 1.5.2：播放器封面是 CSS 背景图、播放前没有 <video> 时，
    * 用视频链接 / 播放按钮的父容器当媒体根，别再退化成整张卡片。 */
   try {
     const sig = card.querySelector(VIDEO_SIGNAL_SEL);
@@ -1081,7 +1081,7 @@ function extractBid(card) {
       m = /(?:m\.weibo\.cn\/status\/|\/detail\/|\/status\/)([A-Za-z0-9]{6,})/.exec(h);
       if (m) return m[1];
     }
-    /* 1.6.1：/tv 视频频道与 video.weibo.com 播放页没有 /uid/bid 形式的
+    /* 1.5.2：/tv 视频频道与 video.weibo.com 播放页没有 /uid/bid 形式的
      * 永久链接，只有 fid=1034:<16 位 mid>。公开接口同样按 id 接受 mid，
      * 拿它当兜底，工作台才有办法解析出 HD 原片。 */
     for (const a of card.querySelectorAll('a[href]')) {
@@ -1217,7 +1217,7 @@ function injectIntoCard(card) {
    * → 再扫描 → 无限自触发循环，按钮节点活不过几百毫秒，用户点击直接丢失。
    * 现在校验和保存统一用同一个 qfp，内容不变时一律早退、不再碰 DOM。
    */
-  /* 1.6.1：视频单元若已挂独立悬浮入口，不要再叠一组标准按钮，
+  /* 1.5.2：视频单元若已挂独立悬浮入口，不要再叠一组标准按钮，
    * 否则两套入口互相触发 MutationObserver，按钮会不停闪烁。 */
   const floating = card.querySelector && card.querySelector('.wbx-video-entry');
   if (floating) return;
@@ -1251,7 +1251,7 @@ function injectIntoCard(card) {
       if (v && v.parentElement) anchorNode = v.parentElement;
     }
   }
-  /* 1.6.1：视频卡片（首页播放器封面 / /tv 网格）常常一个正文节点都没有，
+  /* 1.5.2：视频卡片（首页播放器封面 / /tv 网格）常常一个正文节点都没有，
    * 旧版在这里直接 return，用户就看不到任何按钮。现在一律退回卡片本身，
    * 保证只要是内容单元就至少有一个可点入口。 */
   if (!anchorNode) anchorNode = card;
@@ -1278,7 +1278,7 @@ function injectIntoCard(card) {
   group.className = 'wbx-btn-group';
   group.appendChild(btn);
 
-  /* 1.6：视频卡片额外给一个直达「视频工作台」的入口。此前视频只走后台
+  /* 1.5.2：视频卡片额外给一个直达「视频工作台」的入口。此前视频只走后台
    * 下载原片 + 直接打开 X，页面上没有任何可见的视频操作，用户看不到
    * 「视频部分的一键转发」。 */
   if (post.hasVideo) {
@@ -2032,7 +2032,7 @@ function isXIntentPage() {
     p.indexOf('/compose/') === 0;
 }
 
-/* ---------- 1.6.1：视频内容的「一键转发」入口兜底 ----------
+/* ---------- 1.5.2：视频内容的「一键转发」入口兜底 ----------
  * 真机（2026-11-13，已登录 weibo.com）确认两处漏注入：
  *   ① 首页信息流的视频微博：播放前只有封面 + 播放按钮 + 「xxx的微博视频」
  *      链接，没有 <video>、也没有正文节点 → injectIntoCard 找不到锚点直接
@@ -2122,7 +2122,7 @@ function injectVideoEntries() {
 function scanAndInject() {
   if (!isXIntentPage()) {
     try { getCards().forEach(injectIntoCard); } catch (e) { /* ignore */ }
-    // 1.6.1：卡片选择器覆盖不到的视频单元（/tv 网格、首页播放器）在这里补齐
+    // 1.5.2：卡片选择器覆盖不到的视频单元（/tv 网格、首页播放器）在这里补齐
     try { injectVideoEntries(); } catch (e) { /* ignore */ }
   }
   // 回复框可能在时间线内联展开，也可能在 /compose/post 弹窗里，两种都要扫
@@ -2186,7 +2186,7 @@ async function onRepost(card, btn) {
         inpaint: wmEnabled ? { enabled: true, fullScan: true } : { enabled: false },
         hd4k,
         inpaintVideo: videoHd,
-        videoStudio: hasVideo      // 1.6：含视频时只解析地址，弹工作台后再按需取流
+        videoStudio: hasVideo      // 1.5.2：含视频时只解析地址，弹工作台后再按需取流
       }
     });
     if (btn) { btn.disabled = false; btn.textContent = '一键转发'; }
@@ -2646,7 +2646,7 @@ async function handleResult(msg) {
   const failed = failedItems.length;
   const failReason = failedItems.map((r) => r.error).filter(Boolean)[0];
   const video = msg.video || null;
-  /* 1.6：含视频的一键转发不再自动开窗（否则 X 抢焦点，工作台根本看不见），
+  /* 1.5.2：含视频的一键转发不再自动开窗（否则 X 抢焦点，工作台根本看不见），
    * 改为先弹本机视频工作台，由工作台上的按钮再打开 X。 */
   const studio = !!(video && video.mode === 'studio' && video.ok && video.url);
   const wmDone = results.filter((r) => r.ok && r.wm && r.wm.changed).length;
@@ -3165,7 +3165,7 @@ function showNotice(title, short, detail) {
   document.body.appendChild(box);
 }
 
-/* ---------- 1.6：视频工作台（剪接 + 逐帧去水印 + 导出 + 转发） ----------
+/* ---------- 1.5.2：视频工作台（剪接 + 逐帧去水印 + 导出 + 转发） ----------
  * 之前视频只走「后台下载原片 → 尝试写剪贴板 → 直接打开 X」，
  * 页面上没有任何可见的视频操作，也无法剪辑、无法真正逐帧去水印。
  * 现在含视频的一键转发会弹这个右下角工作台：

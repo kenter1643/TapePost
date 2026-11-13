@@ -306,7 +306,7 @@ async function handleProcess(msg) {
       const r = await resolveVideoUrl(payload.videoUrls, payload.bid, !!payload.inpaintVideo);
       if (r.url) {
         const source = r.hd ? 'HD 原片' : (r.fromApi ? '公开接口原片' : '页面直链');
-        /* 1.6：含视频的一键转发改为弹「视频工作台」，先只解析地址，不重复
+        /* 1.5.2：含视频的一键转发改为弹「视频工作台」，先只解析地址，不重复
          * 下载几十 MB 的原片——用户在工作台里选择剪接/去水印后再按需取流。 */
         if (payload.videoStudio) {
           videoState = { ok: true, mode: 'studio', url: r.url, source: source, hd: !!r.hd };
@@ -348,7 +348,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 保持消息通道打开以异步 sendResponse
   }
 
-  // 1.6 视频工作台：解析地址 / 下载原片 / 剪接 + 逐帧去水印导出
+  // 1.5.2 视频工作台：解析地址 / 下载原片 / 剪接 + 逐帧去水印导出
   if (msg.type === 'VIDEO_RESOLVE_OFFSCREEN' || msg.type === 'VIDEO_ORIGIN_OFFSCREEN' ||
       msg.type === 'PROCESS_VIDEO_OFFSCREEN') {
     const p = msg.payload || {};

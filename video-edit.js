@@ -1,5 +1,5 @@
 /*
- * video-edit.js — 1.6：离屏文档内的「视频剪接 + 逐帧去水印」引擎。
+ * video-edit.js — 1.5.2：离屏文档内的「视频剪接 + 逐帧去水印」引擎。
  *
  * 为什么放在 offscreen：
  *  - 视频 CDN 有 Referer / CORS 限制，扩展上下文 fetch 到 Blob 后再用同源

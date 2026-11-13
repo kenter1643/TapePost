@@ -975,7 +975,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 保持通道打开，异步 sendResponse
   }
 
-  /* 1.6 视频工作台：离屏文档把进度广播到 background，这里再转发给来源标签页。
+  /* 1.5.2 视频工作台：离屏文档把进度广播到 background，这里再转发给来源标签页。
    * 转发用 VIDEO_PROGRESS_UI 而不是原名，避免 background 自己的监听器
    * 再次收到同一条消息形成回环。两条路都发：tabs.sendMessage 最可靠，
    * runtime 广播作兜底；content 按 requestId + phase + percent 去重。 */
@@ -995,7 +995,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
-  // 1.6：解析视频地址 / 下载原片 / 剪接 + 逐帧去水印导出
+  // 1.5.2：解析视频地址 / 下载原片 / 剪接 + 逐帧去水印导出
   if (msg.type === 'VIDEO_RESOLVE' || msg.type === 'VIDEO_ORIGIN' || msg.type === 'VIDEO_EDIT') {
     const payload = Object.assign({}, msg.payload || {}, {
       tabId: (sender && sender.tab && sender.tab.id) || null
