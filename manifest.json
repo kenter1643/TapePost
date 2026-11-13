@@ -2,10 +2,10 @@
   "manifest_version": 3,
   "name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.5.1",
+  "version": "1.6",
   "author": "TapeOut 社区 · 昆哥",
   "minimum_chrome_version": "116",
-  "description": "7 站点一键转发到 X：逐张全图去水印 + 4K 高清、多图托盘放大浏览；免 Key 调用 X 自带 Grok 生成 3 条评论候选；内置 295 条生态导航核验与 TapeOut 实时行情提醒。",
+  "description": "7 站点一键转发到 X：图片逐张去水印 + 4K、视频本机剪接与逐帧去水印、多图放大浏览；免 Key 用 X 自带 Grok 生成评论；内置生态导航核验与行情提醒。",
   "action": {
     "default_popup": "popup.html",
     "default_title": "TapePost · 转发 / AI 评论 / 生态面板",

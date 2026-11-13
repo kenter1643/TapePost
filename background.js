@@ -975,6 +975,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 保持通道打开，异步 sendResponse
   }
 
+  /* 1.6 视频工作台：离屏文档把进度广播到 background，这里再转发给来源标签页。
+   * 转发用 VIDEO_PROGRESS_UI 而不是原名，避免 background 自己的监听器
+   * 再次收到同一条消息形成回环。两条路都发：tabs.sendMessage 最可靠，
+   * runtime 广播作兜底；content 按 requestId + phase + percent 去重。 */
+  if (msg.type === 'VIDEO_PROGRESS') {
+    const out = {
+      type: 'VIDEO_PROGRESS_UI',
+      requestId: msg.requestId || '',
+      phase: msg.phase || '',
+      percent: Number(msg.percent) || 0,
+      note: msg.note || ''
+    };
+    const swallow = () => { try { void chrome.runtime.lastError; } catch (e) {} };
+    try { chrome.runtime.sendMessage(out, swallow); } catch (e) {}
+    if (msg.tabId && chrome.tabs && chrome.tabs.sendMessage) {
+      try { chrome.tabs.sendMessage(msg.tabId, out, swallow); } catch (e) {}
+    }
+    return false;
+  }
+
+  // 1.6：解析视频地址 / 下载原片 / 剪接 + 逐帧去水印导出
+  if (msg.type === 'VIDEO_RESOLVE' || msg.type === 'VIDEO_ORIGIN' || msg.type === 'VIDEO_EDIT') {
+    const payload = Object.assign({}, msg.payload || {}, {
+      tabId: (sender && sender.tab && sender.tab.id) || null
+    });
+    const offType = msg.type === 'VIDEO_RESOLVE' ? 'VIDEO_RESOLVE_OFFSCREEN'
+      : (msg.type === 'VIDEO_ORIGIN' ? 'VIDEO_ORIGIN_OFFSCREEN' : 'PROCESS_VIDEO_OFFSCREEN');
+    (async () => {
+      try {
+        await ensureOffscreen();
+        const resp = await chrome.runtime.sendMessage({ type: offType, payload });
+        try { sendResponse(resp || { ok: false, error: '离屏文档无响应' }); } catch (e) {}
+      } catch (e) {
+        try { sendResponse({ ok: false, error: String(e && e.message || e) }); } catch (e2) {}
+      }
+    })();
+    return true;
+  }
+
   // 来自 content script：下载处理后的图片（可选备份 / 托盘手动下载）。
   // 注意：Service Worker 里没有 URL.createObjectURL（blob: URL 不可用），
   // 直接用 data: URL 交给 downloads API，避免下载静默失效。

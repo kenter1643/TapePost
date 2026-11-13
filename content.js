@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.1';
+  return 'v1.6';
 })();
 
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值
@@ -377,6 +377,75 @@ function injectStyle() {
   #wbx-lightbox.wbx-lb-actual .wbx-lb-img{
     max-width:none !important;max-height:none !important;cursor:zoom-out !important;
   }
+  /* 1.6：视频工作台 + 卡片上的「视频剪辑」快捷入口 */
+  .wbx-video-btn{
+    display:inline-flex;align-items:center;gap:2px;
+    padding:0 6px;height:18px;border:none;border-radius:8px;cursor:pointer;
+    background:#1da1f2;color:#fff;font-size:11px;line-height:18px;font-weight:600;
+    box-shadow:0 1px 2px rgba(29,161,242,.4);white-space:nowrap;
+  }
+  .wbx-video-btn:hover{background:#1589d1;}
+  #wbx-video-studio{
+    position:fixed !important;right:20px !important;bottom:20px !important;
+    z-index:2147483647 !important;width:360px !important;max-height:82vh !important;
+    overflow:auto !important;display:block !important;box-sizing:border-box !important;
+    background:#fff !important;color:#222 !important;border:2px solid #1da1f2 !important;
+    border-radius:14px !important;box-shadow:0 8px 32px rgba(0,0,0,.35) !important;
+    font-size:12px !important;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif !important;
+    animation:wbx-g-in .22s ease-out;
+  }
+  .wbx-vs-head{
+    display:flex !important;align-items:center;justify-content:space-between;
+    padding:10px 12px;background:#1da1f2 !important;color:#fff !important;
+    font-weight:700;border-radius:12px 12px 0 0;
+  }
+  .wbx-vs-close{background:none;border:none;color:#fff;font-size:16px;cursor:pointer;line-height:1;}
+  .wbx-vs-body{padding:10px 12px 12px;}
+  .wbx-vs-video{width:100%;max-height:200px;display:block;background:#000;border-radius:8px;}
+  .wbx-vs-row{display:flex;align-items:center;gap:6px;margin:9px 0;flex-wrap:wrap;}
+  .wbx-vs-row label{margin:0;font-weight:400;color:#444;}
+  .wbx-vs-row select,.wbx-vs-seg input{
+    border:1px solid #d9d9d9;border-radius:6px;padding:3px 5px;font-size:12px;
+    background:#fff;color:#222;box-sizing:border-box;
+  }
+  .wbx-vs-seg{display:flex;align-items:center;gap:5px;margin:6px 0;}
+  .wbx-vs-seg span{color:#666;font-size:11px;min-width:22px;}
+  .wbx-vs-seg input{width:66px;}
+  .wbx-vs-seg button{
+    border:none;background:#f0f0f0;color:#666;border-radius:6px;
+    padding:3px 7px;cursor:pointer;font-size:12px;
+  }
+  .wbx-vs-seg button:hover{background:#ffe0e0;color:#c33;}
+  .wbx-vs-add{
+    border:1px dashed #1da1f2;background:#f3faff;color:#1589d1;
+    border-radius:7px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600;
+  }
+  .wbx-vs-main{
+    display:block !important;width:100% !important;margin:10px 0 6px !important;
+    border:none !important;border-radius:9px !important;background:#ff7800 !important;
+    color:#fff !important;font-size:13px !important;font-weight:700 !important;
+    padding:9px 8px !important;cursor:pointer;
+  }
+  .wbx-vs-main:hover{background:#ff8c1a !important;}
+  .wbx-vs-main:disabled{opacity:.6;cursor:default;}
+  .wbx-vs-open{
+    display:block !important;width:100% !important;margin:6px 0 !important;
+    border:none !important;border-radius:9px !important;background:#1da1f2 !important;
+    color:#fff !important;font-size:13px !important;font-weight:700 !important;
+    padding:9px 8px !important;cursor:pointer;
+  }
+  .wbx-vs-open:hover{background:#1589d1 !important;}
+  .wbx-vs-mini{
+    flex:1;border:1px solid #ff7800;background:#fff7f0;color:#d96000;
+    border-radius:8px;font-size:11px;padding:7px 4px;cursor:pointer;font-weight:600;
+  }
+  .wbx-vs-mini:hover{background:#ffe8d0;}
+  .wbx-vs-actions{display:flex;gap:8px;}
+  .wbx-vs-bar{height:6px;background:#eef1f4;border-radius:4px;overflow:hidden;margin:8px 0 4px;}
+  .wbx-vs-bar > i{display:block;height:100%;width:0;background:#1da1f2;transition:width .2s;}
+  .wbx-vs-status{color:#d96000;font-weight:600;min-height:16px;line-height:1.4;}
+  .wbx-vs-hint{color:#777;line-height:1.5;font-size:11px;margin-top:8px;}
+  #wbx-gallery.wbx-vs-shift{right:396px !important;}
   `;
   const style = document.createElement('style');
   style.id = 'wbx-style';
@@ -1112,7 +1181,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.5.1';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.6';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1125,6 +1194,24 @@ function injectIntoCard(card) {
   const group = document.createElement('div');
   group.className = 'wbx-btn-group';
   group.appendChild(btn);
+
+  /* 1.6：视频卡片额外给一个直达「视频工作台」的入口。此前视频只走后台
+   * 下载原片 + 直接打开 X，页面上没有任何可见的视频操作，用户看不到
+   * 「视频部分的一键转发」。 */
+  if (post.hasVideo) {
+    const vbtn = document.createElement('button');
+    vbtn.className = 'wbx-video-btn';
+    vbtn.type = 'button';
+    vbtn.textContent = '视频剪辑';
+    vbtn.title = '剪接片段 + 逐帧去水印 + 导出，手动发送到 X · v1.6';
+    vbtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const liveCard = (vbtn.closest && vbtn.closest(CARD_SELECTORS.join(','))) || card;
+      return onVideoStudio(liveCard);
+    });
+    group.appendChild(vbtn);
+  }
 
   host.appendChild(group);
   card.dataset.wbxFp = qfp;   // 与早退判断同口径，切勿改成 postFingerprint(post)
@@ -1703,7 +1790,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.5.1 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost v1.6 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
@@ -1912,7 +1999,7 @@ async function onRepost(card, btn) {
   const preview = cleaned ? (cleaned.length > 28 ? cleaned.slice(0, 28) + '…' : cleaned) : '（无正文）';
   const cleanedNote = (hashMode !== 'keep' && post.text !== cleaned && /[#＃]/.test(post.text)) ? '（已删 # 后内容）' : '';
   const sigNote = settings.appendSignature ? '｜含署名' : '';
-  const wmNote = `｜图${wmEnabled ? '逐张去水印' : '原图'}${hd4k ? '+4K' : ''}｜视频${videoHd ? '去水印' : '原片'}`;
+  const wmNote = `｜图${wmEnabled ? '逐张去水印' : '原图'}${hd4k ? '+4K' : ''}${hasVideo ? '｜视频剪辑工作台' : ''}`;
   showToast(`处理中｜${SITE_LABEL}｜正文：${preview}${cleanedNote}${sigNote}｜内容图 ${urls.length} 张｜视频 ${hasVideo ? 1 : 0} 个${wmNote}`);
   try {
     const resp = await chrome.runtime.sendMessage({
@@ -1925,7 +2012,8 @@ async function onRepost(card, btn) {
         bid,
         inpaint: wmEnabled ? { enabled: true, fullScan: true } : { enabled: false },
         hd4k,
-        inpaintVideo: videoHd
+        inpaintVideo: videoHd,
+        videoStudio: hasVideo      // 1.6：含视频时只解析地址，弹工作台后再按需取流
       }
     });
     if (btn) { btn.disabled = false; btn.textContent = '一键转发'; }
@@ -2385,6 +2473,9 @@ async function handleResult(msg) {
   const failed = failedItems.length;
   const failReason = failedItems.map((r) => r.error).filter(Boolean)[0];
   const video = msg.video || null;
+  /* 1.6：含视频的一键转发不再自动开窗（否则 X 抢焦点，工作台根本看不见），
+   * 改为先弹本机视频工作台，由工作台上的按钮再打开 X。 */
+  const studio = !!(video && video.mode === 'studio' && video.ok && video.url);
   const wmDone = results.filter((r) => r.ok && r.wm && r.wm.changed).length;
   const wmSkip = results.filter((r) => r.ok && r.wm && !r.wm.changed).length;
   // 1.4.28：逐张核对命中几处水印、具体在画面哪个方位、几张真正放大到 4K
@@ -2428,20 +2519,23 @@ async function handleResult(msg) {
   const xUrl = 'https://' + (settings.xDomain || 'twitter.com') + '/intent/tweet?text=' + encodeURIComponent(text || '');
   const multi = images.length > 1;
   /*
-   * 多图时不能自动 window.open：新标签会立刻抢走焦点，而托盘挂在微博页，
-   * 用户眼前只有 X，根本看不到「多图复制」入口（这正是之前反馈的问题）。
+   * 多图 / 视频工作台时不能自动 window.open：新标签会立刻抢走焦点，而托盘
+   * 挂在微博页，用户眼前只有 X，根本看不到「多图复制」或「视频剪辑」入口。
    * 改为先把托盘弹在本页，由托盘上的醒目按钮再打开 X（文字照样预填）。
    */
-  const opened = multi ? null : window.open(xUrl, '_blank');
-  if (!opened && text && !clipboardTextOk && !multi) {
+  const holdX = multi || studio;
+  const opened = holdX ? null : window.open(xUrl, '_blank');
+  if (!opened && text && !clipboardTextOk && !holdX) {
     try { await navigator.clipboard.writeText(text); clipboardTextOk = true; } catch (e) {}
   }
 
   let tip = multi
     ? `已整理 ${images.length} 张干净图，右下角「图片托盘」已弹出：先逐张复制或拼成长图，再点托盘顶部的「打开 X 发推」按钮（正文自动预填），到 X 里 Ctrl+V 粘贴。`
-    : (clipboardTextOk
-      ? '已打开 X（文字已预填，也已进剪贴板）。'
-      : '已打开 X（文字已预填）。');
+    : (studio
+      ? '右下角「视频工作台」已弹出：拖好片段起止 → 点「生成干净片段」→ 复制或保存，再点「打开 X 发推」。'
+      : (clipboardTextOk
+        ? '已打开 X（文字已预填，也已进剪贴板）。'
+        : '已打开 X（文字已预填）。'));
   if (firstImageInClipboard) tip += ' 干净首图已复制到剪贴板，Ctrl+V 贴入即可。';
   else if (clipboardOk && clipboardMedia === 'video') tip += ' 视频已写入剪贴板，可在 X 里 Ctrl+V 试试。';
   else if (images.length) tip += ` 图片自动复制失败（${copyErr || '剪贴板不可用'}），请点「📋 复制图片到剪贴板」，或点托盘「下载到临时目录」。`;
@@ -2457,10 +2551,11 @@ async function handleResult(msg) {
     tip += '（只采到 1 张：往下滚一下再点，或用托盘「下载到临时目录」取文件）';
   }
   if (video) {
-    if (video.ok) tip += ` 视频已存入临时目录（${video.source || '原片'}），请拖入 X；到期自动清理。`;
+    if (studio) tip += ` 视频源：${video.source || '已解析'}（未落盘，剪接后按需导出）。`;
+    else if (video.ok) tip += ` 视频已存入临时目录（${video.source || '原片'}），请拖入 X；到期自动清理。`;
     else tip += ` 视频处理失败：${video.error || '未知原因'}。`;
   }
-  if (!opened && !multi) tip += '（X 弹窗被拦截/打不开，已尝试把文字复制到剪贴板）';
+  if (!opened && !holdX) tip += '（X 弹窗被拦截/打不开，已尝试把文字复制到剪贴板）';
   if (!images.length && !video) tip += ' 无媒体，仅文字。';
   if (wmDone || wmSkip || upDone) {
     tip += ` 图片逐张处理：去水印 ${wmDone} 张（命中 ${wmRegions} 处${wmPlaces ? '：' + wmPlaces : ''}）` +
@@ -2476,6 +2571,13 @@ async function handleResult(msg) {
   // 多图用托盘（逐张复制本身就是「真实点击手势」的保底），不再叠一个浮动复制按钮
   if (multi) showGallery(text, images, b64List, xUrl);
   if (!firstImageInClipboard && images.length === 1) showCopyButton(text, images);
+  if (studio) {
+    showVideoStudio({
+      url: video.url, source: video.source || '已解析',
+      text, xUrl, videoUrls: [], bid: '',
+      preferHD: !!settings.inpaintVideo
+    });
+  }
 }
 
 /* ---------- 多图托盘 ----------
@@ -2889,6 +2991,420 @@ function showNotice(title, short, detail) {
   box.appendChild(actions);
   document.body.appendChild(box);
 }
+
+/* ---------- 1.6：视频工作台（剪接 + 逐帧去水印 + 导出 + 转发） ----------
+ * 之前视频只走「后台下载原片 → 尝试写剪贴板 → 直接打开 X」，
+ * 页面上没有任何可见的视频操作，也无法剪辑、无法真正逐帧去水印。
+ * 现在含视频的一键转发会弹这个右下角工作台：
+ *   预览原片 → 设 1~4 段起止（顺序拼接）→ 生成干净片段 → 复制 / 保存 / 打开 X。
+ * 所有像素处理都在离屏文档本机完成，不上传视频、不新增权限或网络接收方。
+ */
+let wbxVideoStudio = null;
+
+function wbxB64ToBlob(b64, mime) {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], { type: mime || 'video/mp4' });
+}
+
+function wbxCloseVideoStudio() {
+  const s = wbxVideoStudio;
+  if (!s) return;
+  wbxVideoStudio = null;
+  try { if (s.onKey) document.removeEventListener('keydown', s.onKey, true); } catch (e) {}
+  try { if (s.outUrl) URL.revokeObjectURL(s.outUrl); } catch (e) {}
+  try { if (s.root && s.root.remove) s.root.remove(); } catch (e) {}
+  const g = document.getElementById('wbx-gallery');
+  if (g && g.classList) { try { g.classList.remove('wbx-vs-shift'); } catch (e) {} }
+}
+
+/* 卡片上的「视频剪辑」快捷按钮：跳过图片流程，只解析视频地址后弹工作台 */
+async function onVideoStudio(card) {
+  if (isStaleContext()) {
+    showToast('插件刚重新加载过，旧按钮已失效：请刷新页面（Cmd+R）后再点「视频剪辑」。', 9000);
+    return;
+  }
+  const post = resolvePost(card);
+  const hashMode = (!SITE || SITE.id === 'weibo') ? settings.hashMode : 'keep';
+  const cleaned = cleanRepostText(post.text, hashMode);
+  const text = withSource(withSignature(cleaned), card);
+  const xUrl = 'https://' + (settings.xDomain || 'x.com') +
+    '/intent/tweet?text=' + encodeURIComponent(text || '');
+  showToast('正在解析视频地址…', 4000);
+  try {
+    const r = await chrome.runtime.sendMessage({
+      type: 'VIDEO_RESOLVE',
+      payload: {
+        videoUrls: post.videoUrls || [], bid: post.bid || '',
+        preferHD: !!settings.inpaintVideo
+      }
+    });
+    if (!r || !r.ok || !r.url) {
+      showToast('视频地址解析失败：' + String((r && r.error) || '页面未暴露直链，接口也不可用'), 9000);
+      return;
+    }
+    showVideoStudio({
+      url: r.url, source: r.source || '已解析', text, xUrl,
+      videoUrls: post.videoUrls || [], bid: post.bid || '',
+      preferHD: !!settings.inpaintVideo
+    });
+  } catch (e) {
+    showToast('视频地址解析失败：' + String(e && e.message || e), 9000);
+  }
+}
+
+function showVideoStudio(opts) {
+  const o = opts || {};
+  try { wbxCloseVideoStudio(); } catch (e) {}
+  const panel = document.createElement('div');
+  panel.id = 'wbx-video-studio';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', '视频剪辑与去水印');
+  const gallery = document.getElementById('wbx-gallery');
+  if (gallery && gallery.classList) { try { gallery.classList.add('wbx-vs-shift'); } catch (e) {} }
+
+  const requestId = 'vs_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  const state = { root: panel, requestId: requestId, outUrl: null, onKey: null, onProgress: null };
+  wbxVideoStudio = state;
+
+  const head = document.createElement('div');
+  head.className = 'wbx-vs-head';
+  const title = document.createElement('span');
+  title.textContent = '视频剪辑 · 去水印';
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'wbx-vs-close';
+  closeBtn.textContent = '×';
+  closeBtn.title = '关闭视频工作台（ESC）';
+  closeBtn.addEventListener('click', wbxCloseVideoStudio);
+  head.appendChild(title);
+  head.appendChild(closeBtn);
+  panel.appendChild(head);
+
+  const body = document.createElement('div');
+  body.className = 'wbx-vs-body';
+  panel.appendChild(body);
+
+  const preview = document.createElement('video');
+  preview.className = 'wbx-vs-video';
+  preview.controls = true;
+  preview.preload = 'metadata';
+  preview.muted = true;
+  preview.playsInline = true;
+  body.appendChild(preview);
+
+  const durLine = document.createElement('div');
+  durLine.className = 'wbx-vs-hint';
+  durLine.textContent = '原片：' + (o.source || '已解析') + '　时长读取中…';
+  body.appendChild(durLine);
+
+  const segBox = document.createElement('div');
+  body.appendChild(segBox);
+  const segRows = [];
+
+  function addSegment(start, end) {
+    if (segRows.length >= 4) return;
+    const row = document.createElement('div');
+    row.className = 'wbx-vs-seg';
+    const tag = document.createElement('span');
+    tag.textContent = String(segRows.length + 1) + '.';
+    const a = document.createElement('input');
+    a.type = 'number'; a.min = '0'; a.step = '0.1'; a.value = String(start || 0);
+    a.title = '起始秒';
+    const arrow = document.createElement('span');
+    arrow.textContent = '→';
+    const b = document.createElement('input');
+    b.type = 'number'; b.min = '0'; b.step = '0.1';
+    b.value = end == null ? '' : String(end);
+    b.placeholder = '片尾';
+    b.title = '结束秒；留空表示到片尾';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '×';
+    del.title = '删除这一段';
+    del.addEventListener('click', () => {
+      const i = segRows.indexOf(rec);
+      if (i >= 0) segRows.splice(i, 1);
+      try { row.remove(); } catch (e) {}
+      renumber();
+    });
+    row.appendChild(tag); row.appendChild(a); row.appendChild(arrow);
+    row.appendChild(b); row.appendChild(del);
+    segBox.appendChild(row);
+    const rec = { row: row, a: a, b: b, tag: tag };
+    segRows.push(rec);
+  }
+  function renumber() {
+    segRows.forEach((r, i) => { r.tag.textContent = String(i + 1) + '.'; });
+  }
+  addSegment(0, null);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'wbx-vs-add';
+  addBtn.textContent = '+ 添加片段（按顺序拼接，最多 4 段）';
+  addBtn.addEventListener('click', () => {
+    if (segRows.length >= 4) { showToast('最多 4 段。', 3000); return; }
+    addSegment(0, null);
+  });
+  body.appendChild(addBtn);
+
+  const optRow = document.createElement('div');
+  optRow.className = 'wbx-vs-row';
+  const wmLabel = document.createElement('label');
+  const wmChk = document.createElement('input');
+  wmChk.type = 'checkbox';
+  wmChk.checked = settings.inpaintVideo !== false;
+  wmLabel.appendChild(wmChk);
+  wmLabel.appendChild(document.createTextNode(' 逐帧去水印'));
+  const muteLabel = document.createElement('label');
+  const muteChk = document.createElement('input');
+  muteChk.type = 'checkbox';
+  muteChk.checked = false;
+  muteLabel.appendChild(muteChk);
+  muteLabel.appendChild(document.createTextNode(' 静音'));
+  const sizeLabel = document.createElement('label');
+  sizeLabel.appendChild(document.createTextNode('画质 '));
+  const sizeSel = document.createElement('select');
+  [['540', '540p'], ['720', '720p'], ['1080', '1080p'], ['1440', '原画上限']].forEach((p) => {
+    const op = document.createElement('option');
+    op.value = p[0]; op.textContent = p[1];
+    if (p[0] === '720') op.selected = true;
+    sizeSel.appendChild(op);
+  });
+  sizeLabel.appendChild(sizeSel);
+  optRow.appendChild(wmLabel);
+  optRow.appendChild(muteLabel);
+  optRow.appendChild(sizeLabel);
+  body.appendChild(optRow);
+
+  const mainBtn = document.createElement('button');
+  mainBtn.className = 'wbx-vs-main';
+  mainBtn.type = 'button';
+  mainBtn.textContent = '生成干净片段（本机处理）';
+  body.appendChild(mainBtn);
+
+  const bar = document.createElement('div');
+  bar.className = 'wbx-vs-bar';
+  const barFill = document.createElement('i');
+  bar.appendChild(barFill);
+  body.appendChild(bar);
+  const status = document.createElement('div');
+  status.className = 'wbx-vs-status';
+  status.textContent = '设置片段起止后点「生成干净片段」。';
+  body.appendChild(status);
+
+  const resultBox = document.createElement('div');
+  resultBox.style.display = 'none';
+  const resultVideo = document.createElement('video');
+  resultVideo.className = 'wbx-vs-video';
+  resultVideo.controls = true;
+  resultVideo.style.marginTop = '8px';
+  const resultInfo = document.createElement('div');
+  resultInfo.className = 'wbx-vs-hint';
+  resultBox.appendChild(resultVideo);
+  resultBox.appendChild(resultInfo);
+  body.appendChild(resultBox);
+
+  const actions = document.createElement('div');
+  actions.className = 'wbx-vs-actions';
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'wbx-vs-mini';
+  copyBtn.type = 'button';
+  copyBtn.textContent = '复制成品';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'wbx-vs-mini';
+  saveBtn.type = 'button';
+  saveBtn.textContent = '存到下载目录';
+  const originBtn = document.createElement('button');
+  originBtn.className = 'wbx-vs-mini';
+  originBtn.type = 'button';
+  originBtn.textContent = '下载原片';
+  actions.appendChild(copyBtn);
+  actions.appendChild(saveBtn);
+  actions.appendChild(originBtn);
+  body.appendChild(actions);
+
+  const openX = document.createElement('button');
+  openX.className = 'wbx-vs-open';
+  openX.type = 'button';
+  openX.textContent = '打开 X 发推（正文已预填）';
+  body.appendChild(openX);
+
+  const hint = document.createElement('div');
+  hint.className = 'wbx-vs-hint';
+  hint.textContent = '纯本机剪接与重建，不上传视频。按原片速度实时录制，去水印命中条带后才改动像素；音频尽力保留（离屏无手势时可能无声）。优先 MP4，旧版 Chrome 回退 WebM；片段合计上限 90 秒。';
+  body.appendChild(hint);
+
+  let duration = 0;
+  preview.addEventListener('loadedmetadata', () => {
+    if (!isFinite(preview.duration) || preview.duration <= 0) return;
+    duration = preview.duration;
+    durLine.textContent = '原片：' + (o.source || '已解析') +
+      '　时长 ' + duration.toFixed(1) + 's　（结束留空 = 到片尾）';
+    const first = segRows[0];
+    if (first && !first.b.value) first.b.value = String(Number(duration.toFixed(1)));
+  });
+  preview.addEventListener('error', () => {
+    durLine.textContent = '页面里无法直接预览（CDN 限制），不影响生成：可手动填写片段秒数。';
+  });
+
+  let lastProgressKey = '';
+  state.onProgress = (m) => {
+    const key = (m.phase || '') + ':' + (m.percent || 0);
+    if (key === lastProgressKey) return;
+    lastProgressKey = key;
+    barFill.style.width = Math.max(0, Math.min(100, Number(m.percent) || 0)) + '%';
+    status.textContent = (m.note || m.phase || '处理中') + '　' + (m.percent || 0) + '%';
+  };
+
+  let outBlob = null;
+  let outMime = 'video/mp4';
+  let outExt = 'mp4';
+  let busy = false;
+
+  mainBtn.addEventListener('click', async () => {
+    if (busy) return;
+    const segments = segRows.map((r) => ({
+      start: Math.max(0, Number(r.a.value) || 0),
+      end: r.b.value === '' ? 0 : Math.max(0, Number(r.b.value) || 0)
+    })).filter((s) => s.start >= 0);
+    if (!segments.length) { status.textContent = '至少保留一个片段。'; return; }
+    const total = segments.reduce((n, s) => n + (s.end > s.start ? s.end - s.start : (duration || 10)), 0);
+    if (total > 90) status.textContent = '合计超过 90 秒，将自动截到 90 秒。';
+    busy = true;
+    mainBtn.disabled = true;
+    mainBtn.textContent = '正在剪接 / 去水印…（请勿关闭）';
+    lastProgressKey = '';
+    barFill.style.width = '2%';
+    status.textContent = '准备中…';
+    resultBox.style.display = 'none';
+    if (state.outUrl) {
+      try { URL.revokeObjectURL(state.outUrl); } catch (e) {}
+      state.outUrl = null;
+    }
+    try {
+      const resp = await chrome.runtime.sendMessage({
+        type: 'VIDEO_EDIT',
+        payload: {
+          url: o.url || '', source: o.source || '',
+          videoUrls: o.videoUrls || [], bid: o.bid || '',
+          preferHD: !!o.preferHD, requestId: requestId,
+          segments: segments, wm: wmChk.checked, mute: muteChk.checked,
+          maxEdge: Number(sizeSel.value) || 720
+        }
+      });
+      if (!resp || !resp.ok) throw new Error((resp && resp.error) || '离屏文档无响应');
+      outMime = resp.mime || 'video/mp4';
+      outExt = resp.ext || 'mp4';
+      if (resp.data) {
+        outBlob = wbxB64ToBlob(resp.data, outMime);
+        state.outUrl = URL.createObjectURL(outBlob);
+        resultVideo.src = state.outUrl;
+        resultBox.style.display = '';
+      } else {
+        outBlob = null;
+        resultBox.style.display = 'none';
+      }
+      const wm = resp.wm || {};
+      const bits = [
+        resp.duration + 's',
+        (resp.size || []).join('x'),
+        outExt.toUpperCase(),
+        (resp.bytes / 1024 / 1024).toFixed(1) + 'MB',
+        resp.audio ? '含音频' : '无音轨'
+      ];
+      resultInfo.textContent = bits.join(' · ') +
+        (resp.wmEnabled ? ('；去水印命中 ' + (wm.regions || 0) + ' 处，处理 ' + (wm.frames || 0) + ' 帧') : '；未启用去水印') +
+        (resp.oversize ? '；成品较大，已直接存入临时目录，请到那里拖入 X。' : '') +
+        (resp.file && resp.file.filename ? ('　临时副本：' + resp.file.filename) : '');
+      barFill.style.width = '100%';
+      status.textContent = resp.oversize
+        ? '生成完成：文件较大，已存入临时目录，请拖入 X。'
+        : '生成完成：可预览 / 复制 / 存到下载目录，再打开 X。';
+    } catch (e) {
+      status.textContent = '生成失败：' + String(e && e.message || e);
+      barFill.style.width = '0%';
+    } finally {
+      busy = false;
+      mainBtn.disabled = false;
+      mainBtn.textContent = '生成干净片段（本机处理）';
+    }
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    if (!outBlob) { showToast('请先生成干净片段。', 4000); return; }
+    try {
+      const reps = {}; reps[outMime] = outBlob;
+      await navigator.clipboard.write([new ClipboardItem(reps)]);
+      showToast('成品已复制到剪贴板，到 X 发布框按 Ctrl+V 试试。', 6000);
+    } catch (e) {
+      showToast('X / Chrome 不接受该视频格式的剪贴板写入，请点「存到下载目录」后拖入 X。', 8000);
+    }
+  });
+
+  saveBtn.addEventListener('click', () => {
+    if (!outBlob || !state.outUrl) { showToast('请先生成干净片段。', 4000); return; }
+    const a = document.createElement('a');
+    a.href = state.outUrl;
+    a.download = 'TapePost_clean_' + Date.now() + '.' + outExt;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('已保存到下载目录（' + a.download + '），拖入 X 即可。', 6000);
+  });
+
+  originBtn.addEventListener('click', async () => {
+    if (busy) return;
+    status.textContent = '正在取原片…';
+    try {
+      const r = await chrome.runtime.sendMessage({
+        type: 'VIDEO_ORIGIN',
+        payload: {
+          url: o.url || '', source: o.source || '',
+          videoUrls: o.videoUrls || [], bid: o.bid || '', preferHD: !!o.preferHD
+        }
+      });
+      status.textContent = (r && r.ok)
+        ? ('原片已存入临时目录：' + (r.filename || 'TapePost_tmp/') + '，到期自动清理。')
+        : ('原片下载失败：' + String((r && r.error) || '未知原因'));
+    } catch (e) {
+      status.textContent = '原片下载失败：' + String(e && e.message || e);
+    }
+  });
+
+  openX.addEventListener('click', () => {
+    const w = window.open(o.xUrl, '_blank');
+    if (!w && o.text && navigator.clipboard && navigator.clipboard.writeText) {
+      try { navigator.clipboard.writeText(o.text).catch(() => {}); } catch (e) {}
+      showToast('X 弹窗被拦截，正文已复制到剪贴板，请手动打开 X 粘贴。', 7000);
+    } else {
+      showToast('X 已打开，正文已预填；把成品拖入发布框或按 Ctrl+V。', 6000);
+    }
+  });
+
+  state.onKey = (e) => {
+    if (e && e.key === 'Escape') {
+      try { e.preventDefault(); e.stopPropagation(); } catch (e2) {}
+      wbxCloseVideoStudio();
+    }
+  };
+  try { document.addEventListener('keydown', state.onKey, true); } catch (e) {}
+  document.body.appendChild(panel);
+  // 监听器注册完再赋 src，避免 loadedmetadata 在注册前就触发导致时长读不到
+  if (o.url) { try { preview.src = o.url; } catch (e) {} }
+}
+
+/* 离屏文档 → background 转发的导出进度；按 requestId 只喂给当前工作台 */
+try {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || msg.type !== 'VIDEO_PROGRESS_UI' || !wbxVideoStudio) return false;
+    const s = wbxVideoStudio;
+    if (msg.requestId && s.requestId && msg.requestId !== s.requestId) return false;
+    if (s.onProgress) { try { s.onProgress(msg); } catch (e) {} }
+    return false;
+  });
+} catch (e) {}
 
 // ---------- 初始化 ----------
 function init() {

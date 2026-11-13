@@ -305,11 +305,18 @@ async function handleProcess(msg) {
     try {
       const r = await resolveVideoUrl(payload.videoUrls, payload.bid, !!payload.inpaintVideo);
       if (r.url) {
-        videoBlob = await fetchVideoBlob(r.url);
-        videoState = await downloadVideo(videoBlob);
-        videoState.source = r.hd ? 'HD 原片（去水印优先）' : (r.fromApi ? '公开接口原片' : '页面直链');
-        videoState.hd = !!r.hd;
-        videoState.url = r.url;
+        const source = r.hd ? 'HD 原片' : (r.fromApi ? '公开接口原片' : '页面直链');
+        /* 1.6：含视频的一键转发改为弹「视频工作台」，先只解析地址，不重复
+         * 下载几十 MB 的原片——用户在工作台里选择剪接/去水印后再按需取流。 */
+        if (payload.videoStudio) {
+          videoState = { ok: true, mode: 'studio', url: r.url, source: source, hd: !!r.hd };
+        } else {
+          videoBlob = await fetchVideoBlob(r.url);
+          videoState = await downloadVideo(videoBlob);
+          videoState.source = source;
+          videoState.hd = !!r.hd;
+          videoState.url = r.url;
+        }
       } else {
         videoState = { ok: false, error: '页面未暴露视频地址，且本条没有可用的 bid' };
       }
@@ -324,19 +331,39 @@ async function handleProcess(msg) {
 
 // 单次请求-响应：处理完后用 sendResponse 把结果直接回给 background 的 await
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg || msg.type !== 'PROCESS_OFFSCREEN') return false;
-  handleProcess(msg)
-    .then((r) => sendResponse(r))
-    .catch((e) => sendResponse({
-      results: [],
-      video: null,
-      clipboardOk: false,
-      clipboardError: null,
-      clipboardText: false,
-      clipboardMedia: 'none',
-      error: String(e && e.message || e)
-    }));
-  return true; // 保持消息通道打开以异步 sendResponse
+  if (!msg || !msg.type) return false;
+
+  if (msg.type === 'PROCESS_OFFSCREEN') {
+    handleProcess(msg)
+      .then((r) => sendResponse(r))
+      .catch((e) => sendResponse({
+        results: [],
+        video: null,
+        clipboardOk: false,
+        clipboardError: null,
+        clipboardText: false,
+        clipboardMedia: 'none',
+        error: String(e && e.message || e)
+      }));
+    return true; // 保持消息通道打开以异步 sendResponse
+  }
+
+  // 1.6 视频工作台：解析地址 / 下载原片 / 剪接 + 逐帧去水印导出
+  if (msg.type === 'VIDEO_RESOLVE_OFFSCREEN' || msg.type === 'VIDEO_ORIGIN_OFFSCREEN' ||
+      msg.type === 'PROCESS_VIDEO_OFFSCREEN') {
+    const p = msg.payload || {};
+    const fail = (e) => sendResponse({ ok: false, error: String(e && e.message || e) });
+    (async () => {
+      const V = (typeof globalThis !== 'undefined') ? globalThis.VideoEdit : null;
+      if (!V) throw new Error('视频剪辑模块未加载：请到 chrome://extensions 重新加载扩展');
+      if (msg.type === 'VIDEO_RESOLVE_OFFSCREEN') return V.resolve(p);
+      if (msg.type === 'VIDEO_ORIGIN_OFFSCREEN') return V.origin(p);
+      return V.exportClip(p);
+    })().then((r) => sendResponse(r)).catch(fail);
+    return true;
+  }
+
+  return false;
 });
 
 // READY 上报只是通知，扩展重新加载时后台可能还没注册监听器；
