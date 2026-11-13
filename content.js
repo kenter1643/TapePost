@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.6';
+  return 'v1.6.1';
 })();
 
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值
@@ -133,6 +133,8 @@ function injectStyle() {
     display:inline-flex;align-items:center;gap:4px;
   }
   .wbx-btn-group .wbx-repost-btn,.wbx-btn-group .wbx-comment-btn{position:static;}
+  /* 1.6.1：视频播放器图层层级很高，普通 z-index:20 的按钮会被封面盖住 */
+  .wbx-btn-group.wbx-btn-group-video{top:6px;right:8px;z-index:2147483000;}
   .wbx-comment-btn{
     display:inline-flex;align-items:center;gap:2px;
     padding:0 6px;height:18px;border:none;border-radius:8px;cursor:pointer;
@@ -377,6 +379,27 @@ function injectStyle() {
   #wbx-lightbox.wbx-lb-actual .wbx-lb-img{
     max-width:none !important;max-height:none !important;cursor:zoom-out !important;
   }
+  /* 1.6.1：视频内容专属的悬浮转发条。
+   * 微博首页视频播放器 / /tv 视频频道没有正文节点、图层还自带高层级，
+   * 普通卡片按钮会被裁掉或压在封面下。这里独立一套入口，挂在视频单元
+   * 右上角，层级拉到最高，保证「一键转发」在视频上看得见、点得到。 */
+  .wbx-video-entry{
+    position:absolute;top:6px;right:8px;z-index:2147483000;
+    display:inline-flex;align-items:center;gap:4px;
+    padding:3px 5px;border-radius:10px;background:rgba(18,18,22,.78);
+    box-shadow:0 2px 10px rgba(0,0,0,.30);
+  }
+  .wbx-video-entry button{
+    position:static;display:inline-flex;align-items:center;
+    height:22px;padding:0 9px;border:none;border-radius:8px;cursor:pointer;
+    color:#fff;font-size:12px;line-height:22px;font-weight:600;white-space:nowrap;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+  }
+  .wbx-video-entry button:disabled{opacity:.6;cursor:default;}
+  .wbx-video-entry .wbx-fwd-btn{background:#ff7800;box-shadow:0 1px 3px rgba(255,120,0,.5);}
+  .wbx-video-entry .wbx-fwd-btn:hover{background:#ff8c1a;}
+  .wbx-video-entry .wbx-clip-btn{background:#1da1f2;box-shadow:0 1px 3px rgba(29,161,242,.5);}
+  .wbx-video-entry .wbx-clip-btn:hover{background:#1589d1;}
   /* 1.6：视频工作台 + 卡片上的「视频剪辑」快捷入口 */
   .wbx-video-btn{
     display:inline-flex;align-items:center;gap:2px;
@@ -492,6 +515,31 @@ function upgradeImageUrl(url) {
  * 统一以「正文节点」为锚点：按钮挂在它的右上角，文字/图片/视频/作者都从
  * 同一个内容单元解析，保证「看到哪条就转哪条」。
  */
+/*
+ * 1.6.1：视频信号。
+ * 微博的视频有三套完全不一样的 DOM：
+ *   ① 首页信息流：article 里是播放器封面 + 「xxx的微博视频」链接，播放前没有 <video>；
+ *   ② /tv 视频频道：网格卡片，既没有 article 也没有 feed_list 属性；
+ *   ③ video.weibo.com 播放页：整页只有一个播放器。
+ * 旧版只认 `video, [class*="video"]`，① 的封面阶段和 ② 的网格都识别不到，
+ * 于是「找不到正文节点 + 找不到媒体根」就直接 return，按钮一个都不注入。
+ */
+const VIDEO_SIGNAL_SEL = [
+  'video',
+  'source[src*=".mp4"]',
+  'a[href*="video.weibo.com/show"]',
+  'a[href*="/tv/show/"]',
+  'a[href*="fid="][href*="video"]',
+  '[class*="woo-video"]',
+  '[class*="video-card"]',
+  '[class*="video-item"]',
+  '[class*="video-player"]',
+  '[node-type*="video"]',
+  '[data-type="video"]',
+  'button[title*="播放"]',
+  '[aria-label*="播放视频"]'
+].join(',');
+
 const CARD_SELECTORS = (SITE && SITE.cardSelectors) || [
   'article', 'div[action-type="feed_list_item"]', 'div.card-wrap', 'div.WB_cardwrap'
 ];
@@ -545,7 +593,7 @@ function cleanText(s) {
  * 发给 Grok（提示词里是几十个「AI 评论」），模型只回了一个 🤖，
  * 于是页面报「没读到 Grok 的回答块」。所有取正文的路径都必须先过这一层。 */
 const WBX_UI_WORDS = [
-  '⏳ 生成中', '⏳ 处理中', '处理中…', 'AI 评论', '一键转发',
+  '⏳ 生成中', '⏳ 处理中', '处理中…', 'AI 评论', '一键转发', '视频剪辑',
   '再来 3 条', '复制提示词', '读取 Grok 回答', '请生成英文回复', '✦AI 生成'
 ];
 function stripInjectedUi(raw) {
@@ -823,9 +871,16 @@ function findMediaRoot(card) {
   for (const s of MEDIA_SELECTORS) {
     try {
       const n = card.querySelector(s);
-      if (n && (n.querySelectorAll('img').length || n.querySelectorAll('video').length)) return n;
+      if (n && (n.querySelectorAll('img').length || n.querySelectorAll('video').length ||
+        n.querySelector(VIDEO_SIGNAL_SEL))) return n;
     } catch (e) {}
   }
+  /* 1.6.1：播放器封面是 CSS 背景图、播放前没有 <video> 时，
+   * 用视频链接 / 播放按钮的父容器当媒体根，别再退化成整张卡片。 */
+  try {
+    const sig = card.querySelector(VIDEO_SIGNAL_SEL);
+    if (sig && sig.parentElement && sig.parentElement !== card) return sig.parentElement;
+  } catch (e) {}
   return card;
 }
 
@@ -990,7 +1045,16 @@ function collectVideoUrls(card) {
 }
 
 function hasVideoElement(card) {
-  try { return card.querySelectorAll('video, [class*="video"]').length > 0; } catch (e) { return false; }
+  try {
+    if (card.querySelector(VIDEO_SIGNAL_SEL)) return true;
+    /* 播放器挂在 shadow DOM 里时，卡片自身的 querySelector 看不到 */
+    const all = card.querySelectorAll('*');
+    for (let i = 0; i < all.length && i < 160; i++) {
+      const sr = all[i] && all[i].shadowRoot;
+      if (sr && sr.querySelector && sr.querySelector('video, [class*="video"]')) return true;
+    }
+  } catch (e) {}
+  return false;
 }
 
 function extractUid(card) {
@@ -1016,6 +1080,18 @@ function extractBid(card) {
       if (m) return m[1];
       m = /(?:m\.weibo\.cn\/status\/|\/detail\/|\/status\/)([A-Za-z0-9]{6,})/.exec(h);
       if (m) return m[1];
+    }
+    /* 1.6.1：/tv 视频频道与 video.weibo.com 播放页没有 /uid/bid 形式的
+     * 永久链接，只有 fid=1034:<16 位 mid>。公开接口同样按 id 接受 mid，
+     * 拿它当兜底，工作台才有办法解析出 HD 原片。 */
+    for (const a of card.querySelectorAll('a[href]')) {
+      const h = a.href || '';
+      if (!/video\.weibo\.com\/show|\/tv\/show\/|fid=/i.test(h)) continue;
+      const m = /(?:fid=|%3A|\/tv\/show\/)\s*(?:1034(?::|%3A))?(\d{10,20})/i.exec(h);
+      if (m) return m[1];
+    }
+    if (card.dataset && /^\d{10,20}$/.test(String(card.dataset.mid || card.dataset.fid || ''))) {
+      return String(card.dataset.mid || card.dataset.fid);
     }
   } catch (e) {}
   return null;
@@ -1141,6 +1217,10 @@ function injectIntoCard(card) {
    * → 再扫描 → 无限自触发循环，按钮节点活不过几百毫秒，用户点击直接丢失。
    * 现在校验和保存统一用同一个 qfp，内容不变时一律早退、不再碰 DOM。
    */
+  /* 1.6.1：视频单元若已挂独立悬浮入口，不要再叠一组标准按钮，
+   * 否则两套入口互相触发 MutationObserver，按钮会不停闪烁。 */
+  const floating = card.querySelector && card.querySelector('.wbx-video-entry');
+  if (floating) return;
   const qfp = quickFingerprint(card);
   // 1.3.1 起「AI 评论」按钮移到 X 回复填写区右侧，卡片上只留「一键转发」。
   const existing = card.querySelector('.wbx-btn-group') || card.querySelector('.wbx-repost-btn');
@@ -1167,12 +1247,15 @@ function injectIntoCard(card) {
     const media = findMediaRoot(card);
     if (media !== card) anchorNode = media;
     else {
-      const v = card.querySelector('video');
+      const v = card.querySelector('video') || card.querySelector(VIDEO_SIGNAL_SEL);
       if (v && v.parentElement) anchorNode = v.parentElement;
     }
   }
-  if (!anchorNode) return;
-  const host = findAnchor(card, anchorNode);
+  /* 1.6.1：视频卡片（首页播放器封面 / /tv 网格）常常一个正文节点都没有，
+   * 旧版在这里直接 return，用户就看不到任何按钮。现在一律退回卡片本身，
+   * 保证只要是内容单元就至少有一个可点入口。 */
+  if (!anchorNode) anchorNode = card;
+  const host = findAnchor(card, anchorNode) || card;
   if (!host || !host.appendChild) return;
   ensureRelative(host);
   markNativeRepost(card);
@@ -1181,7 +1264,7 @@ function injectIntoCard(card) {
   btn.className = 'wbx-repost-btn';
   btn.type = 'button';
   btn.textContent = '一键转发';
-  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · v1.6';
+  btn.title = 'TapePost · 整理正文与配图，手动发送到 X · ' + WBX_VERSION;
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1199,11 +1282,12 @@ function injectIntoCard(card) {
    * 下载原片 + 直接打开 X，页面上没有任何可见的视频操作，用户看不到
    * 「视频部分的一键转发」。 */
   if (post.hasVideo) {
+    group.classList.add('wbx-btn-group-video');
     const vbtn = document.createElement('button');
     vbtn.className = 'wbx-video-btn';
     vbtn.type = 'button';
     vbtn.textContent = '视频剪辑';
-    vbtn.title = '剪接片段 + 逐帧去水印 + 导出，手动发送到 X · v1.6';
+    vbtn.title = '剪接片段 + 逐帧去水印 + 导出，手动发送到 X · ' + WBX_VERSION;
     vbtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1790,7 +1874,7 @@ function injectPromoBar(c) {
     b.type = 'button';
     b.className = 'wbx-promo-btn wbx-promo-single';
     b.textContent = 'T';
-    b.title = 'TapePost v1.6 · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
+    b.title = 'TapePost ' + WBX_VERSION + ' · 点一下随机带入一句推广，再点换一句（不重复、不动正文）；右键去掉推广句';
     // 保住 contenteditable 的焦点与选区：mousedown 默认行为会让按钮抢焦点，
     // 之后 insertText 就写不进这个回复框了（真机「文字没写对」的根因之一）。
     b.addEventListener('mousedown', (e) => { if (e.preventDefault) e.preventDefault(); });
@@ -1948,9 +2032,98 @@ function isXIntentPage() {
     p.indexOf('/compose/') === 0;
 }
 
+/* ---------- 1.6.1：视频内容的「一键转发」入口兜底 ----------
+ * 真机（2026-11-13，已登录 weibo.com）确认两处漏注入：
+ *   ① 首页信息流的视频微博：播放前只有封面 + 播放按钮 + 「xxx的微博视频」
+ *      链接，没有 <video>、也没有正文节点 → injectIntoCard 找不到锚点直接
+ *      return，整条视频一个按钮都没有；
+ *   ② /tv 视频频道：网格卡片既不是 article 也不是 feed_list_item，
+ *      getCards() 返回空，整页没有按钮。
+ * 这里不依赖卡片选择器，直接从「视频信号」反查内容单元，挂一条独立的
+ * 悬浮转发条（一键转发 + 视频剪辑）。它用独立 class，不参与 injectIntoCard
+ * 的 existing 判定，也不会被两套逻辑互相重建。
+ */
+function videoEntryHost(node) {
+  try {
+    if (node.closest) {
+      const known = node.closest(CARD_SELECTORS.join(','));
+      if (known && known.appendChild) return known;
+    }
+  } catch (e) {}
+  let el = node;
+  for (let i = 0; i < 8 && el && el !== document.body && el !== document.documentElement; i++) {
+    try {
+      if (el.closest && el.closest('nav, header, aside, footer')) break;
+      const r = el.getBoundingClientRect && el.getBoundingClientRect();
+      const t = cleanText(el.innerText || el.textContent || '');
+      if (r && r.width >= 200 && r.height >= 90 && t.length >= 6) return el;
+    } catch (e) {}
+    el = el.parentElement;
+  }
+  return (node.parentElement && node.parentElement.appendChild) ? node.parentElement : null;
+}
+
+function injectVideoEntries() {
+  // 视频 HD 接口是微博专属；X / 知乎等站的卡片走原有路径，不叠新入口
+  if (!SITE || SITE.id !== 'weibo') return;
+  let nodes = [];
+  try { nodes = Array.from(document.querySelectorAll(VIDEO_SIGNAL_SEL)); }
+  catch (e) { return; }
+  const hosts = new Set();
+  for (const n of nodes) {
+    try {
+      if (!n || !n.getBoundingClientRect) continue;
+      if (n.closest && n.closest('#wbx-video-studio, [id^="wbx-"], .wbx-video-entry')) continue;
+      const r = n.getBoundingClientRect();
+      if (!r || r.width < 60 || r.height < 20) continue;   // 排除导航栏小图标
+      const host = videoEntryHost(n);
+      if (host && host.appendChild) hosts.add(host);
+    } catch (e) {}
+  }
+  for (const host of hosts) {
+    try {
+      // 已有标准按钮组或已挂过悬浮条就跳过，避免 MutationObserver 自触发重复注入
+      if (host.querySelector && host.querySelector('.wbx-btn-group, .wbx-video-entry')) continue;
+      const fp = [host.tagName, cleanText(host.innerText || '').slice(0, 40)].join('|');
+      if (host.dataset && host.dataset.wbxVideoFp === fp) continue;
+      ensureRelative(host);
+      const bar = document.createElement('div');
+      bar.className = 'wbx-video-entry';
+      bar.setAttribute('data-wbx-video-entry', '1');
+
+      const fwd = document.createElement('button');
+      fwd.type = 'button';
+      fwd.className = 'wbx-fwd-btn';
+      fwd.textContent = '一键转发';
+      fwd.title = 'TapePost · 视频一键转发（剪接 + 逐帧去水印后发到 X）· ' + WBX_VERSION;
+      fwd.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        return onRepost(host, fwd);
+      });
+
+      const clip = document.createElement('button');
+      clip.type = 'button';
+      clip.className = 'wbx-clip-btn';
+      clip.textContent = '视频剪辑';
+      clip.title = '剪接片段 + 逐帧去水印 + 导出 · ' + WBX_VERSION;
+      clip.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        return onVideoStudio(host);
+      });
+
+      bar.appendChild(fwd);
+      bar.appendChild(clip);
+      host.appendChild(bar);
+      if (host.dataset) host.dataset.wbxVideoFp = fp;
+    } catch (e) {}
+  }
+}
+
 function scanAndInject() {
   if (!isXIntentPage()) {
     try { getCards().forEach(injectIntoCard); } catch (e) { /* ignore */ }
+    // 1.6.1：卡片选择器覆盖不到的视频单元（/tv 网格、首页播放器）在这里补齐
+    try { injectVideoEntries(); } catch (e) { /* ignore */ }
   }
   // 回复框可能在时间线内联展开，也可能在 /compose/post 弹窗里，两种都要扫
   try { injectIntoReplyComposers(); } catch (e) { /* ignore */ }
