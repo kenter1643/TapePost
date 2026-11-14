@@ -48,7 +48,13 @@ const GROK_SECRET_DEFAULTS = {
   grokProtocol: 'chat',
   grokBaseUrl: 'https://api.x.ai/v1',
   grokModel: 'grok-4.3',
-  grokTemperature: 0.7
+  grokTemperature: 0.7,
+  // 1.5.3：DeepSeek 与 xAI 的密钥 / 模型 / 网关完全分开存，互不覆盖
+  deepseekApiKey: '',
+  deepseekModel: 'deepseek-v4-flash',
+  deepseekBaseUrl: 'https://api.deepseek.com',
+  deepseekTemperature: 0.7,
+  deepseekJsonMode: true
 };
 
 // 站点列表与 sites.js 共用同一份配置，避免两处维护
@@ -105,7 +111,13 @@ function readGrokSecrets() {
     grokProtocol: (document.getElementById('grokProtocol') || {}).value || 'chat',
     grokBaseUrl: (document.getElementById('grokBaseUrl') || {}).value || GROK_SECRET_DEFAULTS.grokBaseUrl,
     grokModel: (document.getElementById('grokModel') || {}).value || GROK_SECRET_DEFAULTS.grokModel,
-    grokTemperature: 0.7
+    grokTemperature: 0.7,
+    // 1.5.3：DeepSeek 专属配置
+    deepseekApiKey: (document.getElementById('deepseekKey') || {}).value || '',
+    deepseekModel: (document.getElementById('deepseekModel') || {}).value || GROK_SECRET_DEFAULTS.deepseekModel,
+    deepseekBaseUrl: (document.getElementById('deepseekBaseUrl') || {}).value || GROK_SECRET_DEFAULTS.deepseekBaseUrl,
+    deepseekTemperature: 0.7,
+    deepseekJsonMode: (document.getElementById('deepseekJsonMode') || { checked: true }).checked !== false
   };
 }
 
@@ -115,6 +127,14 @@ function saveGrokSecrets() {
     try { chrome.storage.local.set(secrets, () => resolve(secrets)); }
     catch (e) { resolve(secrets); }
   });
+}
+
+/* 1.5.3：只有选了 DeepSeek 模式才展开专属配置块，其余模式保持设置页紧凑 */
+function syncDeepseekPanel() {
+  const box = document.getElementById('deepseekCfg');
+  if (!box) return;
+  const mode = String((document.getElementById('grokMode') || {}).value || 'auto');
+  box.hidden = mode !== 'deepseek';
 }
 
 function grokStatus(text, good) {
@@ -172,6 +192,7 @@ function load() {
     const legacyPage = String(s.grokMode || '').toLowerCase() === 'page' &&
       s.grokPreferNative !== false && s.grokModeMigrated141 !== true;
     if (mode) mode.value = legacyPage ? 'auto' : (s.grokMode || 'auto');
+    syncDeepseekPanel();   // 1.5.3：sync / local 两个回调谁先回来都要保证配置块显隐正确
     const fixNote = document.getElementById('modeFixNote');
     if (fixNote) fixNote.hidden = !legacyPage;
     if (legacyPage) {
@@ -203,6 +224,12 @@ function load() {
     set('grokProtocol', g.grokProtocol || 'chat');
     set('grokBaseUrl', g.grokBaseUrl || GROK_SECRET_DEFAULTS.grokBaseUrl);
     set('grokModel', g.grokModel || GROK_SECRET_DEFAULTS.grokModel);
+    set('deepseekKey', g.deepseekApiKey || '');
+    set('deepseekModel', g.deepseekModel || GROK_SECRET_DEFAULTS.deepseekModel);
+    set('deepseekBaseUrl', g.deepseekBaseUrl || GROK_SECRET_DEFAULTS.deepseekBaseUrl);
+    const dsJson = document.getElementById('deepseekJsonMode');
+    if (dsJson) dsJson.checked = g.deepseekJsonMode !== false;
+    syncDeepseekPanel();
   });
 }
 
@@ -272,7 +299,8 @@ function testGrok() {
       sendBg({ type: 'GROK_TEST' }, (r, err) => {
         if (err) return grokStatus('连不上后台：' + err.message + '（请到 chrome://extensions 重新加载扩展）', false);
         if (!r || !r.ok) return grokStatus('连接失败：' + ((r && r.error) || '后台没有返回结果'), false);
-        const modeText = r.mode === 'page' ? 'X 站内 Grok（免 API Key）' : 'xAI API';
+        const modeText = r.mode === 'deepseek' ? 'DeepSeek API'
+          : (r.mode === 'page' || r.mode === 'native') ? 'X 站内 Grok（免 API Key）' : 'xAI API';
         grokStatus('✅ ' + modeText + ' 已连通｜' + r.model + '｜' + r.protocol +
           '｜耗时 ' + r.latencyMs + 'ms｜' + (r.sample || '').replace(/\s+/g, ' '), true);
       });
@@ -290,24 +318,44 @@ function previewPrompt() {
   const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
   const extra = val('pagePromptExtra');
   const mode = (document.getElementById('grokMode') || {}).value || 'auto';
-  const native = mode === 'native' || (mode === 'auto' && (document.getElementById('grokPreferNative') || {}).checked !== false);
+  // 1.5.3：xAI / DeepSeek API 模式发的是原始 system+user messages，不带页面模式的任务标记
+  const apiMode = mode === 'api' || mode === 'deepseek';
+  const native = !apiMode && (mode === 'native' ||
+    (mode === 'auto' && (document.getElementById('grokPreferNative') || {}).checked !== false));
   const samplePost = '（示例推文）TapeOut 生态又多了一个链上应用，DeWeb 容器索引突破 200 个。';
+  // 1.5.3：DeepSeek 开启 JSON Output 且提示词里没有 json 字样时，后台会补一条 system 提示；
+  // 预览必须与实际发送一致，所以这里做同样的归一化（xAI API 模式不补）。
+  const dsJsonOn = mode === 'deepseek' &&
+    (document.getElementById('deepseekJsonMode') || { checked: true }).checked !== false;
+  const normalizeForApi = (messages) => {
+    const list = messages || [];
+    if (!dsJsonOn || list.some((m) => /json/i.test(String((m && m.content) || '')))) return list;
+    return [{ role: 'system', content: '请严格用 JSON 格式输出（JSON only）。' }].concat(list);
+  };
+  const fmtApi = (messages) => normalizeForApi(messages)
+    .map((m) => '【' + m.role + '】\n' + m.content).join('\n\n');
   // 1.4.18：站内直连的 AI 评论走 XVM 式极简模板，预览必须与实际发送一致
-  const comment = native
-    ? TapeAI.buildNativeCommentPrompt(samplePost, val('commentPrompt'), extra)
-    : TapeAI.buildPagePrompt(
-        TapeAI.buildCommentMessages(samplePost, val('commentPrompt')), extra);
-  const buildVerify = (messages, kind) => native
-    ? TapeAI.buildNativePrompt(messages, kind, extra)
-    : TapeAI.buildPagePrompt(messages, extra);
+  const comment = apiMode
+    ? fmtApi(TapeAI.buildCommentMessages(samplePost, val('commentPrompt')))
+    : native
+      ? TapeAI.buildNativeCommentPrompt(samplePost, val('commentPrompt'), extra)
+      : TapeAI.buildPagePrompt(
+          TapeAI.buildCommentMessages(samplePost, val('commentPrompt')), extra);
+  const buildVerify = (messages, kind) => apiMode
+    ? fmtApi(messages)
+    : native
+      ? TapeAI.buildNativePrompt(messages, kind, extra)
+      : TapeAI.buildPagePrompt(messages, extra);
   const verify = buildVerify(
     TapeAI.buildVerifyMessages('https://tapeout.net/', val('verifyPrompt')), 'verify');
   box.style.display = 'block';
   box.textContent = '【AI 评论 · 实际发送内容】\n' + comment +
     '\n\n────────────────────\n\n【链接核验 · 实际发送内容】\n' +
     verify.slice(0, 1600) + (verify.length > 1600 ? '\n…（清单摘要较长，此处省略）' : '');
-  grokStatus('已生成预览：这就是' + (native ? '站内直连' : '页面模式') +
-    '下实际发给 Grok 的完整文本（用示例内容拼装，不会真的发送）。', true);
+  const label = native ? '站内直连'
+    : (mode === 'deepseek' ? 'DeepSeek API' : (mode === 'api' ? 'xAI API' : '页面模式'));
+  grokStatus('已生成预览：这就是' + label +
+    '下实际发送的完整文本（用示例内容拼装，不会真的发送）。', true);
 }
 
 /* 1.3.3：扩展重载后旧 X 标签的 content script 是孤儿，页面模式会报
@@ -345,17 +393,20 @@ function openGrokPage() {
 
 /* 自定义网关不是默认 host_permissions，用户主动点一下才申请该域名访问权 */
 function grantOrigin() {
-  const base = (document.getElementById('grokBaseUrl') || {}).value || GROK_SECRET_DEFAULTS.grokBaseUrl;
+  // 1.5.3：按当前运行模式申请对应服务商 / 网关的域名权限
+  const isDs = String((document.getElementById('grokMode') || {}).value || '') === 'deepseek';
+  const base = (document.getElementById(isDs ? 'deepseekBaseUrl' : 'grokBaseUrl') || {}).value ||
+    (isDs ? GROK_SECRET_DEFAULTS.deepseekBaseUrl : GROK_SECRET_DEFAULTS.grokBaseUrl);
   let origin;
   try { origin = new URL(String(base).trim()).origin; }
   catch (e) { grokStatus('接口地址不是合法 URL，请检查后再点。', false); return; }
   if (!chrome.permissions || !chrome.permissions.request) {
-    grokStatus('当前 Chrome 不支持动态权限申请；请用默认 api.x.ai，或让网关允许跨域。', false);
+    grokStatus('当前 Chrome 不支持动态权限申请；请用官方默认地址，或让网关允许跨域。', false);
     return;
   }
   chrome.permissions.request({ origins: [origin + '/*'] }, (granted) => {
     grokStatus(granted ? '✅ 已允许访问 ' + origin + '，可以点「测试连接」了。'
-      : '没有授予 ' + origin + ' 的访问权限；可继续用默认 api.x.ai。', !!granted);
+      : '没有授予 ' + origin + ' 的访问权限；可继续用官方默认地址。', !!granted);
   });
 }
 
@@ -425,10 +476,14 @@ bind('openPanel', () => {
   catch (e) { grokStatus('打开生态面板失败：' + String(e && e.message || e), false); }
 });
 bind('testGrok', testGrok);
+const modeSel = document.getElementById('grokMode');
+if (modeSel) modeSel.addEventListener('change', syncDeepseekPanel);
 bind('resetGrokTab', resetGrokTab);
 bind('grantOrigin', grantOrigin);
 bind('showKey', () => {
-  const k = document.getElementById('grokKey');
+  // 1.5.3：显示当前所选 API 供应商的 Key，不把两家的输入框同时切成明文
+  const isDs = String((document.getElementById('grokMode') || {}).value || '') === 'deepseek';
+  const k = document.getElementById(isDs ? 'deepseekKey' : 'grokKey');
   const b = document.getElementById('showKey');
   if (!k || !b) return;
   const show = k.type === 'password';
@@ -478,7 +533,8 @@ const INFO = {
       '站内直连：同自动，但失败时直接报错不降级。',
       '页面模式：旧 DOM 链路，仅作手动兜底。',
       'xAI API：填自己的 Key，按量计费。',
-      '请求由 X 页面发给 X/Grok，不经第三方服务器。'
+      'DeepSeek API：填自己的 Key，走 api.deepseek.com，按量计费。',
+      'API 模式只请求你选的那家服务商，不经开发者服务器。'
     ]
   },
   usage: {
@@ -530,7 +586,7 @@ const INFO = {
       '转发全链路本机完成：不上传正文、图片或浏览记录。',
       '站内直连只把提示词发给 X/Grok，不新增第三方。',
       'API Key 存本机 chrome.storage.local，不同步、不入库。',
-      '只有 API 模式才由后台直连 xAI，费用自行承担。',
+      '只有 API 模式才由后台直连 xAI / DeepSeek，费用自行承担。',
       '插件不调用任何发布接口，不替你发推或回复。'
     ]
   },
@@ -797,7 +853,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.2 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.3 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

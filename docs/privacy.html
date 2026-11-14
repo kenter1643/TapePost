@@ -39,10 +39,10 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 13 日（1.5.2：新增视频剪接工作台与逐帧去水印、修复微博视频内容的按钮注入，只改本机页面 DOM，数据流向、权限与接收方均不变）　｜　适用版本：1.5.2（历史版本 1.4.2 及以上同样适用）　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 13 日（1.5.3：AI 回复新增可配置的 DeepSeek API 模式，新增一条主机权限 api.deepseek.com 与对应第三方 AI 服务披露；此前 1.5.2 的视频工作台与按钮注入仍为纯本机）　｜　适用版本：1.5.3（历史版本 1.4.2 及以上同样适用）　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
-    <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」模式并填写自己的 Key 时，接收方才改为 xAI。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。
+    <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」或「DeepSeek API」模式并填写自己的 Key 时，接收方才改为对应服务商（xAI 或 DeepSeek）；两家的 Key 与配置分开保存，同一时刻只会向你选定的那一家发请求。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。
   </div>
 
   <h2>1. 我们会处理哪些数据</h2>
@@ -60,7 +60,7 @@
   <h2>2. 数据存到哪里</h2>
   <ul>
     <li><strong>偏好设置</strong>（去水印开关、站点开关、署名开关、提示词等）保存在 <code>chrome.storage.sync</code>；若你开启了 Chrome 同步，浏览器会按你自己的同步设置同步这部分偏好。</li>
-    <li><strong>xAI API Key 与接口配置</strong>（模型、协议、网关地址）保存在 <code>chrome.storage.local</code>，<strong>仅存本机、不同步、不随扩展分发</strong>，只用于向你指定的接口发起带 <code>Authorization</code> 头的请求。开发者无法读取它。</li>
+    <li><strong>xAI / DeepSeek 的 API Key 与接口配置</strong>（模型、协议、接口地址、网关地址，1.5.3 起两家的密钥分别存放、互不覆盖）保存在 <code>chrome.storage.local</code>，<strong>仅存本机、不同步、不随扩展分发</strong>，只用于向你指定的接口发起带 <code>Authorization</code> 头的请求。开发者无法读取它。</li>
     <li><strong>处理后的图片</strong>写入系统剪贴板，或按你的操作下载到本机下载目录；文件名前缀为 <code>xpost_</code>。</li>
     <li><strong>文字</strong>只通过 URL 参数预填到 <code>x.com/intent/tweet</code> 或 <code>twitter.com/intent/tweet</code> 的新标签页，由你手动点击发送。扩展不调用任何发布接口，也不会替你发帖或回复。</li>
     <li><strong>生态收录清单</strong>（295 条）是内置在扩展代码里的静态数据，来源为 <a href="https://tapeout.link/">TapeOut.link</a> 公开的站点数据与 <a href="https://web.tapeout.link/">web.tapeout.link</a> 的 DeWeb 索引（核验日期 2026-11-08），不会联网拉取，也不包含你的任何信息。</li>
@@ -77,6 +77,7 @@
   </ul>
   <p><strong>1.4.16 TapeUP $UP 内盘价（内容脚本采集，非后台 GET）：</strong>tapeup.io 整站 Cloudflare 防护，后台直接 <code>fetch</code> 会被拦，因此 TapeUP $UP 的内盘价（页面标注 <code>BEM/UP</code>，即 UP 以 BEM 计价，如 <code>0.0264 BEM/UP</code>，并同时给出美元折算价 <code>$0.3181</code>；来自 <code>https://tapeup.io/zh/trade/token?id=1</code>）改由扩展的<strong>内容脚本</strong>在你已通过 CF 的浏览器会话里读取页面显示的内盘价，再回传后台缓存。<strong>1.4.21 起</strong>只按页面上的 <code>BEM/UP</code> 标签与「价 + 美元 + 百分比」组合定位价格，钱包余额、待释放余额、统计区数字与图表坐标只作本机诊断候选、不参与取价；认不出就显示未采集。扩展仅在 <code>tapeup.io</code> 注入内容脚本读取该页显示的价格数字，<strong>不读取页面外数据、不发送任何本机数据、不在该域发起额外网络请求</strong>。</p>
   <p><strong>1.4.22 界面改版（仅本机渲染）：</strong>行情面板由三列挤压改为「上 TapeUP / 中 矿机日产 / 下 BEM」三块整行卡片，把主值、另一计价口径、涨跌、来源、更新时间、实时或缓存状态，以及可折叠的「采集明细」（原始字段、采集锚点与本机诊断候选）完整显示出来。这些信息全部来自上述同源公开数据与本机缓存，<strong>只为解决文字被裁切的问题，不新增任何网络请求、权限、域名、数据接收方，也不额外读取或上传页面内容</strong>。BEM 与矿机日产能价仍来自 Firsto，TapeUP 内盘价仍来自 tapeup.io，与 Firsto 无关。</p>
+  <p><strong>1.5.3 AI 回复新增 DeepSeek API 模式（第三方 AI 服务，如实披露）：</strong>运行模式新增第五种「DeepSeek API」。用户显式选择并填入自己的 Key 后，两个手动触发的 AI 功能（X 一键评论、链接真伪查询）与「测试当前模式」会由扩展后台向 <code>api.deepseek.com/chat/completions</code>（或用户自填的兼容网关）发送用户点选的推文正文（≤1200 字符）或待核验链接、本地比对结论、少量相关清单条目与设定提示词，用用户自己的 DeepSeek Key 认证，接收方是 DeepSeek（或该自填网关），<strong>开发者不接收、不留存</strong>。Key、模型 ID、接口地址与「强制 JSON 输出」开关共四项只存本机 <code>chrome.storage.local</code>，与 xAI 的配置完全隔离；同一时刻只向用户选定的一家发请求，不读取 / 不发送 X 登录凭据与图片视频文件。为此<strong>新增且仅新增一条主机权限 <code>https://api.deepseek.com/*</code></strong>（合计 30 条），仅在该模式被主动选中并发起 AI 请求时使用；默认站内直连、既有 xAI 设置与图片 / 视频 / 行情链路均不变。发送给 DeepSeek 的内容受其隐私政策与服务条款约束，调用费用由用户承担。商店上架资料的第三方 AI 服务申报、数据使用披露与主机访问理由已同步列出 X/Grok、xAI 与 DeepSeek。</p>
   <p><strong>1.5.2 视频剪接与逐帧去水印（仍为纯本机）：</strong>含视频的内容现在会在页面上弹出「视频工作台」，可设置 1~4 段起止时间（顺序拼接）、选择是否逐帧去水印与输出画质，再导出片段用于转发。视频只由扩展在自己已获授权的<strong>离屏文档</strong>里读取为同源 <code>blob:</code> 并用本机 <code>&lt;video&gt;</code> / Canvas / MediaRecorder 逐帧重建与重新编码：首帧在本机检测水印条带，后续帧只对本机像素做条带纹理重建；成品只写入本机剪贴板、本机下载目录或本机临时目录，并由用户自己拖入 / 粘贴到 X。<strong>视频字节不上传、不调用任何云端 AI / 视频修复服务、不发送给任何第三方，也不新增权限、主机权限、网络请求或数据接收方</strong>；除用户主动在已授权来源站读取那条视频本身外，不额外读取页面文字、账号或其它页面内容。音频在本机尽力保留，离屏环境无用户手势时可能无声；输出优先 MP4，旧版 Chrome 回退 WebM。</p>
   <p><strong>1.5.2 视频内容的按钮注入（仍为纯本机）：</strong>为了让微博首页视频微博、/tv 视频频道与 video.weibo.com 播放页上的视频内容也能看到「一键转发」与「视频剪辑」，扩展会在<strong>当前已授权页面的 DOM 里</strong>识别视频播放器 / 播放按钮 / 视频链接，并把一个本机生成的按钮条挂到该内容单元上。这一步只读取页面上已经显示给用户的元素与文字，用于定位按钮与解析本条内容；<strong>不读取 Cookie、账号凭据、浏览历史或其它标签页，不新增权限、主机权限、网络请求或数据接收方，也不向任何第三方发送页面内容</strong>。视频本身的读取与处理仍按上一段所述全程在本机离屏文档内完成。</p>
   <p><strong>1.5.1 右下角水印修复（仍为纯本机）：</strong>水印检测改为「贴边瓦片扫描 + 宽松亮笔画种子 + 自适应行阈值 + 结构校验」，填充改为条带纹理重建，用来解决压在图像最右下角、以及压在浅色衣服上的白色半透明水印漏检，并避免把拼接长图之间的纯白分隔条、天花板灯、衣物高光误当成水印。<strong>这些改动全部是离屏文档内的本机像素计算：不上传图片、不调用任何云端 AI / 图像修复服务、不新增权限、主机权限、网络请求或数据接收方</strong>；未检出水印时原图像素一字节不改。</p>
@@ -95,12 +96,13 @@
 
   <h2>4. AI 功能：运行模式与数据流向</h2>
   <div class="box">
-    <p style="margin-top:0">两个由你手动触发的 AI 功能（X 一键评论、链接真伪查询）支持「自动（默认）／站内直连／xAI API／页面模式（1.4.0 起已弃用，仅手动兜底）」。默认「自动」在<strong>未填 API Key 时走 1.4.2 的站内直连</strong>：由 X 页面自身向 X 自有的 Grok 接口发请求；<strong>填了 Key 才走 xAI API</strong>。</p>
+    <p style="margin-top:0">两个由你手动触发的 AI 功能（X 一键评论、链接真伪查询）支持「自动（默认）／站内直连／xAI API／DeepSeek API（1.5.3 新增）／页面模式（1.4.0 起已弃用，仅手动兜底）」。默认「自动」在<strong>未填 API Key 时走 1.4.2 的站内直连</strong>：由 X 页面自身向 X 自有的 Grok 接口发请求；<strong>填了 Key 才走 xAI API</strong>。「DeepSeek API」是显式选择的独立模式：选中后不降级到站内直连或页面模式，X 一键评论、链接真伪查询与「测试当前模式」都改走 DeepSeek。</p>
     <p><strong>① API 模式（xAI Grok）</strong>：需要你自己的 xAI API Key，扩展后台才会向 <code>https://api.x.ai/v1</code>（或你自填的兼容网关）发起请求：</p>
     <ul>
       <li><strong>X 一键评论</strong>：点击后把该条推文的正文 + 你设定的评论提示词发送给 <code>https://api.x.ai/v1</code>（或你在设置里填写的兼容网关），由 Grok 生成 3 条回复候选。候选只显示在本机浮层里；选中后才写入当前 X 回复框（1.3.1 起按钮位于回复填写区右侧，写入是页面内 DOM 操作，不产生新的网络请求），发送由你手动完成。</li>
       <li><strong>链接真伪查询</strong>：点击核验后把待核验链接 + 插件本地比对得出的结论 + 与本次判定相关的少量清单条目 + 你设定的核验提示词发送给同一接口，由 Grok 生成解释与仿冒风险判断。最终是否给绿标由本地清单决定，不采信模型结论。</li>
     </ul>
+    <p><strong>①-b DeepSeek API 模式（1.5.3 新增）</strong>：在设置 →「运行模式」显式选择「DeepSeek API」并填入自己的 DeepSeek API Key 后，扩展后台会向 <code>https://api.deepseek.com/chat/completions</code>（也接受 <code>/v1</code> 或你自填的兼容网关地址）发起 OpenAI 兼容请求。默认模型 <code>deepseek-v4-flash</code>，可换 <code>deepseek-v4-pro</code>；可开启「强制 JSON 输出」（<code>response_format: {"type":"json_object"}</code>），用不认该参数的兼容网关时关掉即可。官方 JSON Output 要求提示词里出现 <code>json</code> 字样：默认提示词已带；若用户自定义提示词删掉了，扩展会在本机自动补一条要求 JSON 输出的 system 提示，「预览实际发送内容」与真实请求保持一致，除此之外发送内容不变。Key、模型 ID、接口地址与该开关共四项，均保存在本机 <code>chrome.storage.local</code>，<strong>仅存本机、不同步、不随扩展分发、开发者无法读取</strong>，并且与 xAI 的 Key / 模型 / 网关完全隔离。发送内容与 xAI API 模式<strong>完全相同</strong>：你点选的推文正文（≤1200 字符）或待核验链接、插件本地比对结论、少量相关清单条目与你设定的提示词；接收方为 DeepSeek（或你自填的兼容网关），认证方式是你自己的 <code>Authorization: Bearer</code> Key。<strong>此模式不读取 X 登录态、不读取 ct0 / authorization、不向 X/Grok 发请求，也不与 xAI Key 混用</strong>；生成的 3 条候选与核验结论仍只在本机解析与展示。</p>
     <p><strong>② 页面模式（1.3.0 引入，1.4.0 起已弃用，仅作手动兜底）</strong>：扩展<strong>不向 xAI 或任何 AI 接口发送网络请求</strong>，也不读取 X 登录凭据。它只在你已登录的 <code>x.com/i/grok</code>（或 X 页面上的 Grok 浮窗）里，把设定好的提示词填入输入框、按需点击发送，并从该页面读取 Grok 回答的文本，在本机解析成候选。<strong>与 Grok 的对话由 X 自己完成并保存在你的 X 账号里</strong>，受 X 的服务条款与隐私政策约束；扩展不读取你的对话历史、其它标签页或账号信息。仅当你显式切到该模式、或站内直连与 API 都不可用时使用；此模式不产生 API 调用费用。</p>
     <p>若自动发送或读取失败，可改用手动流程：插件只把提示词填进输入框 / 复制到剪贴板，由你自己粘贴发送，回答出来后再点「读取 Grok 回答」。所有 DOM 选择器都可在设置里修改。</p>
     <p><strong>1.3.2 起的结果校验：</strong>页面模式会用唯一任务标记确认提示词确实只写进了 Grok 输入框、确实被发送，并确认读回了回答块；任一环节不成立就明确报错，不会把 X 页面的侧栏文字或按钮文字当作 Grok 结果展示。点击后出现的等待浮层只显示进度与耗时，不上传任何数据；Grok 回答文本的解析全部在本机完成。</p>
@@ -110,10 +112,10 @@
     <p><strong>1.3.4 起的正文清洗（仅指清洗步骤本身）：</strong>回复框内的按钮去重、插件界面文字剥离、推文正文提取全部在页面内 DOM 完成，不涉及任何网络请求、不新增第三方接收方、不上传推文正文或页面内容；清洗后只剩界面文字时扩展会取消生成并在本机提示，不会把该内容发送给 Grok。</p>
     <p><strong>1.3.3 起的连接自愈：</strong>重新加载扩展后，插件可能刷新已打开的 X / Grok 标签，或在后台新建 <code>x.com/i/grok</code> 标签，以恢复失效的页面内脚本。刷新与新建标签均为浏览器本地操作，不会上传页面内容、推文正文、X 登录凭据或任何其它数据，也没有新增第三方接收方；连接错误只在本机转成中文提示，不回传诊断信息。</p>
     <p>生态面板的 295 条收录清单是<strong>内置在扩展里的静态数据</strong>：运行时不会访问 tapeout.link 或 web.tapeout.link 拉取清单，也不会把整份清单上传给 xAI；核验时只发送你输入的链接、本地结论和上述少量相关条目。</p>
-    <p><strong>不会发送给开发者或任何第三方：</strong>浏览历史、其它标签页内容、图片/视频文件、账号密码、个人信息，以及认证凭证的副本或日志。<strong>需要区分的是</strong>：站内直连的请求由浏览器自动携带 X 会话 Cookie 与请求头（含 <code>ct0</code>、<code>authorization</code>）发给 <strong>X 自己</strong>（接收方仅 X/Grok），这是 X 网页客户端发请求的正常行为；扩展不存储、不导出、不回传这些值，也不会把它们发给除 X 之外的任何一方。页面模式同样不会把回答文本上传给任何服务器 —— 解析全部在本机完成。</p>
-    <p><strong>第三方责任：</strong>API 模式下发送给 xAI 的内容受 <a href="https://x.ai/legal/privacy-policy">xAI 的隐私政策</a>与其服务条款约束，调用额度与费用由你自行承担；若填写第三方兼容网关，该网关运营方同样会收到内容，请先确认你信任它。站内直连与页面模式下，提示词与回答由 X 处理，受 <a href="https://x.com/privacy">X 的隐私政策</a>与服务条款约束。扩展开发者在任何模式下都不接收、不留存这些内容。</p>
+    <p><strong>不会发送给开发者或任何第三方：</strong>浏览历史、其它标签页内容、图片/视频文件、账号密码、个人信息，以及认证凭证的副本或日志。<strong>需要区分的是</strong>：站内直连的请求由浏览器自动携带 X 会话 Cookie 与请求头（含 <code>ct0</code>、<code>authorization</code>）发给 <strong>X 自己</strong>（接收方仅 X/Grok），这是 X 网页客户端发请求的正常行为；扩展不存储、不导出、不回传这些值，也不会把它们发给除 X 之外的任何一方。页面模式同样不会把回答文本上传给任何服务器 —— 解析全部在本机完成。DeepSeek API 模式下，只有你点选的文字 / 链接、本地结论、少量清单条目与提示词发给你填写的地址；X 会话 Cookie、bearer、图片 / 视频文件与浏览历史都不会发给 DeepSeek。</p>
+    <p><strong>第三方责任：</strong>API 模式下发送给 xAI 的内容受 <a href="https://x.ai/legal/privacy-policy">xAI 的隐私政策</a>与其服务条款约束；1.5.3 起发送给 DeepSeek 的内容受 <a href="https://cdn.deepseek.com/policies/zh-CN/privacy-policy.html">DeepSeek 隐私政策</a>与其服务条款约束，调用额度与费用由你自行承担；若填写第三方兼容网关，该网关运营方同样会收到内容，请先确认你信任它。站内直连与页面模式下，提示词与回答由 X 处理，受 <a href="https://x.com/privacy">X 的隐私政策</a>与服务条款约束。扩展开发者在任何模式下都不接收、不留存这些内容。</p>
   </div>
-  <p>你可以在设置面板里切换运行模式、删除 API Key、关闭「自动发送」或关闭「AI 评论」按钮。删除 Key 后 AI 功能会自动改用 1.4.2 的站内直连；只使用「一键转发」时扩展完全离线可用。站内直连需要 Chrome 已登录 x.com 且账号具备 Grok 权限。</p>
+  <p>你可以在设置面板里切换运行模式、删除 API Key、关闭「自动发送」或关闭「AI 评论」按钮。删除 Key 后 AI 功能会自动改用 1.4.2 的站内直连（若仍显式选着「DeepSeek API」模式，会明确提示先填 DeepSeek Key，不会偷偷改走 X/Grok）；只使用「一键转发」时扩展完全离线可用。站内直连需要 Chrome 已登录 x.com 且账号具备 Grok 权限。</p>
 
   <h2>5. 权限说明</h2>
   <div class="box">
@@ -125,7 +127,8 @@
     <tr><td>offscreen</td><td>创建离屏文档，在后台用 Canvas 处理图片并写入剪贴板</td></tr>
     <tr><td>declarativeNetRequest</td><td>为图片 CDN 请求设置 Referer，避免防盗链导致下载失败；固定 9 条规则，不拦截其它流量</td></tr>
     <tr><td>站点主机权限</td><td>仅在你打开的 7 个已启用站点页面上识别内容、注入按钮并读取配图</td></tr>
-    <tr><td><code>api.x.ai</code> 主机权限</td><td>仅在 API 模式下、你主动使用 AI 功能时，向 xAI 官方接口发送生成请求；站内直连与页面模式都不用它</td></tr>
+    <tr><td><code>api.x.ai</code> 主机权限</td><td>仅在 xAI API 模式下、你主动使用 AI 功能时，向 xAI 官方接口发送生成请求；站内直连与页面模式都不用它</td></tr>
+    <tr><td><code>api.deepseek.com</code> 主机权限（1.5.3 新增）</td><td>仅在你主动把运行模式切到「DeepSeek API」、填入自己的 Key 并使用 AI 功能时，向 DeepSeek 官方 OpenAI 兼容接口发送生成请求；默认站内直连、xAI API 与页面模式都不用它，扩展自身也不会在后台自动发起任何 DeepSeek 请求</td></tr>
     <tr><td>alarms（1.4.13 新增）</td><td>按你设定的间隔在后台定时检查三项公开行情；只在本机触发刷新与阈值判定，不上传数据</td></tr>
     <tr><td>notifications（1.4.13 新增）</td><td>价格越过你设定的上下限时，由 Chrome 系统通知在桌面提醒；通知文字只含公开价格与阈值，点击打开 Firsto 数据页。可在面板里关闭</td></tr>
     <tr><td><code>api-tapeout.firsto.ai</code> 主机权限（1.4.13 新增，1.4.20 仅换接口路径）</td><td>仅用于上述 BEM / 矿机日产价的公开只读接口 GET 请求（1.4.20 起矿机价路径为 <code>/v1/circuit-holders?page=1</code>，域名与权限不变）；不读取该域名页面内容，不在其上注入脚本，也不发送任何本机数据</td></tr>
@@ -138,7 +141,7 @@
   <p>你可以在扩展设置面板里逐个关闭站点；关闭某个站点后，扩展不会在该站点注入任何界面。</p>
 
   <h2>6. 第三方内容与你的责任</h2>
-  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）与 xAI 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。1.4.13 起面板顶端的行情与价格提醒：<strong>BEM 与矿机日产价这两项都来自 Firsto</strong>（BEM 来自 Firsto 官方 analytics，矿机日产价自 1.4.20 起来自 tapeout.firsto.ai/circuits/other 页顶实时挂单参考价的同源只读接口）；<strong>TapeUP $UP 内盘价来自 tapeup.io 交易页</strong>（1.4.21 起按页面 BEM/UP 锚点由内容脚本采集，与 Firsto 无关），<strong>仅供参考、可能延迟或缺失，不构成投资建议</strong>；扩展不替你下单、不连接钱包、不读取你的持仓。</p>
+  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）、xAI 与 DeepSeek 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。1.4.13 起面板顶端的行情与价格提醒：<strong>BEM 与矿机日产价这两项都来自 Firsto</strong>（BEM 来自 Firsto 官方 analytics，矿机日产价自 1.4.20 起来自 tapeout.firsto.ai/circuits/other 页顶实时挂单参考价的同源只读接口）；<strong>TapeUP $UP 内盘价来自 tapeup.io 交易页</strong>（1.4.21 起按页面 BEM/UP 锚点由内容脚本采集，与 Firsto 无关），<strong>仅供参考、可能延迟或缺失，不构成投资建议</strong>；扩展不替你下单、不连接钱包、不读取你的持仓。</p>
 
   <h2>7. 儿童隐私</h2>
   <p>本扩展不面向 13 岁以下儿童，也不会有意收集任何年龄信息。</p>
@@ -146,7 +149,7 @@
   <h2>8. 变更与联系</h2>
   <p>如政策有实质变更，我们会更新本页并同步提升扩展版本号。本项目源码公开，可自行审计数据处理逻辑：<a href="https://github.com/kenter1643/TapePost">github.com/kenter1643/TapePost</a>。如需咨询或反馈，请在 <a href="https://github.com/kenter1643/TapePost/issues">GitHub Issues</a> 提交，或通过 Chrome 网上应用店该扩展页面的「支持 / 开发者联系方式」渠道联系开发者。</p>
 
-  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · Grok 默认免 Key 走 X 站内模式 · 行情仅取公开只读接口　｜　Last updated: 2026-11-12</footer>
+  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · AI 默认免 Key 走 X 站内模式，可选 xAI / DeepSeek API · 行情仅取公开只读接口　｜　Last updated: 2026-11-13</footer>
 </div>
 </body>
 </html>

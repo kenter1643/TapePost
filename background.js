@@ -123,6 +123,7 @@ async function ensureOffscreen() {
  * 两个 AI 功能共用这一段，支持三种运行模式：
  *   native — 1.4.0 默认：在当前 X 标签里直接调 X 自带 Grok 接口（免 Key、最稳定）
  *   api    — Service Worker 直连 api.x.ai（需 Key，按量计费）
+ *   deepseek — 1.5.3：Service Worker 直连 api.deepseek.com（OpenAI 兼容，用户自备 Key）
  *   page   — 把提示词送进用户已登录的 x.com 站内 Grok 页面/浮窗，读回回答（旧链路兜底）
  *   auto   — X 页面里优先 native，失败降级 page；显式填了 Key 则走 api
  * 消息类型：
@@ -151,6 +152,18 @@ const GROK_DEFAULTS = {
   // 1.4.11：AI 评论快速模式（默认开）—— 不思考、不并排对比、拿到答案即收尾
   grokFastMode: true
 };
+
+/* 1.5.3：DeepSeek 官方 OpenAI 兼容接口（https://api-docs.deepseek.com）。
+ * 官方 base_url 是 https://api.deepseek.com（也可填 /v1 或自填兼容网关），
+ * 模型为 deepseek-v4-flash / deepseek-v4-pro；旧的 deepseek-chat / deepseek-reasoner
+ * 已于 2026-07-24 弃用。这些键与 xAI 的 Key 完全分开存，互不覆盖。 */
+const DEEPSEEK_DEFAULTS = {
+  deepseekApiKey: '',
+  deepseekBaseUrl: 'https://api.deepseek.com',
+  deepseekModel: 'deepseek-v4-flash',
+  deepseekTemperature: 0.7,
+  deepseekJsonMode: true             // 官方模型支持 JSON Output；兼容网关可在设置里关掉
+};
 let lastGrokError = null;
 
 function storageGet(area, keys) {
@@ -171,7 +184,8 @@ const PAGE_CFG_KEYS = (typeof TapeAI !== 'undefined' && TapeAI.PAGE_MODE_DEFAULT
 
 async function getGrokConfig() {
   const [secret, pref] = await Promise.all([
-    storageGet('local', ['grokApiKey', 'grokBaseUrl', 'grokModel', 'grokProtocol', 'grokTemperature']),
+    storageGet('local', ['grokApiKey', 'grokBaseUrl', 'grokModel', 'grokProtocol', 'grokTemperature',
+      'deepseekApiKey', 'deepseekBaseUrl', 'deepseekModel', 'deepseekTemperature', 'deepseekJsonMode']),
     storageGet('sync', ['commentPrompt', 'verifyPrompt'].concat(PAGE_CFG_KEYS))
   ]);
   const page = {};
@@ -189,15 +203,46 @@ async function getGrokConfig() {
       page.grokPreferNative !== false && !String(secret.grokApiKey || '').trim()) {
     page.grokMode = 'auto';
   }
-  return Object.assign({}, GROK_DEFAULTS, page, secret, {
+  return Object.assign({}, GROK_DEFAULTS, DEEPSEEK_DEFAULTS, page, secret, {
     commentPrompt: pref.commentPrompt || '',
-    verifyPrompt: pref.verifyPrompt || ''
+    verifyPrompt: pref.verifyPrompt || '',
+    // 1.5.3：只有显式选了 DeepSeek 模式才把供应商切过去；其它模式一律保持 xAI 口径，
+    // 这样用户既有的 xAI Key / 网关设置与 1.5.2 的行为完全一致。
+    aiProvider: String(page.grokMode || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'xai'
   });
 }
 
 function grokEndpoint(cfg) {
   const base = String(cfg.grokBaseUrl || GROK_DEFAULTS.grokBaseUrl).replace(/\/+$/, '');
   return base + (cfg.grokProtocol === 'responses' ? '/responses' : '/chat/completions');
+}
+
+/* 1.5.3：DeepSeek 端点。用户可能填官方根地址、/v1，或干脆填完整的
+ * /chat/completions，三种写法都归一成同一个可用 URL。 */
+function deepseekEndpoint(cfg) {
+  const base = String(cfg.deepseekBaseUrl || DEEPSEEK_DEFAULTS.deepseekBaseUrl).trim().replace(/\/+$/, '');
+  if (/\/chat\/completions$/i.test(base)) return base;
+  return base + '/chat/completions';
+}
+
+function deepseekBody(cfg, messages, maxTokens) {
+  const model = String(cfg.deepseekModel || DEEPSEEK_DEFAULTS.deepseekModel).trim();
+  const temperature = Number(cfg.deepseekTemperature);
+  const temp = isFinite(temperature) ? Math.min(1, Math.max(0, temperature)) : 0.7;
+  let msgs = messages || [];
+  const body = { model, messages: msgs, temperature: temp, max_tokens: maxTokens || 700, stream: false };
+  // 两个 AI 功能都要求 JSON；官方模型支持 response_format，兼容网关可关掉
+  if (cfg.deepseekJsonMode !== false) {
+    body.response_format = { type: 'json_object' };
+    /* DeepSeek 官方 JSON Output 要求提示词里出现 "json" 字样，否则可能返回空 content。
+     * 默认提示词与 SYSTEM_HINT 都带 JSON，但用户可自定义提示词，所以这里做一次兜底。 */
+    const hasJsonWord = msgs.some((m) => /json/i.test(String((m && m.content) || '')));
+    if (!hasJsonWord) {
+      msgs = [{ role: 'system', content: '请严格用 JSON 格式输出（JSON only）。' }].concat(msgs);
+      body.messages = msgs;
+    }
+  }
+  return body;
 }
 
 function grokBody(cfg, messages, maxTokens) {
@@ -229,27 +274,37 @@ function grokText(data, protocol) {
   try { return data.choices[0].message.content || ''; } catch (e) { return ''; }
 }
 
-function grokFriendlyError(status, bodyText) {
+function grokFriendlyError(status, bodyText, isDeepseek) {
+  const provider = isDeepseek ? 'DeepSeek' : 'xAI';
   let detail = '';
   try {
     const j = JSON.parse(bodyText);
     detail = (j && (j.error && (j.error.message || j.error) || j.message)) || '';
   } catch (e) { detail = String(bodyText || '').slice(0, 160); }
   detail = String(detail).slice(0, 220);
-  if (status === 401 || status === 403) return 'API Key 无效或没有权限（HTTP ' + status + '）。请到设置里重新填写 xAI Key。' + (detail ? ' ' + detail : '');
-  if (status === 404) return '接口或模型不存在（HTTP 404）。请检查「接口地址 / 协议 / 模型 ID」，当前默认模型是 grok-4.3。';
-  if (status === 429) return '调用太频繁或额度不足（HTTP 429）。稍等片刻再试，或到 console.x.ai 查看额度。';
-  if (status >= 500) return 'xAI 服务端暂时不可用（HTTP ' + status + '），请稍后重试。';
+  if (status === 401 || status === 403) return 'API Key 无效或没有权限（HTTP ' + status + '）。请到设置里重新填写 ' + provider + ' Key。' + (detail ? ' ' + detail : '');
+  if (status === 404) return '接口或模型不存在（HTTP 404）。请检查「接口地址 / 模型 ID」，' +
+    (isDeepseek ? 'DeepSeek 官方模型是 deepseek-v4-flash / deepseek-v4-pro，默认地址 https://api.deepseek.com。'
+                : '当前默认模型是 grok-4.3。');
+  if (status === 429) return '调用太频繁或额度不足（HTTP 429）。稍等片刻再试，或到' +
+    (isDeepseek ? ' platform.deepseek.com 查看余额。' : ' console.x.ai 查看额度。');
+  if (status >= 500) return provider + ' 服务端暂时不可用（HTTP ' + status + '），请稍后重试。';
   return '请求失败（HTTP ' + status + '）' + (detail ? '：' + detail : '');
 }
 
 async function callGrok(messages, maxTokens, cfgIn) {
   const cfg = cfgIn || await getGrokConfig();
-  const key = String(cfg.grokApiKey || '').trim();
-  if (!key) throw new Error('还没有填 xAI API Key。请点插件图标 →「Grok 设置」填入 Key（只存在本机，不会上传）。');
+  /* 1.5.3：同一个函数按 aiProvider 服务两家；选 DeepSeek 时完全不碰 xAI 的
+   * Key / 模型 / 网关，也不降级到 X 页面，错误直接指向 DeepSeek 设置。 */
+  const ds = cfg.aiProvider === 'deepseek';
+  const providerName = ds ? 'DeepSeek' : 'xAI';
+  const key = String((ds ? cfg.deepseekApiKey : cfg.grokApiKey) || '').trim();
+  if (!key) throw new Error('还没有填 ' + providerName + ' API Key。请点插件图标 →「AI 设置」填入 Key（只存在本机，不会上传）。');
   if (typeof TapeAI === 'undefined') throw new Error('共享逻辑未加载，请在 chrome://extensions 重新加载扩展。');
 
-  const endpoint = grokEndpoint(cfg);
+  const endpoint = ds ? deepseekEndpoint(cfg) : grokEndpoint(cfg);
+  const protocol = ds ? 'chat' : cfg.grokProtocol;
+  const body = ds ? deepseekBody(cfg, messages, maxTokens) : grokBody(cfg, messages, maxTokens);
   let resp;
   try {
     resp = await fetch(endpoint, {
@@ -258,18 +313,26 @@ async function callGrok(messages, maxTokens, cfgIn) {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + key
       },
-      body: JSON.stringify(grokBody(cfg, messages, maxTokens))
+      body: JSON.stringify(body)
     });
   } catch (e) {
-    throw new Error('无法连接 ' + endpoint + '（' + String(e && e.message || e) + '）。国内网络通常需要代理；也可以在设置里换用兼容网关地址。');
+    throw new Error('无法连接 ' + endpoint + '（' + String(e && e.message || e) + '）。' +
+      (ds ? '请检查接口地址与网络；DeepSeek 官方地址是 https://api.deepseek.com。'
+          : '国内网络通常需要代理；也可以在设置里换用兼容网关地址。'));
   }
   const raw = await resp.text();
-  if (!resp.ok) throw new Error(grokFriendlyError(resp.status, raw));
+  if (!resp.ok) throw new Error(grokFriendlyError(resp.status, raw, ds));
   let data;
   try { data = JSON.parse(raw); } catch (e) { throw new Error('接口返回的不是 JSON：' + raw.slice(0, 120)); }
-  const text = grokText(data, cfg.grokProtocol);
-  if (!text) throw new Error('接口返回了空内容，请把「接口协议」切换成另一项后重试。');
-  return { text, model: cfg.grokModel, protocol: cfg.grokProtocol, endpoint };
+  const text = grokText(data, protocol);
+  if (!text) throw new Error(ds
+    ? 'DeepSeek 返回了空内容。可关掉「强制 JSON 输出」，或换一个模型 ID 后重试。'
+    : '接口返回了空内容，请把「接口协议」切换成另一项后重试。');
+  return {
+    text,
+    model: ds ? String(cfg.deepseekModel || DEEPSEEK_DEFAULTS.deepseekModel) : cfg.grokModel,
+    protocol, endpoint
+  };
 }
 
 // ---- 3b. 非 API 模式：把提示词送进 x.com 站内 Grok，再读回回答文本 ----
@@ -521,9 +584,10 @@ function messagesFor(kind, payload, cfg) {
 async function runGrok(messages, maxTokens, cfg, kind, postText) {
   const c = cfg || await getGrokConfig();
   const mode = TapeAI.pickGrokMode(c);
-  if (mode === 'api') {
+  // 1.5.3：deepseek 与 api 共用同一段「后台直连 → 文本 → 本机解析」链路
+  if (mode === 'api' || mode === 'deepseek') {
     const r = await callGrok(messages, maxTokens, c);
-    return Object.assign({}, r, { mode: 'api' });
+    return Object.assign({}, r, { mode });
   }
   // 1.4.18：页面模式的 AI 评论也改用无角色/无矛盾指令的提示词（保留任务标记与 JSON 输出）
   const prompt = (kind === 'comments' && postText !== undefined)
@@ -592,9 +656,10 @@ async function handleGrokMessage(msg, sender) {
     const grokTabs = tabs.filter((t) => /\/i\/grok(?:\/|\?|$)/.test(String(t.url || t.pendingUrl || '')));
     for (const t of grokTabs) await reloadTab(t.id);
     pageTabPromise = null;
-    if (mode === 'api') {
-      return { ok: true, mode: 'api', reloaded: grokTabs.length,
-        note: '当前是 xAI API 模式，用不到 X 站内 Grok 标签；已刷新旧的 Grok 页面。' };
+    if (mode === 'api' || mode === 'deepseek') {
+      return { ok: true, mode, reloaded: grokTabs.length,
+        note: '当前是 ' + (mode === 'deepseek' ? 'DeepSeek' : 'xAI') +
+          ' API 模式，用不到 X 站内 Grok 标签；已刷新旧的 Grok 页面。' };
     }
     const r = await callGrokPage('', cfg, 'ping');
     return {
@@ -643,7 +708,8 @@ async function handleGrokMessage(msg, sender) {
       { role: 'system', content: 'You are a test endpoint. Reply with exactly OK.' },
       { role: 'user', content: 'Reply with exactly: OK' }
     ], 16, cfg);
-    return { ok: true, model: r.model, protocol: r.protocol, mode: 'api', latencyMs: Date.now() - started, sample: r.text.slice(0, 60) };
+    return { ok: true, model: r.model, protocol: r.protocol, mode: effectiveMode,
+      latencyMs: Date.now() - started, sample: r.text.slice(0, 60) };
   }
 
   if (msg.type === 'GROK_COMMENTS') {

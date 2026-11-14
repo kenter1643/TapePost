@@ -455,8 +455,10 @@ var TapeAI = (function () {
    * 不传 opts 时行为与旧版完全一致，回归测试不受影响。 */
   function pickGrokMode(cfg, opts) {
     var mode = String((cfg && cfg.grokMode) || PAGE_MODE_DEFAULTS.grokMode).toLowerCase();
-    if (['auto', 'api', 'page', 'native'].indexOf(mode) === -1) mode = 'auto';
-    if (mode === 'api' || mode === 'native') return mode;
+    /* 1.5.3：deepseek 是用户显式选择的第四种 API 供应商模式，与 xAI Key 完全独立，
+     * 命中后直接返回，绝不降级到站内直连 / 页面模式（避免 Key 错误被 X 页面报错盖住）。 */
+    if (['auto', 'api', 'page', 'native', 'deepseek'].indexOf(mode) === -1) mode = 'auto';
+    if (mode === 'api' || mode === 'native' || mode === 'deepseek') return mode;
     var preferNative = cfg && cfg.grokPreferNative === false ? false : true;
     var noKey = String((cfg && cfg.grokApiKey) || '').trim() === '';
     /* 1.4.1：显式 page 多半是 1.3.x 存下来的旧设置。用户选它的本意是

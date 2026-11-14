@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：**1.5.2**（本仓库源码）　｜　Chrome Web Store 上架包：`store/TapePost_1.5.2_store.zip`　｜　Manifest V3　｜　Chrome 116+
+- 版本：**1.5.3**（本仓库源码）　｜　Chrome Web Store 上架包：`store/TapePost_1.5.3_store.zip`　｜　Manifest V3　｜　Chrome 116+
 - **版本规则**：未经明确授权，只在 1.5 系列里顺延补丁号（1.5.2 → 1.5.3 …），**不自行跳 1.6 / 2.0 等大版本**；新增功能一律算补丁，不改动 minor / major 号。
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
@@ -21,7 +21,26 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-13）**：本仓库 `main` 是 **1.5.2**（**本次修复**：微博首页视频微博与 /tv 视频频道看不到「一键转发」按钮 —— 视频信号识别放宽到播放按钮 / 视频链接 / 播放器容器，找不到锚点时退回卡片本身，卡片选择器覆盖不到的视频单元注入独立悬浮入口「一键转发 + 视频剪辑」，层级提到播放器之上；纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。同一个 1.5.2 补丁里还包含（新增视频一键转发工作台：卡片「视频剪辑」快捷入口、1~4 段剪接拼接、逐帧去水印、MP4/WebM 导出；含视频的一键转发不再自动开窗抢焦点；此前按真机反馈修复右下角水印漏检：瓦片贴边扫描 + 自适应行阈值 + 结构校验 + 条带纹理重建；商店上架包 `store/TapePost_1.5.2_store.zip`，`store/listing.json` 已同步；TapeUP 卡片删掉与主值重复的页头美元折算价；此前 1.4.29 多图托盘缩略图可点开大图浏览：左右切换 / 1:1 原图 / ESC 或点空白关闭；此前 1.4.28 按真机反馈重写水印检测：拼接长图中间 / 多帧重复水印也能逐处去掉；此前 1.4.27 把所有图片逐张全图去水印 + 4K 高清输出；此前 1.4.26 行情区压成两行：UP 单行 + ②③ 并排；此前 1.4.25 移除昆哥个人介绍卡与生态面板徽章；此前 1.4.24 把行情区精简为只留数字、去掉来源与版本说明；此前 1.4.23 把 UP 主值改抓 K 线图右侧绿色「当前价标签」那个随成交跳动的动态价，页头三数完整保留；行情区按紧凑版重排，收窄到 330px；此前 1.4.22 把行情面板改版为上中下三块、完整展示全部字段；此前 1.4.21 按真机页面重新校准 TapeUP 内盘价为 `0.0264 BEM/UP · $0.3181 · +19.44%`，BEM 与矿机日产价两项明确标注来自 Firsto；矿机日产价改用 /circuits/other 页顶实时挂单参考价；版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板）；Chrome Web Store 待上架版本为 **1.5.2**（此前首次提交审核的条目是 1.4.2，代码不同但数据流向口径一致）。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取；1.4.20 只在**同一个已授权域名** `api-tapeout.firsto.ai` 上换了一个公开只读接口路径（`/v1/analytics/circuits` → `/v1/circuit-holders`），并把矿机卡跳转改到 `tapeout.firsto.ai/circuits/other`（普通网页跳转，不需要新权限），不新增域名、权限或网络接收方。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。**1.5.2 已同步** `store/listing.json`（含行情域名、`alarms` / `notifications` 权限理由）与 `docs/privacy.html`，提交前按 `pre_submit_checklist` 核对 Dashboard 表单即可。**1.4.22 只改本机行情面板的布局与文案**（三列 → 上中下三块 + 完整字段 + 可折叠采集明细），不新增数据源、权限、域名或网络接收方。**1.4.23 也只改本机采集与渲染**（新增读取同一页面上已存在的 K 线图例文本 + 收紧布局），不新增数据源、权限、域名或网络接收方。1.5 上架时上述资料已一次性统一，不再需要分版本补件。
+> **版本状态（2026-11-13）**：本仓库 `main` 是 **1.5.3**（**本次新增**：AI 回复可选 DeepSeek API 模式 —— 运行模式新增第五种「DeepSeek API」，Key / 模型 / 接口地址独立配置，两个 AI 功能与「测试当前模式」都走 DeepSeek；新增 `api.deepseek.com` 一条主机权限，只在用户主动选择并发起 AI 请求时使用；默认站内直连与既有 xAI 设置一行未动）。此前 **1.5.2**（**修复**：微博首页视频微博与 /tv 视频频道看不到「一键转发」按钮 —— 视频信号识别放宽到播放按钮 / 视频链接 / 播放器容器，找不到锚点时退回卡片本身，卡片选择器覆盖不到的视频单元注入独立悬浮入口「一键转发 + 视频剪辑」，层级提到播放器之上；纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。同一个 1.5.2 补丁里还包含（新增视频一键转发工作台：卡片「视频剪辑」快捷入口、1~4 段剪接拼接、逐帧去水印、MP4/WebM 导出；含视频的一键转发不再自动开窗抢焦点；此前按真机反馈修复右下角水印漏检：瓦片贴边扫描 + 自适应行阈值 + 结构校验 + 条带纹理重建；商店上架包 `store/TapePost_1.5.2_store.zip`，`store/listing.json` 已同步；TapeUP 卡片删掉与主值重复的页头美元折算价；此前 1.4.29 多图托盘缩略图可点开大图浏览：左右切换 / 1:1 原图 / ESC 或点空白关闭；此前 1.4.28 按真机反馈重写水印检测：拼接长图中间 / 多帧重复水印也能逐处去掉；此前 1.4.27 把所有图片逐张全图去水印 + 4K 高清输出；此前 1.4.26 行情区压成两行：UP 单行 + ②③ 并排；此前 1.4.25 移除昆哥个人介绍卡与生态面板徽章；此前 1.4.24 把行情区精简为只留数字、去掉来源与版本说明；此前 1.4.23 把 UP 主值改抓 K 线图右侧绿色「当前价标签」那个随成交跳动的动态价，页头三数完整保留；行情区按紧凑版重排，收窄到 330px；此前 1.4.22 把行情面板改版为上中下三块、完整展示全部字段；此前 1.4.21 按真机页面重新校准 TapeUP 内盘价为 `0.0264 BEM/UP · $0.3181 · +19.44%`，BEM 与矿机日产价两项明确标注来自 Firsto；矿机日产价改用 /circuits/other 页顶实时挂单参考价；版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板）；Chrome Web Store 待上架版本为 **1.5.3**（此前首次提交审核的条目是 1.4.2，代码不同但数据流向口径一致）。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取；1.4.20 只在**同一个已授权域名** `api-tapeout.firsto.ai` 上换了一个公开只读接口路径（`/v1/analytics/circuits` → `/v1/circuit-holders`），并把矿机卡跳转改到 `tapeout.firsto.ai/circuits/other`（普通网页跳转，不需要新权限），不新增域名、权限或网络接收方。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。**1.5.3 已同步** `store/listing.json`（含行情域名、`alarms` / `notifications` 权限理由）与 `docs/privacy.html`，提交前按 `pre_submit_checklist` 核对 Dashboard 表单即可。**1.4.22 只改本机行情面板的布局与文案**（三列 → 上中下三块 + 完整字段 + 可折叠采集明细），不新增数据源、权限、域名或网络接收方。**1.4.23 也只改本机采集与渲染**（新增读取同一页面上已存在的 K 线图例文本 + 收紧布局），不新增数据源、权限、域名或网络接收方。1.5 上架时上述资料已一次性统一，不再需要分版本补件。
+
+### 1.5.3：AI 回复新增 DeepSeek API 模式
+
+用户要求「AI 回复增加可以配置 DeepSeek 的 API 模式」。此前 AI 只有「自动 / 站内直连 X 自带 Grok / xAI API / 页面模式」，换供应商只能手填兼容网关。1.5.3 把 DeepSeek 做成**第五种独立运行模式**，与 xAI 的 Key / 模型 / 网关完全隔离；切换后「X 一键评论」「链接真伪查询」和「测试当前模式」都走 DeepSeek。
+
+**设置**（插件图标 →「运行模式」选「DeepSeek API」，页面会展开专属配置块）
+- 4 项：API Key、模型 ID、接口地址、强制 JSON 输出。默认地址 `https://api.deepseek.com`（也接受 `/v1` 或完整 `/chat/completions`），默认模型 `deepseek-v4-flash`，可换 `deepseek-v4-pro`；旧的 `deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 弃用。
+- 「强制 JSON 输出」对应官方 `response_format: {type:'json_object'}`，让 3 条候选与链接判定更稳；用不认这个参数的兼容网关时关掉即可。官方要求提示词里出现 `json` 字样（默认提示词与 `SYSTEM_HINT` 已带），若你自定义提示词把它删了，后台会自动补一条要求 JSON 输出的 system 提示，「预览实际发送内容」与真实请求保持一致。
+- 模型 ID 可自由填写；除默认的 `deepseek-v4-flash` / `deepseek-v4-pro`，官方另有实验性的 `deepseek-v4-flash-vision-exp`（支持图片输入）。接口地址、模型名与弃用时间已按 2026-11-14 的官方文档核对。
+- 四项都存 `chrome.storage.local`（本机、不同步），与 xAI Key 分开；「允许网关域名」按钮按当前模式申请对应域名权限。
+
+**实现**（`grok.js` / `background.js` / `popup.js` / `popup.html` / `manifest.json`）
+- `pickGrokMode()` 新增 `deepseek`，显式选择后直接返回、**不降级**到站内直连或页面模式，避免 DeepSeek 的 Key / 模型错误被 X 页面报错盖住。
+- `getGrokConfig()` 按模式给出 `aiProvider = deepseek | xai`；`callGrok()` 据此选 Key、端点、请求体与错误文案。DeepSeek 走 OpenAI 兼容 `POST /chat/completions`，复用原有 `parseThreeComments()` / `parseVerdict()` 本机解析，提示词仍是用户可编辑的那两套；「预览实际发送内容」也改为按 API 模式显示原始 system + user 消息。
+- 只新增一条主机权限 `https://api.deepseek.com/*`，**仅在用户主动选 DeepSeek 并发起 AI 请求时使用**。默认站内直连、既有 xAI 设置、图片 / 视频 / 行情链路均未改动；设置页只在选中该模式时展开配置块，保持紧凑。
+
+**数据流（如实披露）**：DeepSeek 模式下，扩展后台把你点选的推文正文（≤1200 字符）或待核验链接、本地判定结论、少量相关清单条目与设定提示词，发给你填写的地址（默认 `api.deepseek.com`），用你自己的 Key 认证；接收方是 DeepSeek（或你自填的兼容网关），开发者不接收、不留存。调用费用与内容处理受 DeepSeek 隐私政策与其服务条款约束。`store/listing.json` 的第三方 AI 服务、数据使用披露、主机权限理由与两份隐私政策已同步。
+
+**校验**：`node --check` 全部 JS 通过；`test-harness.js` 489/532，与 1.5.2 基线完全一致（43 项失败均为 1.4.x 历史断言旧口径，本次未新增）；新增 `node test-deepseek.js` 专项自检 **30/30 通过**，覆盖模式判定与 `aiProvider` 分派、三种端点写法、请求体 / JSON Output 兜底、认证头与 xAI Key 隔离、401/404/429/5xx 错误文案、`GROK_TEST` / `GROK_COMMENTS` / `GROK_VERIFY` / `GROK_PAGE_RESET` 四个入口，并确认 xAI 模式与 auto 模式不受影响。该脚本不进商店包。按用户要求未跑真机测试，重载扩展后在设置里点「测试当前模式」即可验证。
 
 ### 1.5.2 补丁②：修复微博视频内容看不到「一键转发」按钮
 
@@ -66,9 +85,9 @@
 
 ### 1.5 正式版：Chrome Web Store 上架包
 
-- **交付物**：`store/TapePost_1.5_store.zip`（正式首发）／`store/TapePost_1.5.1_store.zip`（水印修复版）／`store/TapePost_1.5.2_store.zip`（**当前唯一上架包**，25 个文件，根目录即 `manifest.json`，不含 `.git` / 文档 / 测试 / 商店素材）；版本 `1.5.2`，UI 各处显示 `v1.5.2`。此前误标为大版本号的同名包一律作废，请勿提交。
+- **交付物**：`store/TapePost_1.5_store.zip`（正式首发）／`store/TapePost_1.5.1_store.zip`（水印修复版）／`store/TapePost_1.5.3_store.zip`（**当前唯一上架包**，25 个文件，根目录即 `manifest.json`，不含 `.git` / 文档 / 测试 / 商店素材）；版本 `1.5.3`，UI 各处显示 `v1.5.3`。此前误标为大版本号的同名包一律作废，请勿提交。
 - **相对商店首次提交的 1.4.2，正式版包含**：TapeOut 实时行情（TapeUP 内盘动态价 / 矿机日产 / BEM，含上下限提醒）、7 站所有图片逐张全图去水印与 4K PNG 无损输出、多图托盘点缩略图放大浏览、AI 评论提示词对齐站内 Grok、界面两行紧凑布局。全部为既有链路的本机能力，**没有新增第三方数据接收方**。
-- **上架资料已同步**：`store/listing.json` 版本号、摘要与详细描述、`alarms` / `notifications` 权限理由、29 条主机权限（含 `api-tapeout.firsto.ai` / `tapeup.io` 只读行情）、数据使用披露与 `pre_submit_checklist`；`docs/privacy.html` 与 `store/privacy-site/index.html` 副本同步为 1.5 口径。
+- **上架资料已同步**：`store/listing.json` 版本号、摘要与详细描述、`alarms` / `notifications` 权限理由、30 条主机权限（含 `api.deepseek.com` AI 接口、`api-tapeout.firsto.ai` / `tapeup.io` 只读行情）、数据使用披露与 `pre_submit_checklist`；`docs/privacy.html` 与 `store/privacy-site/index.html` 副本同步为 1.5 口径。
 - **上架前必做**（与 zip 无关，在 Developer Dashboard 完成）：确认 Privacy practices 勾 3 项（Authentication information / User activity / Website content）、Remote code 选 No、「数据传出设备」选是、publisher contact email 已验证、隐私政策 URL 指向 GitHub Pages 最新版；首次提交或含 `https://*/*` 可选权限会进入 in-depth review。详见 `store/listing.json` 的 `pre_submit_checklist` 与 `review_warning_note`。
 - **验证**：所有 JS 通过 `node --check`，manifest 中 `content_scripts` / `background` / `offscreen` / 弹窗引用的文件逐一核对存在，zip 内版本与源码一致。按用户要求未跑真机回归（`test-harness.js` 仍为旧版口径）。
 

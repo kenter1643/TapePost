@@ -69,6 +69,8 @@
     .info-mask { position:fixed;inset:0;background:rgba(20,12,40,.42);display:flex;
       align-items:center;justify-content:center;z-index:9999;padding:14px; }
     .info-mask[hidden] { display:none; }
+    /* 1.5.3：DeepSeek 配置块只在选中该模式时展开，显式锁死 hidden 避免被通用 div 样式覆盖 */
+    #deepseekCfg[hidden] { display:none; }
     .info-card { width:100%;max-width:330px;background:#fff;border-radius:14px;overflow:hidden;
       box-shadow:0 12px 40px rgba(20,10,45,.3);font-size:12px;color:#333; }
     .info-head { display:flex;align-items:center;justify-content:space-between;
@@ -134,7 +136,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.2</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.3</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
   <!-- 1.4.26：两行紧凑行情（① TapeUP 单行 / ②③ 并排一行），只留数字，点卡片进对应页面 -->
@@ -367,10 +369,34 @@
       <option value="native">站内直连 X 自带 Grok（免 Key / 最稳定）</option>
       <option value="page">页面模式：填 Grok 输入框再读回答（旧链路，仅兜底）</option>
       <option value="api">xAI API（需 Key，按量计费）</option>
+      <option value="deepseek">DeepSeek API（需 Key，OpenAI 兼容）</option>
     </select>
     <div class="mode-hint">
-      自动模式用你已登录的 X 会话直连 Grok，不开标签、不模拟点击。
+      自动模式用你已登录的 X 会话直连 Grok，不开标签、不模拟点击。选「DeepSeek API」会展开独立配置，不影响上面的 xAI 设置。
       <button type="button" class="infobtn" data-info="modes">模式说明</button>
+    </div>
+
+    <!-- 1.5.3：DeepSeek API 模式专属配置，选了该模式才显示，保持设置页紧凑 -->
+    <div id="deepseekCfg" hidden
+      style="margin:8px 0 10px;padding:9px;border:1px solid #bfdbfe;border-radius:8px;background:#f8fbff">
+      <div style="font-size:11px;font-weight:700;color:#1d4ed8;margin:0 0 5px">🔵 DeepSeek API 配置（与 xAI Key 分开保存）</div>
+      <label for="deepseekKey" style="display:block;margin:0 0 3px;font-size:11px;font-weight:600">API Key</label>
+      <input type="password" id="deepseekKey" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+      <div class="g2" style="margin-top:7px">
+        <div>
+          <label for="deepseekModel" style="display:block;margin:0 0 3px;font-size:11px;font-weight:600">模型 ID</label>
+          <input type="text" id="deepseekModel" placeholder="deepseek-v4-flash" spellcheck="false" />
+        </div>
+        <div>
+          <label for="deepseekBaseUrl" style="display:block;margin:0 0 3px;font-size:11px;font-weight:600">接口地址</label>
+          <input type="text" id="deepseekBaseUrl" placeholder="https://api.deepseek.com" spellcheck="false" />
+        </div>
+      </div>
+      <div class="row" style="margin:7px 0 0">
+        <input type="checkbox" id="deepseekJsonMode" />
+        <label for="deepseekJsonMode" style="margin:0;font-weight:400;font-size:11px">强制 JSON 输出（官方模型支持，兼容网关报错时关掉）</label>
+      </div>
+      <p class="tiny" style="margin:6px 0 0">官方 <b>https://api.deepseek.com</b>；模型 <b>deepseek-v4-flash</b>（快）/ <b>deepseek-v4-pro</b>（强），旧名 deepseek-chat 已弃用。Key 只存本机，按量计费。</p>
     </div>
     <div class="row" style="margin:8px 0 10px">
       <input type="checkbox" id="grokPreferNative" />
@@ -434,7 +460,7 @@
     </details>
 
     <details class="apiset">
-      <summary>🔑 API 模式专属设置（Key / 模型 / 网关）</summary>
+      <summary>🔑 xAI API 专属设置（Key / 模型 / 网关）</summary>
       <label for="grokKey">xAI API Key（页面模式可留空）</label>
       <input type="password" id="grokKey" placeholder="xai-…" autocomplete="off" spellcheck="false" />
       <div class="g2">
@@ -467,7 +493,7 @@
     </div>
     <div id="grokStatus"></div>
 
-    <p class="tiny">API Key 只存本机，仅 API 模式使用。
+    <p class="tiny">xAI / DeepSeek 的 API Key 都只存本机，且只在对应模式使用。
       <button type="button" class="infobtn" data-info="privacy">隐私说明</button>
     </p>
   </details>
