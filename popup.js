@@ -74,14 +74,28 @@ const SITE_LIST = (typeof SITE_PROFILES !== 'undefined')
  * 不读取 chrome.runtime.lastError 就会被 Chrome 记成扩展错误。
  * 所有发往后台的消息都走这里，并在回调第一行同步读取 lastError。
  */
-function sendBg(msg, cb) {
+function sendBg(msg, cb, _try) {
   const done = (typeof cb === 'function') ? cb : function () {};
+  const n = _try || 0;
+  /* 1.5.11：后台 service worker 冷启动时第一条消息可能丢，自动退避重试，
+   * 避免弹窗一打开就报「连接断开 / 读取中」而必须重新打开。 */
+  const retryable = (err) => /Receiving end does not exist|Could not establish connection/i
+    .test(String((err && err.message) || err || ''));
+  const retry = (err) => {
+    if (n < 3 && retryable(err)) {
+      setTimeout(() => sendBg(msg, done, n + 1), 200 * (n + 1));
+      return true;
+    }
+    return false;
+  };
   try {
     chrome.runtime.sendMessage(msg, function (resp) {
       const err = chrome.runtime && chrome.runtime.lastError; // 必须同步读取
+      if (err && retry(err)) return;
       try { done(resp || null, err || null); } catch (e) {}
     });
   } catch (e) {
+    if (retry(e)) return;
     try { done(null, e); } catch (e2) {}
   }
 }
@@ -853,7 +867,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.10 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.11 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

@@ -14,8 +14,145 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.10';
+  return 'v1.5.11';
 })();
+
+/* ==================== 1.5.11：后台连接自愈 ====================
+ * MV3 的 service worker 空闲约 30 秒会被回收，重新唤醒时要重新执行
+ * background.js 顶层代码，onMessage 监听器要到文件靠后位置才注册完成。
+ * 唤醒期间投递的第一条消息会被判 "Could not establish connection /
+ * Receiving end does not exist"，旧版直接提示「请刷新页面 Cmd+R」——
+ * 其实刷新只是让后台热起来，第二次点就成功，根本不需要刷新。
+ *
+ * 三层自愈：
+ *   1) 预热：距上次与后台通信 >25s 先发 TAPE_WAKE 唤醒 SW，再发业务消息；
+ *   2) 重试：只对「接收端不存在」这类冷启动竞态错误指数退避重试。
+ *      "message port closed" 意味着后台可能已收到，重发会有副作用，不重试；
+ *   3) 真失效：扩展被重新加载 / 更新时旧 content script 上下文永久失效，
+ *      重试无用 —— 给一条可取消的 3 秒倒计时自动刷新条，代替手动 Cmd+R。
+ * 不改任何权限 / 域名 / 数据流向，不新增运行时文件。
+ */
+/* === BG_LINK_BEGIN === */
+const BG_LINK = {
+  transient: /Receiving end does not exist|Could not establish connection|Could not establish a connection/i,
+  stale: /Extension context invalidated|Extension context was invalidated|extension context is invalid/i,
+  delays: [220, 500, 1000, 2000],
+  lastAt: 0,
+  recovering: false
+};
+
+function bgRuntimeOk() {
+  try {
+    return typeof chrome !== 'undefined' && !!chrome.runtime &&
+      typeof chrome.runtime.sendMessage === 'function';
+  } catch (e) { return false; }
+}
+
+function bgSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/* 唤醒探测：后台在文件最顶部注册了最小监听器，SW 一启动就能应答。
+ * fire-and-forget，失败本身也算一次唤醒，不冒泡。 */
+function bgWake() {
+  try {
+    if (!bgRuntimeOk()) return;
+    const p = chrome.runtime.sendMessage({ type: 'TAPE_WAKE' });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) {}
+}
+
+function bgToast(msg, ms) {
+  try { if (typeof showToast === 'function') showToast(msg, ms || 2500); } catch (e) {}
+}
+
+const BG_BTN_CSS = 'flex:none;cursor:pointer;border-radius:8px;padding:6px 12px;font:12px/1.2 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;transition:transform .12s ease,filter .12s ease';
+
+/* 真·上下文失效：旧 content script 的 chrome.* 句柄已废，唯一出路是重新注入。
+ * 给一条可取消的倒计时条，3 秒后自动刷新本页；sessionStorage 标记防止
+ * 反复刷新（60 秒内最多一次），用户也随时可以点「取消」。 */
+function bgAutoRecover() {
+  if (BG_LINK.recovering) return;
+  BG_LINK.recovering = true;
+  let last = 0;
+  try { last = Number(sessionStorage.getItem('wbxAutoReloadV1') || 0); } catch (e) {}
+  if (Date.now() - last < 60000) {
+    bgToast('插件刚更新过，本页已自动恢复过一次；若仍失效请手动刷新页面。', 7000);
+    return;
+  }
+  try {
+    const old = document.getElementById('wbx-recover');
+    if (old && old.remove) old.remove();
+    const bar = document.createElement('div');
+    bar.id = 'wbx-recover';
+    bar.setAttribute('style', 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:min(600px,92vw);padding:12px 16px;border-radius:12px;border:1px solid rgba(255,138,61,.55);background:linear-gradient(135deg,#1c1018,#12101c);box-shadow:0 12px 40px rgba(0,0,0,.5);color:#e8edf4;font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif');
+    const txt = document.createElement('span');
+    txt.style.flex = '1 1 240px';
+    const again = document.createElement('button');
+    again.type = 'button';
+    again.textContent = '立即恢复';
+    again.setAttribute('style', BG_BTN_CSS + ';border:0;background:linear-gradient(92deg,#ffb347,#ff6a3d);color:#241004;font-weight:700');
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = '取消';
+    cancel.setAttribute('style', BG_BTN_CSS + ';border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.06);color:#e8edf4');
+    bar.appendChild(txt); bar.appendChild(again); bar.appendChild(cancel);
+    (document.body || document.documentElement).appendChild(bar);
+    const close = () => { if (bar && bar.remove) bar.remove(); };
+    const reload = () => {
+      clearInterval(timer);
+      try { sessionStorage.setItem('wbxAutoReloadV1', String(Date.now())); } catch (e) {}
+      try { location.reload(); } catch (e) { bgToast('自动刷新被阻止，请手动刷新本页后再点一次。', 8000); }
+    };
+    let left = 3;
+    txt.textContent = `插件已重新加载，正在自动恢复连接… ${left} 秒后刷新本页（无需手动 Cmd+R）`;
+    const timer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) { reload(); return; }
+      txt.textContent = `插件已重新加载，正在自动恢复连接… ${left} 秒后刷新本页（无需手动 Cmd+R）`;
+    }, 1000);
+    again.addEventListener('click', reload);
+    cancel.addEventListener('click', () => {
+      clearInterval(timer); close(); BG_LINK.recovering = false;
+      bgToast('已取消自动恢复；需要时手动刷新本页即可。', 5000);
+    });
+  } catch (e) {
+    BG_LINK.recovering = false;
+    bgToast('插件刚重新加载过，正在尝试恢复；若仍失效请刷新本页。', 8000);
+  }
+}
+
+/* 统一发往后台的消息通道：所有需要回包的调用都走这里。 */
+async function bgSend(msg, opts) {
+  const o = opts || {};
+  // 视频剪辑是长耗时任务，重复执行代价大，只留一次重试
+  const attempts = (msg && msg.type === 'VIDEO_EDIT') ? 2 : (o.attempts || 5);
+  // 后台可能已被回收：先唤醒再发，主动避开冷启动竞态
+  if (Date.now() - BG_LINK.lastAt > 25000) {
+    bgWake();
+    await bgSleep(120);
+  }
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) {
+      bgWake();
+      bgToast(`后台正在唤醒，自动重连 ${i}/${attempts - 1}…（不用刷新页面）`, 2600);
+      await bgSleep(BG_LINK.delays[Math.min(i - 1, BG_LINK.delays.length - 1)]);
+    }
+    try {
+      if (!bgRuntimeOk()) throw new Error('Extension context invalidated');
+      const resp = await chrome.runtime.sendMessage(msg);
+      BG_LINK.lastAt = Date.now();
+      if (i > 0) bgToast('已自动恢复后台连接，继续处理。', 2200);
+      return resp;
+    } catch (e) {
+      lastErr = e;
+      const why = String((e && e.message) || e || '');
+      if (BG_LINK.stale.test(why)) { bgAutoRecover(); throw e; }
+      if (!BG_LINK.transient.test(why) || i === attempts - 1) throw e;
+    }
+  }
+  throw lastErr || new Error('后台连接不可用');
+}
+/* === BG_LINK_END === */
 
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值
 const MY_X = (typeof X_ACCOUNT !== 'undefined') ? X_ACCOUNT : {
@@ -2210,20 +2347,18 @@ function scanAndInject() {
 // 此时任何 chrome.* 调用都会抛 Extension context invalidated。
 // 提前判定并给出可操作提示，避免只看到一句笼统报错。
 function isStaleContext() {
+  // 1.5.11：只做同步快速判定；真失效往往仍留着 sendMessage 句柄、调用时才抛
+  // Extension context invalidated，那一路由 bgSend() 捕获并触发自动恢复。
+  let stale = false;
   try {
-    // 上下文失效时访问 chrome.runtime 本身就会抛 Extension context invalidated；
-    // 用 sendMessage 是否可用来判定，比依赖 runtime.id 更稳（部分环境不暴露 id）。
-    return !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function';
-  } catch (e) {
-    return true;
-  }
+    stale = !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function';
+  } catch (e) { stale = true; }
+  if (stale) bgAutoRecover();
+  return stale;
 }
 
 async function onRepost(card, btn) {
-  if (isStaleContext()) {
-    showToast(`插件刚重新加载过，旧按钮已失效：请刷新${SITE_LABEL}页面（Cmd+R）后再点「一键转发」。`, 9000);
-    return;
-  }
+  if (isStaleContext()) { return; }  // 1.5.11：自动恢复条接管，不再要求手动 Cmd+R
   // 每次点击都重新解析：解决「滚动后 DOM 复用导致转到旧内容」和「图片懒加载」
   const post = resolvePost(card);
   const { imageUrls: urls, videoUrls, hasVideo, bid } = post;
@@ -2251,7 +2386,7 @@ async function onRepost(card, btn) {
   const wmNote = `｜图${wmEnabled ? '逐张去水印' : '原图'}${hd4k ? '+4K' : ''}${hasVideo ? '｜视频剪辑工作台' : ''}`;
   showToast(`处理中｜${SITE_LABEL}｜正文：${preview}${cleanedNote}${sigNote}｜内容图 ${urls.length} 张｜视频 ${hasVideo ? 1 : 0} 个${wmNote}`);
   try {
-    const resp = await chrome.runtime.sendMessage({
+    const resp = await bgSend({
       type: 'CROSSPOST',
       payload: {
         text,
@@ -2269,8 +2404,11 @@ async function onRepost(card, btn) {
     await handleResult(resp || {});
   } catch (e) {
     const why = String(e && e.message || e);
-    if (/Extension context invalidated|Receiving end does not exist|Could not establish connection/i.test(why)) {
-      showToast(`插件后台连接断开（多半是刚重新加载过扩展）：请刷新${SITE_LABEL}页面 Cmd+R，再点「一键转发」；仍不行就到 chrome://extensions 重新加载一次。`, 10000);
+    if (BG_LINK.stale.test(why)) {
+      // bgSend() 已经弹出可取消的自动恢复条，这里只补一句，不再叫用户手动刷新
+      showToast('插件刚更新过，已开始自动恢复本页连接。', 4000);
+    } else if (BG_LINK.transient.test(why)) {
+      showToast('后台唤醒失败（已自动重连数次）：稍后再点一次「一键转发」即可；若反复出现请到 chrome://extensions 重新加载。', 8000);
     } else {
       showToast('发送失败：' + why, 8000);
     }
@@ -2435,11 +2573,7 @@ function showAiBusy(label) {
 
 async function onAiComment(card, btn) {
   if (!SITE || SITE.id !== 'x') return;
-  if (isStaleContext()) {
-    showNotice('插件刚重载', '请刷新 X 页面后再点「AI 评论」。',
-      '重新加载扩展后，旧 X 标签里的内容脚本已失效。刷新该页面（Cmd+R）即可重新注入。');
-    return;
-  }
+  if (isStaleContext()) { return; }  // 1.5.11：自动恢复条接管
   const scope = (btn && btn.__wbxScope) || null;
   let text = '';
   // 1.3.4：优先用 X 官方 tweetText 节点，避开回复框工具栏与插件按钮
@@ -2458,7 +2592,7 @@ async function onAiComment(card, btn) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中'; }
   showAiBusy('Grok 正在生成 3 条回复候选');
   try {
-    const resp = await chrome.runtime.sendMessage({
+    const resp = await bgSend({
       type: 'GROK_COMMENTS',
       payload: { text, statusId, url: permalink }
     });
@@ -2483,7 +2617,7 @@ async function onAiComment(card, btn) {
   } catch (e) {
     const rawErr = String((e && e.message) || e);
     showNotice('调用失败', briefError(rawErr) + '，点「详情」看原因。',
-      rawErr + '\n\n建议：刷新 X 页面；刚重载过扩展时尤其需要。超时可用「复制提示词（手动）」兜底。');
+      rawErr + '\n\n建议：后台连接已自动重连，可再点一次；超时可用「复制提示词（手动）」兜底。');
   } finally {
     hideAiBusy();
     if (btn) { btn.disabled = false; btn.textContent = 'AI 评论'; }
@@ -2632,7 +2766,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, 
     e.stopPropagation();
     showAiBusy('正在把提示词填进 Grok');
     try {
-      const r = await chrome.runtime.sendMessage({
+      const r = await bgSend({
         type: 'GROK_PAGE_PREPARE',
         payload: { kind: 'comments', text: postText || '' }
       });
@@ -2655,7 +2789,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, 
     e.stopPropagation();
     showAiBusy('正在读取 Grok 回答');
     try {
-      const r = await chrome.runtime.sendMessage({
+      const r = await bgSend({
         type: 'GROK_PAGE_READ',
         payload: { kind: 'comments', text: postText || '' }
       });
@@ -3190,7 +3324,7 @@ function showToast(msg, ms = 3000) {
 function briefError(raw) {
   const s = String(raw || '');
   if (/401|403|认证|authenticate/i.test(s)) return 'X 会话认证失败，请刷新 X 页面';
-  if (/没响应|Receiving end|Could not establish|没有响应|连接/i.test(s)) return '连接失效，请刷新 X 页面';
+  if (/没响应|Receiving end|Could not establish|没有响应|连接/i.test(s)) return '后台连接失败，已自动重连，请再点一次';
   if (/没解析|没读到|解析不出|没返回/i.test(s)) return 'Grok 没返回可用候选';
   if (/超时|timeout/i.test(s)) return '生成超时，请重试';
   if (/ct0|登录|会话已失效/i.test(s)) return '请先登录 X 并刷新页面';
@@ -3270,10 +3404,7 @@ function wbxCloseVideoStudio() {
 
 /* 卡片上的「视频剪辑」快捷按钮：跳过图片流程，只解析视频地址后弹工作台 */
 async function onVideoStudio(card) {
-  if (isStaleContext()) {
-    showToast('插件刚重新加载过，旧按钮已失效：请刷新页面（Cmd+R）后再点「视频剪辑」。', 9000);
-    return;
-  }
+  if (isStaleContext()) { return; }  // 1.5.11：自动恢复条接管
   const post = resolvePost(card);
   const hashMode = (!SITE || SITE.id === 'weibo') ? settings.hashMode : 'keep';
   const cleaned = cleanRepostText(post.text, hashMode);
@@ -3282,7 +3413,7 @@ async function onVideoStudio(card) {
     '/intent/tweet?text=' + encodeURIComponent(text || '');
   showToast('正在解析视频地址…', 4000);
   try {
-    const r = await chrome.runtime.sendMessage({
+    const r = await bgSend({
       type: 'VIDEO_RESOLVE',
       payload: {
         videoUrls: post.videoUrls || [], bid: post.bid || '',
@@ -3533,7 +3664,7 @@ function showVideoStudio(opts) {
       state.outUrl = null;
     }
     try {
-      const resp = await chrome.runtime.sendMessage({
+      const resp = await bgSend({
         type: 'VIDEO_EDIT',
         payload: {
           url: o.url || '', source: o.source || '',
@@ -3607,7 +3738,7 @@ function showVideoStudio(opts) {
     if (busy) return;
     status.textContent = '正在取原片…';
     try {
-      const r = await chrome.runtime.sendMessage({
+      const r = await bgSend({
         type: 'VIDEO_ORIGIN',
         payload: {
           url: o.url || '', source: o.source || '',

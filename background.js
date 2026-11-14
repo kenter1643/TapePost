@@ -11,6 +11,23 @@
  */
 'use strict';
 
+/* 1.5.11：MV3 冷启动竞态修复。
+ * service worker 空闲被回收后，每次唤醒都要重新执行本文件顶层代码，
+ * 主 onMessage 监听器要到 960 行附近才注册完成；这期间投递的消息会被
+ * Chrome 判为 "Could not establish connection / Receiving end does not exist"，
+ * 页面侧表现为「插件后台连接断开，请刷新页面」。
+ * 这里在文件最开头同步注册一个只应答唤醒探测的最小监听器，让 SW 一启动
+ * 就有接收端；页面侧的 bgWake() 先唤醒、再发业务消息，主链路不再需要刷新。
+ * 不读取页面内容、不新增权限，也不注入任何代码。 */
+chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+  if (!msg || msg.type !== 'TAPE_WAKE') return false;
+  try {
+    const m = chrome.runtime.getManifest ? chrome.runtime.getManifest() : null;
+    sendResponse({ ok: true, wake: true, version: m && m.version });
+  } catch (e) {}
+  return false;
+});
+
 // ---- 1. DNR：给图床注入 Referer ----
 /*
  * urlFilter 用 ||域名/ 的域名锚点写法：
@@ -959,6 +976,7 @@ if (chrome.downloads && chrome.downloads.onCreated) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
+  if (msg.type === 'TAPE_WAKE') return false; // 已由文件顶部的早期监听器应答
 
   if (msg.type === 'OFFSCREEN_READY') {
     offscreenReady = true;
