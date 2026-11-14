@@ -3,267 +3,287 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    /* 1.4.24：整体收紧，行情区只留数字，去掉来源 / 版本说明 / 明细行等说明文字 */
-    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; width: 320px; padding: 8px 10px; color: #222; }
-    h1 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 7px; }
-    /* 1.4.19：版本号直接贴在 TapePost 标题旁，打开弹窗就能核对，不用 hover 按钮 */
-    .appver { font-size: 10px; font-weight: 700; color: #d96300; background: #fff1e4;
-              border: 1px solid #ffd0a6; border-radius: 20px; padding: 1px 7px;
+    /* 1.5.9：插件面板整体改成「信仰者工具」运动会助威酷炫风（深色渐变 + 跑道条纹 + 霓虹标题 + 发光卡片），与 /vote 全网助威榜同款视觉 */
+    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; width: 340px; padding: 10px 12px; color: #e8edf4; position: relative;
+      background: radial-gradient(680px 340px at 50% -16%, rgba(255,94,77,.30), transparent 60%),
+                  radial-gradient(520px 320px at 112% -6%, rgba(255,180,60,.20), transparent 55%),
+                  radial-gradient(560px 420px at -12% 118%, rgba(120,90,255,.16), transparent 60%),
+                  linear-gradient(180deg, #13070f 0%, #0c0a16 50%, #090b13 100%);
+      background-attachment: fixed; }
+    /* 斜向流动跑道条纹（与 /vote 同款） */
+    body::before { content: ""; position: fixed; inset: -30% -15%; z-index: 0; pointer-events: none;
+      background: repeating-linear-gradient(118deg, rgba(255,94,77,.05) 0 22px, rgba(255,170,60,.04) 22px 44px, transparent 44px 80px);
+      transform: skewY(-5deg); animation: track 18s linear infinite; }
+    @keyframes track { from { background-position: 0 0; } to { background-position: 0 640px; } }
+    body > * { position: relative; z-index: 1; }
+    h1 { font-size: 16px; margin: 0 0 6px; display: flex; align-items: center; gap: 7px; font-weight: 800;
+      background: linear-gradient(92deg, #ffe14d, #ff9a3d 45%, #ff5f4d);
+      -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 22px rgba(255,120,55,.30); }
+    /* 1.4.19：版本号直接贴在中文名标题旁，打开弹窗就能核对，不用 hover 按钮 */
+    .appver { font-size: 10px; font-weight: 700; color: #ffd34d; background: rgba(255,138,61,.16);
+              border: 1px solid rgba(255,138,61,.5); border-radius: 20px; padding: 1px 7px;
               letter-spacing: .2px; white-space: nowrap; }
-    .sub { font-size: 12px; color: #888; margin: 0 0 12px; line-height: 1.5; }
+    .sub { font-size: 12px; color: #9aa3ae; margin: 0 0 12px; line-height: 1.5; }
 
     /* 1.4.25：个人介绍卡（头像 / 名字 / 主页链接 / 社区徽章）已整体移除 */
 
-    label { display: block; font-size: 13px; margin: 10px 0 4px; font-weight: 600; }
+    label { display: block; font-size: 13px; margin: 10px 0 4px; font-weight: 600; color: #cdd5e0; }
     .sites { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 6px 0 2px; }
-    .site { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; font-weight: 400; }
-    .site input { margin: 0; }
-    textarea, select { width: 100%; box-sizing: border-box; font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 6px; }
+    .site { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; font-weight: 400; color: #d7dde6; }
+    .site input { margin: 0; accent-color: #ff8a3d; }
+    textarea, select { width: 100%; box-sizing: border-box; font-size: 13px; padding: 6px; color: #e8edf4;
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,138,61,.28); border-radius: 6px; }
     textarea { height: 64px; resize: vertical; }
-    .row { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; font-size: 13px; }
-    .row input { margin-top: 2px; flex: 0 0 auto; }
-    #save { margin-top: 12px; width: 100%; padding: 8px; border: none; border-radius: 8px; background: #ff7800; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
-    #save:hover { background: #ff8c1a; }
-    .note { font-size: 11px; color: #999; margin-top: 12px; line-height: 1.5; border-top: 1px solid #eee; padding-top: 8px; }
-    .ok { color: #1a9e3e; font-size: 12px; margin-top: 8px; display: none; }
-    #check { margin-top: 8px; width: 100%; padding: 7px; border: 1px solid #ddd; border-radius: 8px; background: #fafafa; color: #555; font-size: 12px; cursor: pointer; }
-    #check:hover { background: #f0f0f0; }
-    #diag { display: none; margin: 8px 0 0; padding: 8px; background: #f7f7f7; border: 1px solid #eee; border-radius: 6px;
-            font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: #333; }
+    .row { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; font-size: 13px; color: #d7dde6; }
+    .row input { margin-top: 2px; flex: 0 0 auto; accent-color: #ff8a3d; }
+    #save { margin-top: 12px; width: 100%; padding: 8px; border: none; border-radius: 8px; background: linear-gradient(92deg,#ff9a3d,#ff5f4d); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 18px rgba(255,94,77,.32); }
+    #save:hover { background: linear-gradient(92deg,#ffae57,#ff7355); }
+    .note { font-size: 11px; color: #9aa3ae; margin-top: 12px; line-height: 1.5; border-top: 1px solid rgba(255,255,255,.08); padding-top: 8px; }
+    .ok { color: #34d399; font-size: 12px; margin-top: 8px; display: none; }
+    #check { margin-top: 8px; width: 100%; padding: 7px; border: 1px solid rgba(255,138,61,.4); border-radius: 8px; background: rgba(255,138,61,.10); color: #ffd6bd; font-size: 12px; cursor: pointer; }
+    #check:hover { background: rgba(255,138,61,.18); }
+    #diag { display: none; margin: 8px 0 0; padding: 8px; background: rgba(10,14,22,.7); border: 1px solid rgba(255,255,255,.08); border-radius: 6px;
+            font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: #c4ccd6; }
 
     #openPanel { width: 100%; margin: 0 0 12px; padding: 9px; border: none; border-radius: 9px;
-                 background: #16a34a; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
-    #openPanel:hover { background: #15803d; }
-    details.grok { margin: 12px 0; border: 1px solid #ddd; border-radius: 9px; padding: 8px 10px; background: #fafafa; }
-    details.grok > summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #5b21b6; }
-    details.grok label { font-size: 12px; margin: 9px 0 3px; }
+                 background: linear-gradient(92deg,#22c55e,#16a34a); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 18px rgba(34,197,94,.28); }
+    #openPanel:hover { background: linear-gradient(92deg,#34d35e,#1a9e4a); }
+    details.grok { margin: 12px 0; border: 1px solid rgba(255,138,61,.30); border-radius: 9px; padding: 8px 10px;
+      background: linear-gradient(180deg, rgba(34,42,58,.55), rgba(18,24,36,.55)); }
+    details.grok > summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #ffb08a; }
+    details.grok label { font-size: 12px; margin: 9px 0 3px; color: #cdd5e0; }
     .grok input[type=text], .grok input[type=password], .grok select { width: 100%; box-sizing: border-box; font-size: 12px;
-      padding: 6px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
-    .grok textarea { height: 92px; font-size: 11px; line-height: 1.5; font-family: ui-monospace, Menlo, monospace; }
+      padding: 6px; border: 1px solid rgba(255,138,61,.28); border-radius: 6px; background: rgba(255,255,255,.06); color: #e8edf4; }
+    .grok textarea { height: 92px; font-size: 11px; line-height: 1.5; font-family: ui-monospace, Menlo, monospace; color: #e8edf4; background: rgba(255,255,255,.06); }
     .grok .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .grok .btnrow { display: flex; gap: 6px; margin-top: 9px; }
-    .grok .btnrow button { flex: 1; padding: 7px 4px; font-size: 11px; border: 1px solid #ddd; border-radius: 7px;
-      background: #fff; color: #444; cursor: pointer; font-weight: 600; }
-    .grok .btnrow button:hover { background: #f0eefe; border-color: #c4b5fd; }
-    .grok .tiny { font-size: 10px; color: #999; line-height: 1.5; margin: 6px 0 0; }
+    .grok .btnrow button { flex: 1; padding: 7px 4px; font-size: 11px; border: 1px solid rgba(255,138,61,.35); border-radius: 7px;
+      background: rgba(255,138,61,.10); color: #ffd6bd; cursor: pointer; font-weight: 600; }
+    .grok .btnrow button:hover { background: rgba(255,138,61,.20); border-color: rgba(255,138,61,.6); }
+    .grok .tiny { font-size: 10px; color: #9aa3ae; line-height: 1.5; margin: 6px 0 0; }
     #grokStatus { display: none; margin-top: 8px; padding: 7px; border-radius: 6px; font-size: 11px; line-height: 1.5;
-      word-break: break-all; background: #f1f5f9; color: #334155; }
-    details.prompts { margin-top: 10px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
-    details.prompts > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #555; }
-    .resetbtn { border: none; background: none; color: #1a7fd4; font-size: 11px; cursor: pointer; padding: 2px 0; }
-    .mode-hint { font-size: 10px; color: #6d28d9; background: #f5f3ff; border: 1px solid #e9d5ff;
+      word-break: break-all; background: rgba(10,14,22,.6); color: #c4ccd6; border: 1px solid rgba(255,255,255,.08); }
+    details.prompts { margin-top: 10px; border-top: 1px solid rgba(255,255,255,.08); padding-top: 8px; }
+    details.prompts > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #c4ccd6; }
+    .resetbtn { border: none; background: none; color: #ffb08a; font-size: 11px; cursor: pointer; padding: 2px 0; }
+    .mode-hint { font-size: 10px; color: #ffc89a; background: rgba(255,138,61,.12); border: 1px solid rgba(255,138,61,.35);
       border-radius: 7px; padding: 7px 8px; line-height: 1.55; margin: 7px 0 2px; }
-    .promptbox { margin: 11px 0 0; padding: 9px; border: 1px solid #ddd6fe; border-radius: 8px; background: #fff; }
-    .promptbox > h2 { font-size: 12px; margin: 0 0 3px; color: #5b21b6; }
-    .promptbox > p { font-size: 10px; color: #888; margin: 0 0 6px; line-height: 1.5; }
+    .promptbox { margin: 11px 0 0; padding: 9px; border: 1px solid rgba(255,138,61,.28); border-radius: 8px; background: rgba(255,255,255,.04); }
+    .promptbox > h2 { font-size: 12px; margin: 0 0 3px; color: #ffb08a; }
+    .promptbox > p { font-size: 10px; color: #9aa3ae; margin: 0 0 6px; line-height: 1.5; }
     .promptbox textarea { height: 76px; }
-    details.pageset, details.apiset { margin-top: 9px; border-top: 1px solid #e5e7eb; padding-top: 7px; }
-    details.pageset > summary, details.apiset > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #555; }
+    details.pageset, details.apiset { margin-top: 9px; border-top: 1px solid rgba(255,255,255,.08); padding-top: 7px; }
+    details.pageset > summary, details.apiset > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #c4ccd6; }
     #promptPreview, #promoPreviewBox { display: none; margin: 7px 0 0; max-height: 150px; overflow: auto; padding: 7px;
-      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font: 10px/1.5 ui-monospace, Menlo, monospace;
-      white-space: pre-wrap; word-break: break-all; color: #334155; }
+      background: rgba(10,14,22,.6); border: 1px solid rgba(255,255,255,.08); border-radius: 6px; font: 10px/1.5 ui-monospace, Menlo, monospace;
+      white-space: pre-wrap; word-break: break-all; color: #c4ccd6; }
     .grok .btnrow.two button { flex: 1; }
-    .infobtn { border:1px solid #d9cff2;background:#f7f3ff;color:#6b46c1;border-radius:7px;
+    .infobtn { border:1px solid rgba(255,138,61,.4);background:rgba(255,138,61,.10);color:#ffb08a;border-radius:7px;
       font-size:11px;padding:3px 8px;cursor:pointer;margin-left:6px;vertical-align:middle; }
-    .infobtn:hover { background:#ece3ff; }
-    .info-mask { position:fixed;inset:0;background:rgba(20,12,40,.42);display:flex;
+    .infobtn:hover { background:rgba(255,138,61,.20); }
+    .info-mask { position:fixed;inset:0;background:rgba(8,6,16,.62);display:flex;
       align-items:center;justify-content:center;z-index:9999;padding:14px; }
     .info-mask[hidden] { display:none; }
     /* 1.5.3：DeepSeek 配置块只在选中该模式时展开，显式锁死 hidden 避免被通用 div 样式覆盖 */
     #deepseekCfg[hidden] { display:none; }
-    .info-card { width:100%;max-width:330px;background:#fff;border-radius:14px;overflow:hidden;
-      box-shadow:0 12px 40px rgba(20,10,45,.3);font-size:12px;color:#333; }
+    .info-card { width:100%;max-width:330px;background:linear-gradient(160deg,rgba(34,42,58,.96),rgba(18,24,36,.96));
+      border:1px solid rgba(255,138,61,.30);border-radius:14px;overflow:hidden;
+      box-shadow:0 16px 46px rgba(0,0,0,.5),inset 0 0 24px rgba(255,138,61,.08);font-size:12px;color:#e8edf4; }
     .info-head { display:flex;align-items:center;justify-content:space-between;
-      padding:11px 14px;background:#6b46c1;color:#fff;font-size:13px; }
-    .info-head button { border:none;background:none;color:#fff;font-size:15px;cursor:pointer;line-height:1; }
-    .info-body { padding:12px 14px;line-height:1.8;max-height:290px;overflow:auto; }
+      padding:11px 14px;background:linear-gradient(92deg,#ff9a3d,#ff5f4d);color:#1a0f0a;font-size:13px;font-weight:700; }
+    .info-head button { border:none;background:none;color:#1a0f0a;font-size:15px;cursor:pointer;line-height:1; }
+    .info-body { padding:12px 14px;line-height:1.8;max-height:290px;overflow:auto;color:#d7dde6; }
     .info-body p { margin:0 0 6px; }
-    .info-body b { color:#5b21b6; }
+    .info-body b { color:#ffb08a; }
     .info-foot { padding:0 14px 13px; }
-    .info-foot button { width:100%;border:none;border-radius:8px;background:#6b46c1;color:#fff;
-      font-size:12px;padding:8px;cursor:pointer; }
+    .info-foot button { width:100%;border:none;border-radius:8px;background:linear-gradient(92deg,#ff9a3d,#ff5f4d);color:#1a0f0a;
+      font-size:12px;padding:8px;cursor:pointer;font-weight:700; }
 
-    /* 1.5.5：价格数字最大化（BEM 主卡 30px / 副卡 16px），所有描述文字压到 8px；
-     * BEM 放第一位独占一张大卡，TapeUP 与矿机日产并排第二行，仍是两行紧凑布局。 */
-    .tape-prices { margin:0 0 7px;padding:5px 6px;border:1px solid #ffd9b3;border-radius:8px;
-      background:linear-gradient(180deg,#fffaf4,#fff); }
+    /* ---------- 1.5.5：价格数字最大化（BEM 主卡 30px / 副卡 16px）；1.5.9 改为深色发光卡片，呼应 /vote 酷炫风 ---------- */
+    .tape-prices { margin:0 0 7px;padding:5px 6px;border:1px solid rgba(255,138,61,.30);border-radius:8px;
+      background:linear-gradient(180deg,rgba(34,42,58,.55),rgba(18,24,36,.55));
+      box-shadow:0 6px 18px rgba(0,0,0,.28),inset 0 0 18px rgba(255,138,61,.06); }
     .price-head { display:flex;align-items:center;gap:5px;margin:0 0 4px; }
-    .price-head strong { flex:1;font-size:9px;color:#b45309;letter-spacing:.2px;font-weight:700; }
-    .price-head span { font-size:8px;color:#a8a8a8; }
-    .price-head button { border:1px solid #ffd0a6;background:#fff;color:#d96300;border-radius:5px;
+    .price-head strong { flex:1;font-size:9px;color:#ffb08a;letter-spacing:.2px;font-weight:700; }
+    .price-head span { font-size:8px;color:#9aa3ae; }
+    .price-head button { border:1px solid rgba(255,138,61,.4);background:rgba(255,138,61,.10);color:#ffb08a;border-radius:5px;
       font-size:10px;padding:0 6px;cursor:pointer;line-height:1.4; }
-    .price-head button:hover { background:#fff1e4; }
+    .price-head button:hover { background:rgba(255,138,61,.20); }
     .price-grid { display:flex;flex-direction:column;gap:4px; }
     .pc-pair { display:grid;grid-template-columns:1fr 1fr;gap:4px; }
     .price-card { display:block;width:100%;min-width:0;box-sizing:border-box;padding:3px 6px;
-      border:1px solid #ffe2c4;border-left:3px solid #ff7800;border-radius:6px;
-      background:#fff;text-align:left;cursor:pointer;font-family:inherit; }
-    .price-card:hover { border-color:#ff9d3d;background:#fff7ed; }
-    .price-card.pc-hero { padding:4px 7px 5px;border-left-color:#0d9488;
-      background:linear-gradient(180deg,#f4fffc,#fff); }
-    .price-card.pc-hero:hover { border-color:#5eead4;background:#f0fdfa; }
-    .price-card.pc-miner { border-left-color:#16a34a; }
+      border:1px solid rgba(255,138,61,.22);border-left:3px solid #ff8a3d;border-radius:6px;
+      background:rgba(255,255,255,.04);text-align:left;cursor:pointer;font-family:inherit; }
+    .price-card:hover { border-color:rgba(255,138,61,.6);background:rgba(255,138,61,.08); }
+    .price-card.pc-hero { padding:4px 7px 5px;border-left-color:#22d3ee;
+      background:linear-gradient(180deg,rgba(34,211,238,.10),rgba(255,255,255,.03)); }
+    .price-card.pc-hero:hover { border-color:#67e8f9;background:rgba(34,211,238,.14); }
+    .price-card.pc-miner { border-left-color:#34d399; }
     .pc-topline { display:flex;align-items:center;gap:4px;line-height:1.3; }
     .pc-hero .pc-topline { margin-bottom:1px; }
-    .pc-label { flex:0 0 auto;font-size:8px;font-weight:700;color:#8a5a2b;white-space:nowrap;
+    .pc-label { flex:0 0 auto;font-size:8px;font-weight:700;color:#ffd6bd;white-space:nowrap;
       letter-spacing:.3px; }
-    .pc-hero .pc-label { color:#0f766e; }
-    .pc-unit { font-size:8px;color:#a8b0bb;white-space:nowrap; }
+    .pc-hero .pc-label { color:#67e8f9; }
+    .pc-unit { font-size:8px;color:#9aa3ae;white-space:nowrap; }
     .pc-unit:empty { display:none; }
     .pc-line { display:flex;align-items:baseline;gap:3px;flex-wrap:wrap;line-height:1.15; }
     .pc-hero .pc-line { display:block; }
-    .pc-value { font-size:16px;font-weight:800;color:#141b26;white-space:nowrap;
+    .pc-value { font-size:16px;font-weight:800;color:#fff;white-space:nowrap;
       font-variant-numeric:tabular-nums;letter-spacing:-.4px; }
-    .pc-hero .pc-value { display:block;font-size:30px;line-height:1.06;letter-spacing:-1.2px; }
-    .pc-sub { display:block;font-size:8px;font-weight:700;color:#b45309;white-space:nowrap;
+    .pc-hero .pc-value { display:block;font-size:30px;line-height:1.06;letter-spacing:-1.2px;
+      background:linear-gradient(92deg,#ffe14d,#ff8a3d);-webkit-background-clip:text;background-clip:text;color:transparent; }
+    .pc-sub { display:block;font-size:8px;font-weight:700;color:#ffb08a;white-space:nowrap;
       margin-top:1px; }
-    .pc-sub .chg.up { color:#d93025; }   /* 涨＝红（国内习惯） */
-    .pc-sub .chg.down { color:#16a34a; } /* 跌＝绿 */
-    .pc-foot { display:block;font-size:8px;color:#0f766e;line-height:1.3;margin-top:2px; }
-    .pc-badge { flex:0 0 auto;margin-left:auto;font-size:8px;font-weight:700;color:#64748b;
-      background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:0 5px;
+    .pc-sub .chg.up { color:#ff6b5e; }   /* 涨＝红（国内习惯） */
+    .pc-sub .chg.down { color:#34d399; } /* 跌＝绿 */
+    .pc-foot { display:block;font-size:8px;color:#67e8f9;line-height:1.3;margin-top:2px; }
+    .pc-badge { flex:0 0 auto;margin-left:auto;font-size:8px;font-weight:700;color:#c4ccd6;
+      background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:0 5px;
       white-space:nowrap;line-height:1.35; }
     .pc-badge:empty { display:none; }
-    .pc-badge.up { color:#d93025;background:#fef2f2;border-color:#fecaca; }
-    .pc-badge.down { color:#16a34a;background:#f0fdf4;border-color:#bbf7d0; }
+    .pc-badge.up { color:#ff6b5e;background:rgba(255,107,94,.12);border-color:rgba(255,107,94,.4); }
+    .pc-badge.down { color:#34d399;background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.4); }
 
-    /* ---------- 1.5.5：$BEM 信仰者打卡（全网账本 / 按天累计 / 提醒） ---------- */
-    .vote-box { margin:0 0 8px;padding:6px 7px;border:1px solid #ffd0c4;border-radius:8px;
-      background:linear-gradient(180deg,#fff7f4,#fff); }
+    /* ---------- 1.5.5：$BEM 信仰者打卡（全网账本 / 按天累计 / 提醒）；1.5.9 深色发光卡片 ---------- */
+    .vote-box { margin:0 0 8px;padding:6px 7px;border:1px solid rgba(255,138,61,.30);border-radius:8px;
+      background:linear-gradient(180deg,rgba(34,42,58,.55),rgba(18,24,36,.55));
+      box-shadow:0 6px 18px rgba(0,0,0,.28),inset 0 0 18px rgba(255,138,61,.06); }
     .vote-head { display:flex;align-items:center;gap:6px; }
-    .vote-head strong { flex:1;font-size:9px;color:#b4442c;letter-spacing:.2px; }
-    .vote-head span { font-size:8px;color:#fff;background:#0d9488;border-radius:20px;
+    .vote-head strong { flex:1;font-size:9px;color:#ffb08a;letter-spacing:.2px; }
+    .vote-head span { font-size:8px;color:#06231f;background:#22d3ee;border-radius:20px;
       padding:1px 6px;font-weight:700; }
-    .vote-head span.local { background:#94a3b8; }
-    .vote-remind { font-size:9px;color:#b4442c;line-height:1.4;margin:4px 0 5px;font-weight:700; }
-    .vote-remind.done { color:#15803d;font-weight:600; }
+    .vote-head span.local { background:#94a3b8;color:#10131a; }
+    .vote-remind { font-size:9px;color:#ffb08a;line-height:1.4;margin:4px 0 5px;font-weight:700; }
+    .vote-remind.done { color:#34d399;font-weight:600; }
     .vote-actions { display:flex;gap:5px; }
-    .vote-actions button { flex:1;padding:6px 3px;border:1px solid #ffc7b5;border-radius:7px;
-      background:#fff;color:#b4442c;font-size:11px;font-weight:700;cursor:pointer; }
-    .vote-actions button:hover { background:#fff0e9;border-color:#ff9d7d; }
-    .vote-actions button.active { background:#b4442c;color:#fff;border-color:#b4442c; }
-    .vote-actions button.mini { flex:0 0 30px;font-size:11px;padding:6px 0;color:#64748b; }
+    .vote-actions button { flex:1;padding:6px 3px;border:1px solid rgba(255,138,61,.35);border-radius:7px;
+      background:rgba(255,138,61,.10);color:#ffb08a;font-size:11px;font-weight:700;cursor:pointer; }
+    .vote-actions button:hover { background:rgba(255,138,61,.20);border-color:rgba(255,138,61,.6); }
+    .vote-actions button.active { background:linear-gradient(92deg,#ff9a3d,#ff5f4d);color:#1a0f0a;border-color:#ff8a3d; }
+    .vote-actions button.mini { flex:0 0 30px;font-size:11px;padding:6px 0;color:#9aa3ae; }
     .vote-tally { display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin:6px 0 4px; }
-    .vote-tally > div { background:#fff;border:1px solid #ffe0d5;border-radius:6px;
+    .vote-tally > div { background:rgba(255,255,255,.05);border:1px solid rgba(255,138,61,.22);border-radius:6px;
       padding:3px 4px;text-align:center;min-width:0; }
-    .vote-tally b { display:block;font-size:16px;line-height:1.15;color:#141b26;
+    .vote-tally b { display:block;font-size:16px;line-height:1.15;color:#fff;
       font-variant-numeric:tabular-nums;letter-spacing:-.3px; }
     .vote-tally span { display:block;font-size:8px;color:#9aa3ae;white-space:nowrap; }
     .vote-trend { display:flex;align-items:flex-end;gap:3px;height:26px;margin:3px 0 2px; }
-    .vote-trend > i { flex:1;display:block;height:100%;min-height:2px;background:#ffd7c7;
+    .vote-trend > i { flex:1;display:block;height:100%;min-height:2px;background:rgba(255,138,61,.18);
       border-radius:2px 2px 0 0;position:relative; }
     .vote-trend > i > u { display:block;position:absolute;left:0;right:0;bottom:0;
       background:linear-gradient(180deg,#ff8a3d,#e04b2c);border-radius:2px 2px 0 0; }
     .vote-status { font-size:8px;color:#9aa3ae;line-height:1.4;min-height:11px; }
-    details.vote-set { margin-top:5px;border-top:1px solid #ffe0d5;padding-top:5px; }
-    details.vote-set > summary { cursor:pointer;font-size:9px;color:#9a5b45;font-weight:600; }
-    details.vote-set label { font-size:9px;margin:6px 0 2px; }
-    details.vote-set input[type=text], details.vote-set select { width:100%;box-sizing:border-box;
-      font-size:9px;padding:4px 5px;border:1px solid #d9d9d9;border-radius:6px; }
+    details.vote-set { margin-top:5px;border-top:1px solid rgba(255,138,61,.22);padding-top:5px; }
+    details.vote-set > summary { cursor:pointer;font-size:9px;color:#ffc89a;font-weight:600; }
+    details.vote-set label { font-size:9px;margin:6px 0 2px;color:#cdd5e0; }
+    details.vote-set input[type=text], details.vote-set select { width:100%;box-sizing:border-box;color:#e8edf4;
+      font-size:9px;padding:4px 5px;border:1px solid rgba(255,138,61,.28);border-radius:6px;background:rgba(255,255,255,.06); }
     details.vote-set .btnrow { display:flex;gap:5px;margin:6px 0 0; }
-    details.vote-set .btnrow button { flex:1;padding:5px 3px;font-size:9px;border:1px solid #ffd0bd;
-      border-radius:6px;background:#fff;color:#b4442c;cursor:pointer;font-weight:600; }
+    details.vote-set .btnrow button { flex:1;padding:5px 3px;font-size:9px;border:1px solid rgba(255,138,61,.35);
+      border-radius:6px;background:rgba(255,138,61,.10);color:#ffb08a;cursor:pointer;font-weight:600; }
     details.vote-set .tiny { font-size:8px;color:#9aa3ae;line-height:1.5;margin:6px 0 0; }
     /* 1.5.6：信仰者名片 / 钱包门槛 / 激励话语 */
-    .vote-gate { font-size:9px;line-height:1.4;color:#9a5b45;background:#fff0e9;
-      border:1px dashed #ffb99c;border-radius:6px;padding:4px 6px;margin:4px 0 5px; }
+    .vote-gate { font-size:9px;line-height:1.4;color:#ffc89a;background:rgba(255,138,61,.10);
+      border:1px dashed rgba(255,138,61,.5);border-radius:6px;padding:4px 6px;margin:4px 0 5px; }
     .vote-gate[hidden] { display:none; }
     .vote-id { display:flex;align-items:center;gap:5px;margin:5px 0; }
     .vote-ava { flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:flex;
-      align-items:center;justify-content:center;font-size:14px;border:1px solid #ffd0bd; }
-    .vote-id input { flex:1;min-width:0;font-size:9px;padding:4px 6px;border:1px solid #ffd0bd;
-      border-radius:6px;outline:none; }
-    .vote-id input:focus { border-color:#b4442c; }
-    .vote-id .pick, .vote-id .save { flex:0 0 auto;font-size:10px;padding:4px 6px;border:1px solid #ffd0bd;
-      border-radius:6px;background:#fff;color:#b4442c;cursor:pointer; }
-    .vote-id .save { font-weight:700;background:#fff0e9; }
+      align-items:center;justify-content:center;font-size:14px;border:1px solid rgba(255,138,61,.45);
+      box-shadow:0 0 0 2px rgba(255,255,255,.08),0 0 12px rgba(255,138,61,.35); }
+    .vote-id input { flex:1;min-width:0;font-size:9px;padding:4px 6px;border:1px solid rgba(255,138,61,.35);
+      border-radius:6px;outline:none;color:#e8edf4;background:rgba(255,255,255,.06); }
+    .vote-id input:focus { border-color:#ff8a3d; }
+    .vote-id .pick, .vote-id .save { flex:0 0 auto;font-size:10px;padding:4px 6px;border:1px solid rgba(255,138,61,.4);
+      border-radius:6px;background:rgba(255,138,61,.10);color:#ffb08a;cursor:pointer; }
+    .vote-id .save { font-weight:700;background:rgba(255,138,61,.18); }
     /* 1.5.7：名片修改状态提示 + 主区头像库 */
     .vote-profile-hint { font-size:8px;color:#9aa3ae;line-height:1.4;margin:0 0 4px;min-height:11px; }
-    .vote-profile-hint.dirty { color:#b4442c;font-weight:600; }
-    .vote-profile-hint.ok { color:#15803d;font-weight:600; }
+    .vote-profile-hint.dirty { color:#ffb08a;font-weight:600; }
+    .vote-profile-hint.ok { color:#34d399;font-weight:600; }
     .vote-avatar-grid { display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin:4px 0 2px; }
     .vote-avatar-grid[hidden] { display:none; }
-    .vote-avatar-grid button { font-size:14px;line-height:1;padding:3px 0;border:1px solid #ffe0d5;
-      border-radius:6px;background:#fff;cursor:pointer; }
-    .vote-avatar-grid button.on { border-color:#b4442c;background:#fff0e9;box-shadow:0 0 0 1px #b4442c inset; }
-    .vote-actions button:disabled { opacity:.45;cursor:not-allowed;background:#f6f6f6; }
-    .vote-quote { margin:5px 0 2px;padding:5px 6px;border:1px solid #ffd0c4;border-radius:7px;
-      background:#fffaf7; }
+    .vote-avatar-grid button { font-size:14px;line-height:1;padding:3px 0;border:1px solid rgba(255,138,61,.22);
+      border-radius:6px;background:rgba(255,255,255,.05);cursor:pointer; }
+    .vote-avatar-grid button.on { border-color:#ff8a3d;background:rgba(255,138,61,.18);box-shadow:0 0 0 1px #ff8a3d inset; }
+    .vote-actions button:disabled { opacity:.45;cursor:not-allowed;background:rgba(255,255,255,.04); }
+    .vote-quote { margin:5px 0 2px;padding:5px 6px;border:1px solid rgba(255,138,61,.30);border-radius:7px;
+      background:rgba(255,138,61,.07); }
     .vote-quote[hidden] { display:none; }
-    .vote-quote p { margin:0 0 4px;font-size:10px;line-height:1.45;color:#7c3a25;font-weight:600; }
+    .vote-quote p { margin:0 0 4px;font-size:10px;line-height:1.45;color:#ffd6bd;font-weight:600; }
     .vote-quote .qa { display:flex;gap:5px; }
-    .vote-quote .qa button { flex:1;font-size:9px;padding:4px 3px;border:1px solid #ffc7b5;
-      border-radius:6px;background:#fff;color:#b4442c;cursor:pointer;font-weight:600; }
-    .vote-quote .qa button.x { background:#141b26;color:#fff;border-color:#141b26; }
+    .vote-quote .qa button { flex:1;font-size:9px;padding:4px 3px;border:1px solid rgba(255,138,61,.35);
+      border-radius:6px;background:rgba(255,138,61,.10);color:#ffb08a;cursor:pointer;font-weight:600; }
+    .vote-quote .qa button.x { background:linear-gradient(92deg,#141b26,#1f2940);color:#fff;border-color:#39455e; }
 
-    /* ---------- 1.5.5：钱包 + TapeOut API 资产（数字大、描述小） ---------- */
-    .wallet-box { margin:0 0 8px;padding:6px 7px;border:1px solid #cfe0f5;border-radius:8px;
-      background:linear-gradient(180deg,#f6faff,#fff); }
+    /* ---------- 1.5.5：钱包 + TapeOut API 资产；1.5.9 深色发光卡片 ---------- */
+    .wallet-box { margin:0 0 8px;padding:6px 7px;border:1px solid rgba(56,189,248,.30);border-radius:8px;
+      background:linear-gradient(180deg,rgba(34,42,58,.55),rgba(18,24,36,.55));
+      box-shadow:0 6px 18px rgba(0,0,0,.28),inset 0 0 18px rgba(56,189,248,.06); }
     .wallet-head { display:flex;align-items:center;gap:6px; }
-    .wallet-head strong { flex:1;font-size:9px;color:#1d4ed8;letter-spacing:.2px; }
-    .wallet-head span { font-size:8px;color:#64748b; }
-    .wallet-head span.on { color:#15803d;font-weight:700; }
-    .wallet-addr { font:10px/1.4 ui-monospace,Menlo,monospace;color:#334155;margin:4px 0 5px;
+    .wallet-head strong { flex:1;font-size:9px;color:#7dd3fc;letter-spacing:.2px; }
+    .wallet-head span { font-size:8px;color:#9aa3ae; }
+    .wallet-head span.on { color:#34d399;font-weight:700; }
+    .wallet-addr { font:10px/1.4 ui-monospace,Menlo,monospace;color:#c4ccd6;margin:4px 0 5px;
       word-break:break-all; }
     .wallet-actions { display:flex;gap:5px; }
     .wallet-actions button { flex:1;padding:6px 3px;font-size:10px;font-weight:700;cursor:pointer;
-      border:1px solid #bfd4f2;border-radius:7px;background:#fff;color:#1d4ed8; }
-    .wallet-actions button:hover { background:#eaf2ff;border-color:#93b4ea; }
-    .wallet-actions button.ghost { flex:0 0 52px;color:#64748b;border-color:#d9dfe8; }
+      border:1px solid rgba(56,189,248,.4);border-radius:7px;background:rgba(56,189,248,.10);color:#7dd3fc; }
+    .wallet-actions button:hover { background:rgba(56,189,248,.20);border-color:rgba(56,189,248,.65); }
+    .wallet-actions button.ghost { flex:0 0 52px;color:#9aa3ae;border-color:rgba(255,255,255,.18); }
     .wallet-providers { display:flex;flex-wrap:wrap;gap:4px;margin:5px 0 0; }
-    .wallet-providers button { font-size:9px;padding:3px 7px;border:1px solid #bfd4f2;border-radius:20px;
-      background:#fff;color:#1d4ed8;cursor:pointer; }
-    .wallet-providers button:hover { background:#e8f0ff; }
-    .wallet-providers .hint { font-size:8px;color:#94a3b8;line-height:1.5; }
+    .wallet-providers button { font-size:9px;padding:3px 7px;border:1px solid rgba(56,189,248,.4);border-radius:20px;
+      background:rgba(56,189,248,.10);color:#7dd3fc;cursor:pointer; }
+    .wallet-providers button:hover { background:rgba(56,189,248,.20); }
+    .wallet-providers .hint { font-size:8px;color:#9aa3ae;line-height:1.5; }
     .asset-grid { display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin:6px 0 3px; }
-    .asset-grid > div { min-width:0;background:#fff;border:1px solid #dce8f8;border-radius:6px;
+    .asset-grid > div { min-width:0;background:rgba(255,255,255,.05);border:1px solid rgba(56,189,248,.22);border-radius:6px;
       padding:3px 4px;text-align:center; }
-    .asset-grid b { display:block;font-size:15px;line-height:1.2;color:#141b26;
+    .asset-grid b { display:block;font-size:15px;line-height:1.2;color:#fff;
       font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap;
       overflow:hidden;text-overflow:ellipsis; }
     .asset-grid span { display:block;font-size:8px;color:#9aa3ae;white-space:nowrap; }
     /* 1.5.8：BSC 与 X Layer 两组资产用链头分隔，数字仍是 15px、描述 8px */
     .chain-head { display:flex;align-items:center;gap:4px;margin:7px 0 0;font-size:8px;
-      color:#6d28d9;font-weight:700;letter-spacing:.2px; }
-    .chain-head .dot { width:5px;height:5px;border-radius:50%;background:#7c3aed;display:inline-block;flex:0 0 5px; }
+      color:#a78bfa;font-weight:700;letter-spacing:.2px; }
+    .chain-head .dot { width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;flex:0 0 5px; }
     .chain-head .state { flex:1;text-align:right;font-weight:400;color:#9aa3ae;white-space:nowrap; }
-    .chain-head.bsc { color:#1d4ed8;margin-top:5px; }
-    .chain-head.bsc .dot { background:#2563eb; }
+    .chain-head.bsc { color:#7dd3fc;margin-top:5px; }
+    .chain-head.bsc .dot { background:#38bdf8; }
     .asset-grid.xlayer-grid { margin-top:3px; }
-    .asset-grid.xlayer-grid > div { background:#fdfbff;border-color:#e6dcf8; }
-    .asset-grid.xlayer-grid b { color:#5b21b6; }
-    .wallet-sub { font-size:8px;color:#8b98a8;line-height:1.5; }
+    .asset-grid.xlayer-grid > div { background:rgba(167,139,250,.08);border-color:rgba(167,139,250,.30); }
+    .asset-grid.xlayer-grid b { color:#c4b5fd; }
+    .wallet-sub { font-size:8px;color:#9aa3ae;line-height:1.5; }
     .wallet-status { font-size:8px;color:#9aa3ae;line-height:1.4;min-height:11px;margin-top:2px; }
-    .wallet-status.err { color:#b91c1c; }
-    details.wallet-manual { margin-top:5px;border-top:1px solid #dce8f8;padding-top:5px; }
-    details.wallet-manual > summary { cursor:pointer;font-size:9px;color:#5b6b82; }
-    details.wallet-manual input { width:100%;box-sizing:border-box;font:10px ui-monospace,Menlo,monospace;
-      padding:5px 6px;border:1px solid #d9dfe8;border-radius:6px;margin-top:5px; }
+    .wallet-status.err { color:#ff6b5e; }
+    details.wallet-manual { margin-top:5px;border-top:1px solid rgba(56,189,248,.22);padding-top:5px; }
+    details.wallet-manual > summary { cursor:pointer;font-size:9px;color:#9fc5e8; }
+    details.wallet-manual input { width:100%;box-sizing:border-box;font:10px ui-monospace,Menlo,monospace;color:#e8edf4;
+      padding:5px 6px;border:1px solid rgba(56,189,248,.28);border-radius:6px;margin-top:5px;background:rgba(255,255,255,.06); }
     details.wallet-manual .btnrow { display:flex;gap:5px;margin:5px 0 0; }
-    details.wallet-manual .btnrow button { flex:1;padding:5px;font-size:9px;border:1px solid #bfd4f2;
-      border-radius:6px;background:#fff;color:#1d4ed8;cursor:pointer; }
+    details.wallet-manual .btnrow button { flex:1;padding:5px;font-size:9px;border:1px solid rgba(56,189,248,.4);
+      border-radius:6px;background:rgba(56,189,248,.10);color:#7dd3fc;cursor:pointer; }
 
-    /* 1.4.13：价格上下限提醒设置 */
-    details.price-set { margin:0 0 12px;border:1px solid #ddd;border-radius:9px;padding:8px 10px;background:#fafafa; }
-    details.price-set > summary { cursor:pointer;font-size:12px;font-weight:700;color:#b45309; }
-    details.price-set label { font-size:12px;margin:9px 0 3px; }
+    /* 1.4.13：价格上下限提醒设置；1.5.9 深色化 */
+    details.price-set { margin:0 0 12px;border:1px solid rgba(255,138,61,.30);border-radius:9px;padding:8px 10px;
+      background:linear-gradient(180deg,rgba(34,42,58,.55),rgba(18,24,36,.55)); }
+    details.price-set > summary { cursor:pointer;font-size:12px;font-weight:700;color:#ffb08a; }
+    details.price-set label { font-size:12px;margin:9px 0 3px;color:#cdd5e0; }
     .pb-grid { display:grid;grid-template-columns:82px 1fr 1fr;gap:5px;align-items:center;margin:6px 0; }
-    .pb-grid > span { color:#999;font-size:10px; }
-    .pb-grid > label { margin:0;font-size:11px;font-weight:500; }
-    .pb-grid input { width:100%;box-sizing:border-box;font-size:11px;padding:4px 5px;
-      border:1px solid #ccc;border-radius:6px; }
+    .pb-grid > span { color:#9aa3ae;font-size:10px; }
+    .pb-grid > label { margin:0;font-size:11px;font-weight:500;color:#cdd5e0; }
+    .pb-grid input { width:100%;box-sizing:border-box;font-size:11px;padding:4px 5px;color:#e8edf4;
+      border:1px solid rgba(255,138,61,.28);border-radius:6px;background:rgba(255,255,255,.06); }
     details.price-set .btnrow { display:flex;gap:6px;margin-top:9px; }
-    details.price-set .btnrow button { flex:1;padding:7px 4px;font-size:11px;border:1px solid #ddd;
-      border-radius:7px;background:#fff;color:#444;cursor:pointer;font-weight:600; }
-    details.price-set .btnrow button:hover { background:#fff1e4;border-color:#ffcf9f; }
-    details.price-set .tiny { font-size:10px;color:#999;line-height:1.5;margin:6px 0 0; }
-    details.price-set select { width:100%;box-sizing:border-box;font-size:12px;padding:5px;
-      border:1px solid #ccc;border-radius:6px; }
+    details.price-set .btnrow button { flex:1;padding:7px 4px;font-size:11px;border:1px solid rgba(255,138,61,.35);
+      border-radius:7px;background:rgba(255,138,61,.10);color:#ffb08a;cursor:pointer;font-weight:600; }
+    details.price-set .btnrow button:hover { background:rgba(255,138,61,.20); }
+    details.price-set .tiny { font-size:10px;color:#9aa3ae;line-height:1.5;margin:6px 0 0; }
+    details.price-set select { width:100%;box-sizing:border-box;font-size:12px;padding:5px;color:#e8edf4;
+      border:1px solid rgba(255,138,61,.28);border-radius:6px;background:rgba(255,255,255,.06); }
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.8</span></h1>
-  <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
+  <h1>信仰者工具 <span class="appver" id="appVersion">v1.5.9</span></h1>
 
   <!-- 1.5.5：BEM 置顶为主卡（最大字号），TapeUP / 矿机日产并排第二行；描述一律 8px -->
   <section class="tape-prices" id="pricePanel">
@@ -579,13 +599,13 @@
     </div>
 
     <div id="modeFixNote" class="mode-hint" hidden
-      style="margin:0 0 10px;background:#ecfdf5;border-color:#a7f3d0;color:#065f46">
+      style="margin:0 0 10px;background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.45);color:#6ee7b7">
       <b>已自动修复运行模式</b>：旧「页面模式」已改为「自动」，刷新 X 页面即可。
     </div>
 
     <label for="replyInputSelector">X 回复框选择器（留空＝内置，X 改版时再填）</label>
     <input type="text" id="replyInputSelector" spellcheck="false"
-      style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d9d2e9;border-radius:8px;font-size:12px;margin:4px 0 10px"
+      style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid rgba(255,138,61,.28);border-radius:8px;font-size:12px;margin:4px 0 10px;color:#e8edf4;background:rgba(255,255,255,.06)"
       placeholder="div[aria-label=&quot;Post text&quot;][role=&quot;textbox&quot;]" />
 
     <label for="grokMode">运行模式</label>
@@ -603,8 +623,8 @@
 
     <!-- 1.5.3：DeepSeek API 模式专属配置，选了该模式才显示，保持设置页紧凑 -->
     <div id="deepseekCfg" hidden
-      style="margin:8px 0 10px;padding:9px;border:1px solid #bfdbfe;border-radius:8px;background:#f8fbff">
-      <div style="font-size:11px;font-weight:700;color:#1d4ed8;margin:0 0 5px">🔵 DeepSeek API 配置（与 xAI Key 分开保存）</div>
+      style="margin:8px 0 10px;padding:9px;border:1px solid rgba(56,189,248,.4);border-radius:8px;background:rgba(56,189,248,.08)">
+      <div style="font-size:11px;font-weight:700;color:#7dd3fc;margin:0 0 5px">🔵 DeepSeek API 配置（与 xAI Key 分开保存）</div>
       <label for="deepseekKey" style="display:block;margin:0 0 3px;font-size:11px;font-weight:600">API Key</label>
       <input type="password" id="deepseekKey" placeholder="sk-…" autocomplete="off" spellcheck="false" />
       <div class="g2" style="margin-top:7px">
