@@ -234,6 +234,40 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   ok('popup 未绑定时禁用按钮', /disabled = !sum\.walletBound/.test(pop156));
   ok('popup 有发 X 按钮逻辑', /votePostX/.test(pop156) && /x\.com\/intent\/tweet/.test(read('vote.js')));
 
+  console.log('\n== 6b. 1.5.7 名片可改存 / 改名后同步更新当日信仰者墙 ==');
+  const profOld = Vote.normalizeProfile({ name: '昆哥', avatar: 'a07' });
+  const profNew = Vote.normalizeProfile({ name: '阿昆 <b>', avatar: 'a21' });
+  eq('新昵称已清洗标签', profNew.name, '阿昆 b');
+  eq('新头像已保存', profNew.avatar, 'a21');
+  ok('头像确实可更换', profNew.avatar !== profOld.avatar && profNew.name !== profOld.name);
+  eq('名片归一化幂等', JSON.stringify(Vote.normalizeProfile(profNew)), JSON.stringify(profNew));
+  const base157 = { days: {}, localAdd: {}, history: { '2026-11-14': 'support' }, pending: [],
+    config: Vote.normalizeConfig(null), ledgerAvailable: true, walletBound: true,
+    lastQuote: '稳住，等下一次升级。', lastQuoteAt: '2026-11-14T06:30:00.000Z',
+    supporters: st156.supporters };
+  const sumOld = Vote.summary(Object.assign({}, base157, { profile: profOld }), Date.parse('2026-11-14T07:00:00Z'));
+  const sumNew = Vote.summary(Object.assign({}, base157, { profile: profNew }), Date.parse('2026-11-14T07:00:00Z'));
+  eq('summary 回显新昵称', sumNew.profile.name, '阿昆 b');
+  eq('summary 回显新头像', sumNew.profile.avatar, 'a21');
+  ok('改名后发 X 预填含新昵称', decodeURIComponent(sumNew.postUrl).includes('阿昆 b'));
+  ok('改名后发 X 预填不含旧昵称', !decodeURIComponent(sumNew.postUrl).includes('— 昆哥'));
+  eq('改名不更换激励话语', sumNew.quote, sumOld.quote);
+  eq('改名不更换打卡时间', Vote.beijingClock(Date.parse(sumNew.quoteAt)), Vote.beijingClock(Date.parse(sumOld.quoteAt)));
+  ok('改名不改变当日票数', sumNew.todayCount.support === sumOld.todayCount.support);
+  const bg157 = read('background.js');
+  ok('VOTE_PROFILE 保存本机名片', /msg\.type === 'VOTE_PROFILE'[\s\S]{0,600}\[K_PROFILE\]: profile/.test(bg157));
+  ok('只在当天已投 support 时同步上墙', /st\.history\[day\] === 'support'/.test(bg157));
+  ok('复用上次话语与时间', /st\.lastQuote \|\| BemQuotes\.pick\(\)/.test(bg157) && /st\.lastQuoteAt \|\|/.test(bg157));
+  ok('同 stance 重投不重复计票', /stance: 'support'[\s\S]{0,300}voterId: voter/.test(bg157));
+  ok('断网更新包进 pending', /wallPending = true[\s\S]{0,80}|st\.pending\.push\(payload\)/.test(bg157));
+  ok('替换同日旧待补投票', /p\.day === day && p\.stance === 'support'/.test(bg157));
+  const pop157 = read('popup.js'), html157 = read('popup.html');
+  ok('popup 有显式保存按钮绑定', /voteProfileSave[\s\S]{0,80}saveProfile\(\)/.test(pop157));
+  ok('昵称输入 debounce 自动保存', /setTimeout\(\(\) => saveProfile\(\{ auto: true \}\), 650\)/.test(pop157));
+  ok('保存后回显并刷新发 X URL', /renderVote\(r\.summary\)[\s\S]{0,400}wallUpdated/.test(pop157));
+  ok('头像宫格移到主区且默认收起', /id="voteAvatarGrid" hidden/.test(html157));
+  ok('折叠设置里不再重复放头像宫格', (html157.match(/id="voteAvatarGrid"/g) || []).length === 1);
+
   console.log('\n== 7. 钱包地址不出缓存 / 不出 popup 消息 ==');
   const bgSrc = read('background.js');
   const fnMatch = bgSrc.match(/function publicAssets\(a\) \{[\s\S]*?\n  \}/);

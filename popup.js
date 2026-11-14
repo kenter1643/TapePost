@@ -853,7 +853,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.6 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.7 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
@@ -882,7 +882,7 @@ function wbxStatus(id, msg, bad) {
   e.className = (id === 'walletStatus' ? 'wallet-status' : 'vote-status') + (bad ? ' err' : '');
 }
 
-/* ---------- 投票（1.5.6：钱包门槛 + 信仰者名片 + 激励话语） ---------- */
+/* ---------- 投票（1.5.6 钱包门槛 + 名片；1.5.7 名片随时可改可存并同步上墙） ---------- */
 let currentAvatarId = 'a01';
 let currentPostUrl = '';
 
@@ -977,15 +977,55 @@ function renderVote(sum) {
   const hr = wbxEl('voteReminderHour'); if (hr) hr.value = String(cfg.reminderHour);
 }
 
-function saveProfile() {
-  sendBg({ type: 'VOTE_PROFILE', name: wbxVal('voteName'), avatar: currentAvatarId }, (r) => {
-    if (r && r.ok) { voteSummary = r.summary; wbxStatus('voteStatus', '名片已保存 ✓ 下次打卡生效'); }
+/* 1.5.7：名片随时可改可存。
+ * 保存后必须 renderVote 回显（后台会清洗昵称、补全默认名），并刷新「发布到 X」的预填文案；
+ * 当天已投支持票时，后台 VOTE_PROFILE 会顺带把新名片同步到公开信仰者墙。 */
+let profileSaveTimer = 0;
+let lastSavedProfile = '';
+function markProfileHint(msg, kind) {
+  const h = wbxEl('voteProfileHint');
+  if (!h) return;
+  h.textContent = msg || '';
+  h.className = 'vote-profile-hint' + (kind ? ' ' + kind : '');
+}
+function saveProfile(opts) {
+  const o = opts || {};
+  clearTimeout(profileSaveTimer);
+  const name = wbxVal('voteName'), avatar = currentAvatarId;
+  const sig = name + '|' + avatar;
+  if (o.auto && sig === lastSavedProfile) return;   // debounce 与 change 不重复提交
+  lastSavedProfile = sig;
+  if (!o.auto) markProfileHint('正在保存名片…', '');
+  sendBg({ type: 'VOTE_PROFILE', name: name, avatar: avatar }, (r, err) => {
+    if (err || !r || !r.ok) {
+      lastSavedProfile = '';   // 允许重试
+      markProfileHint('保存失败：' + String((r && r.error) || (err && err.message) || '后台无响应'), 'dirty');
+      wbxStatus('voteStatus', '名片保存失败，请重试。', true);
+      return;
+    }
+    renderVote(r.summary);      // 回显规范化后的名片 + 刷新发 X 文案
+    const p = (r.summary && r.summary.profile) || { name: '', avatar: 'a01' };
+    lastSavedProfile = p.name + '|' + p.avatar;
+    if (r.wallUpdated) {
+      markProfileHint('已保存 ✓ 今日信仰者墙上的名字与头像已同步更新', 'ok');
+      wbxStatus('voteStatus', '名片已保存并同步到全网信仰者墙 ✓');
+    } else if (r.wallPending) {
+      markProfileHint('已存本机 ✓ 联网后自动同步到今日信仰者墙', 'ok');
+      wbxStatus('voteStatus', '名片已存本机 ✓ 待联网补投到全网账本');
+    } else {
+      markProfileHint('已保存 ✓ ' + (r.summary && r.summary.myStance === 'support'
+        ? '今日名片无需重复更新' : '下次打卡时生效（今天还没投支持票）'), 'ok');
+      wbxStatus('voteStatus', '名片已保存 ✓ ' + (r.summary && r.summary.myStance === 'support'
+        ? '今日已上墙' : '下次打卡生效'));
+    }
   });
 }
 function loadVote() {
   sendBg({ type: 'VOTE_STATE' }, (r, err) => {
     if (err || !r || !r.ok) { wbxStatus('voteStatus', '账本读取失败，请重新加载扩展。', true); return; }
     renderVote(r.summary);
+    const p = (r.summary && r.summary.profile) || { name: '', avatar: 'a01' };
+    lastSavedProfile = p.name + '|' + p.avatar;
   });
 }
 
@@ -1137,12 +1177,27 @@ if (voteApi) {
     const url = (voteSummary && voteSummary.publicPage) || voteApi.publicPage(voteApi.DEFAULT_LEDGER);
     try { chrome.tabs.create({ url: url, active: true }); } catch (e) {}
   });
+  bind('voteProfileSave', () => saveProfile());
   bind('voteAvatarToggle', () => {
-    const d = wbxEl('voteSettings');
-    if (d) { d.open = true; try { d.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
+    const g = wbxEl('voteAvatarGrid');
+    if (!g) return;
+    g.hidden = !g.hidden;
+    const b = wbxEl('voteAvatarToggle');
+    if (b) b.title = g.hidden ? '选择内置头像' : '收起头像库';
   });
   const nameEl = wbxEl('voteName');
-  if (nameEl) nameEl.addEventListener('change', saveProfile);
+  if (nameEl) {
+    // 输入停顿 650ms 自动保存；change / Enter / 💾 立即保存
+    nameEl.addEventListener('input', () => {
+      markProfileHint('有改动 · 停止输入后自动保存', 'dirty');
+      clearTimeout(profileSaveTimer);
+      profileSaveTimer = setTimeout(() => saveProfile({ auto: true }), 650);
+    });
+    nameEl.addEventListener('change', () => saveProfile({ auto: true }));
+    nameEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); saveProfile(); }
+    });
+  }
   bind('voteQuoteReroll', () => {
     if (typeof BemQuotes === 'undefined') return;
     const q = BemQuotes.pick();

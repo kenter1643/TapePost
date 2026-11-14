@@ -1361,6 +1361,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
 /* =====================================================================
  * 1.5.5：钱包（只读 + 本机加密） / TapeOut API 资产 / BEM 信仰者全网账本
  * 1.5.6：钱包绑定成为打卡前置条件；支持票随附昵称 / 头像 / 时间 / 激励话语
+ * 1.5.7：名片随时可改可存；改名 / 换头像后当天已上墙的支持票会同步更新
  * 独立 IIFE + 独立 listener，不与 CROSSPOST / GROK_* / PRICE_* 三条路由耦合。
  * ===================================================================== */
 (function walletVoteModule() {
@@ -1720,11 +1721,50 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
         await sset({ [K_VOTE]: st });
         sendResponse({ ok: true, summary: Vote.summary(st) });
       } else if (msg.type === 'VOTE_PROFILE') {
-        const profile = Vote.normalizeProfile({ name: msg.name, avatar: msg.avatar });
+        /* 1.5.7：名片随时可改可存，且改动要立刻反映到当天已公开的信仰者墙。 */
+        const binding = await readBinding();
         const st = await voteState();
+        const profile = Vote.normalizeProfile({ name: msg.name, avatar: msg.avatar });
+        // 留空昵称时与打卡口径一致，用地址遮罩生成默认名，避免「本机存空、墙上是默认名」
+        if (!profile.name && binding) profile.name = Vote.defaultName(Wallet.checksumHint(binding.address));
+        const day = Vote.dayKey();
+        const changed = !!(profile.name !== st.profile.name || profile.avatar !== st.profile.avatar);
         st.profile = profile;
         await sset({ [K_PROFILE]: profile, [K_VOTE]: st });
-        sendResponse({ ok: true, summary: Vote.summary(st) });
+
+        let wallUpdated = false, wallPending = false;
+        if (changed && binding && st.history[day] === 'support') {
+          const voter = await Wallet.walletVoterId(CRYPTO, binding.address, day);
+          if (voter) {
+            // 复用上次抽中的话语与时间，只换名片；服务端按当日身份哈希去重，
+            // prev === stance 分支只 upsertSupporter，不重复计票、不改变连续打卡。
+            const quote = String(st.lastQuote || BemQuotes.pick());
+            const at = String(st.lastQuoteAt || new Date().toISOString());
+            const payload = { day: day, stance: 'support', voterId: voter,
+              name: profile.name, avatar: profile.avatar, quote: quote, at: at,
+              clock: Vote.beijingClock(Date.parse(at) || Date.now()) };
+            let ok = false;
+            try {
+              const j = await fetchJson(Vote.ledgerUrl(st.config.ledgerBase, '/api/vote'), {
+                method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
+                body: voteBody(payload)
+              }, 6500);
+              ok = applyLedgerJson(st, j);
+            } catch (e) { st.lastError = String(e && e.message || e); }
+            // 当天待补投队列里若已有旧名片，替换成最新这一份，避免联网后把旧名字写回去
+            st.pending = st.pending.filter(function (p) { return !(p.day === day && p.stance === 'support'); });
+            if (ok) {
+              wallUpdated = true;
+            } else {
+              st.ledgerAvailable = false;
+              st.pending.push(payload);   // 断网：交给 flushPending 联网后补投
+              wallPending = true;
+            }
+            await sset({ [K_VOTE]: st });
+          }
+        }
+        sendResponse({ ok: true, summary: Vote.summary(st),
+          changed: changed, wallUpdated: wallUpdated, wallPending: wallPending });
       } else if (msg.type === 'VOTE_CAST') {
         const stance = String(msg.stance || '');
         if (Vote.STANCES.indexOf(stance) < 0) { sendResponse({ ok: false, error: '无效的立场' }); return; }

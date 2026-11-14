@@ -174,9 +174,15 @@
     .vote-id input { flex:1;min-width:0;font-size:9px;padding:4px 6px;border:1px solid #ffd0bd;
       border-radius:6px;outline:none; }
     .vote-id input:focus { border-color:#b4442c; }
-    .vote-id .pick { flex:0 0 auto;font-size:10px;padding:4px 6px;border:1px solid #ffd0bd;
+    .vote-id .pick, .vote-id .save { flex:0 0 auto;font-size:10px;padding:4px 6px;border:1px solid #ffd0bd;
       border-radius:6px;background:#fff;color:#b4442c;cursor:pointer; }
+    .vote-id .save { font-weight:700;background:#fff0e9; }
+    /* 1.5.7：名片修改状态提示 + 主区头像库 */
+    .vote-profile-hint { font-size:8px;color:#9aa3ae;line-height:1.4;margin:0 0 4px;min-height:11px; }
+    .vote-profile-hint.dirty { color:#b4442c;font-weight:600; }
+    .vote-profile-hint.ok { color:#15803d;font-weight:600; }
     .vote-avatar-grid { display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin:4px 0 2px; }
+    .vote-avatar-grid[hidden] { display:none; }
     .vote-avatar-grid button { font-size:14px;line-height:1;padding:3px 0;border:1px solid #ffe0d5;
       border-radius:6px;background:#fff;cursor:pointer; }
     .vote-avatar-grid button.on { border-color:#b4442c;background:#fff0e9;box-shadow:0 0 0 1px #b4442c inset; }
@@ -246,7 +252,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.6</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.7</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
   <!-- 1.5.5：BEM 置顶为主卡（最大字号），TapeUP / 矿机日产并排第二行；描述一律 8px -->
@@ -286,7 +292,7 @@
     </div>
   </section>
 
-  <!-- 1.5.6：钱包登录后才能打卡；支持票附昵称/头像/时间/激励话语，公开上墙 -->
+  <!-- 1.5.7：钱包登录后才能打卡；昵称/头像随时可改可存，改动同步更新当日信仰者墙 -->
   <section class="vote-box" id="votePanel">
     <div class="vote-head">
       <strong>🔥 $BEM 信仰者打卡</strong>
@@ -298,7 +304,10 @@
       <span class="vote-ava" id="voteAvatarChip">🦊</span>
       <input type="text" id="voteName" maxlength="16" spellcheck="false" placeholder="信仰者昵称（会公开）" />
       <button type="button" class="pick" id="voteAvatarToggle" title="选择内置头像">🎨</button>
+      <button type="button" class="save" id="voteProfileSave" title="保存昵称与头像">💾</button>
     </div>
+    <div class="vote-profile-hint" id="voteProfileHint">昵称与头像可随时修改 · 停止输入自动保存，也可点 💾</div>
+    <div class="vote-avatar-grid" id="voteAvatarGrid" hidden></div>
     <div class="vote-actions">
       <button id="voteSupport" type="button">💪 支持</button>
       <button id="voteWatch" type="button">🤔 观望</button>
@@ -319,9 +328,7 @@
     <div class="vote-trend" id="voteTrend"></div>
     <div class="vote-status" id="voteStatus"></div>
     <details class="vote-set" id="voteSettings">
-      <summary>⚙️ 我的名片 / 账本与打卡提醒</summary>
-      <label>内置头像（32 款 · 账本只存编号）</label>
-      <div class="vote-avatar-grid" id="voteAvatarGrid"></div>
+      <summary>⚙️ 账本与打卡提醒（换头像请点上方的 🎨）</summary>
       <label for="voteLedgerBase">全网账本地址</label>
       <input type="text" id="voteLedgerBase" spellcheck="false" />
       <div class="row" style="margin:7px 0 4px">
@@ -338,7 +345,7 @@
         <button type="button" id="voteSaveCfg">💾 保存设置</button>
         <button type="button" id="voteSync">↻ 立即同步</button>
       </div>
-      <p class="tiny">1.5.6：必须先连接钱包。支持票会公开记录昵称、内置头像编号、北京时间、随机一句激励话语（本机 10000 条库），以及「钱包地址 + 日期」的 SHA-256 身份哈希用于当日去重；<b>明文钱包地址不出本机</b>。断网降级本机账本，联网后连同名片补投。</p>
+      <p class="tiny">1.5.7：必须先连接钱包。支持票会公开记录昵称、内置头像编号、北京时间、随机一句激励话语（本机 10000 条库），以及「钱包地址 + 日期」的 SHA-256 身份哈希用于当日去重；<b>明文钱包地址不出本机</b>。昵称与头像随时可改可存：当天已投支持票时，改动会<b>立即同步更新公开信仰者墙</b>（断网则联网后补投）。断网降级本机账本并标注「本机」。</p>
     </details>
   </section>
 
