@@ -97,8 +97,36 @@
     "notifications": "1.4.13 起仅在用户开启提醒且行情越界时，用 chrome.notifications 发一条系统通知；通知文字只含公开行情数字与阈值，不含个人信息。 1.5.5 起另用于用户开启的 $BEM 每日打卡提醒（默认北京时间 20:00，一天最多一条，可在设置里关闭），通知文字不含任何个人数据。 【1.5.6】打卡提醒文案改为引导用户连接钱包后打卡，通知本身不含个人数据。",
     "host_permissions": "7 个来源站与其媒体 CDN 用于读取当前条目内容并注入 Referer；api-tapeout.firsto.ai 仅用于定时 GET 两个公开只读行情接口，tapeup.io / *.tapeup.io 仅用于注入内容脚本读取交易页已显示的内盘价（见 host_access_justification）；api.x.ai 仅用于用户主动选择 xAI API 模式时的 AI 请求；api.deepseek.com 仅用于用户主动选择 DeepSeek API 模式时的 AI 请求；x.com / *.x.com 用于内容脚本注入，以及 X 页面自身向 grok.x.com 发起的站内直连请求。详见 host_access_justification 与 broad_host_permission_justification。 1.5.5 新增 tapeout.firsto.ai（钱包探测兜底页 / 资产跳转）、api.tapeapi.fun（TapeAPI 3.0.0 公共签名只读）、共享账本域名（投票 GET/POST），逐条理由见 host_access_justification。 1.5.8 新增 api.fabx.tech（FabX PoD 账户只读索引）、rpc.xlayer.tech / xlayerrpc.okx.com（X Layer 公共 RPC，备用节点仅在主节点失败时使用），三条都只接收一个公开钱包地址；合计 36 条，逐条理由见 host_access_justification。",
     "optional_host_permissions": "默认未授予。声明 https://*/* 仅为支持「自定义兼容网关」：用户在设置里填写一个网关域名并主动点「允许网关域名」后，通过 chrome.permissions.request 只申请该单一 https 域名，用户可随时在扩展详情里撤回。扩展从不申请全量 https 站点访问，也不据此注入脚本或读取页面。",
-    "scripting": "1.5.5 新增。仅在用户主动点「连接钱包」时，用 chrome.scripting.executeScript 在当前活动标签页的 MAIN world 跑一次自包含的 EIP-6963 / EIP-1193 钱包探测函数，列出已安装钱包并对用户选定的钱包调用 eth_requestAccounts 取回公开地址。不读取页面正文 / 图片 / Cookie / 表单 / 浏览历史，不常驻、不监听页面、不注入远程代码。",
-    "activeTab": "1.5.5 新增。配合 scripting，把上述一次性钱包探测限定在用户点击插件时正在看的那个标签页；不授予对其它标签页的访问，当前页不可用时改为打开 tapeout.firsto.ai 再探测一次（该域名单独授权）。"
+    "scripting": "本权限仅用于一次由用户主动触发的只读钱包探测。用户在弹窗点击「连接钱包」或展开钱包列表时，扩展调用一次 chrome.scripting.executeScript()，以 world:'MAIN' 执行随扩展包一起分发、完全自包含的函数（wallet.js 的 Wallet.pageBridge）。必须用 MAIN world，是因为 EIP-6963 / EIP-1193 注入式钱包对象（window.ethereum、window.okxwallet 等）只存在于页面主世界，隔离环境的内容脚本访问不到。该函数只派发 eip6963:requestProvider / announceProvider 列出已安装钱包，并对用户选定的钱包调用 eth_requestAccounts 与 eth_chainId，取回公开地址与链 ID。不读取页面正文、DOM、图片、Cookie、表单或浏览历史；不签名、不授权、不发交易；不注入任何远程或动态下载的代码，不注册监听、不常驻。若当前页未探测到钱包，才打开一个非激活的后台标签（单独授权的 https://tapeout.firsto.ai/）重试一次。地址在本机 AES-GCM 加密保存，仅用于公开只读余额查询。 【1.5.10 上架表单的正式 justification 见 dashboard_permission_justifications】",
+    "activeTab": "activeTab 是让上述 scripting 调用得以成立的最小化主机访问方式。注入式钱包可能安装在任意网站，用户也可能在任意标签页点「连接钱包」；没有 activeTab，扩展就必须申请对所有网站的持久主机权限。activeTab 只在明确的用户手势（点击扩展图标 / 弹窗按钮）之后，临时授予当前活动标签一个标签页的访问权，标签页一导航或关闭即失效。扩展只读取当前标签的 URL 以确认是可注入的普通 http(s) 页面；不访问其它标签、不收集 URL / 标题 / 图标做分析、不监听导航或页面内容、不保留任何持久访问。兜底标签 https://tapeout.firsto.ai/ 由单独列出的主机权限覆盖，不依赖 activeTab。安装时不授予任何宽泛主机权限：optional_host_permissions 的 https://*/* 默认为未授予，仅在用户为自定义网关主动授权时才生效。 【1.5.10 上架表单的正式 justification 见 dashboard_permission_justifications】"
+  },
+  "dashboard_permission_justifications": {
+    "note": "Chrome Web Store Developer Dashboard 上传 1.5.10 包后，Privacy 页会出现两个标 * 的必填文本框：scripting justification 与 activeTab justification（即用户截图里的两项）。它们属于「权限理由」，不填或写得笼统会被判 Missing or insufficient metadata / excessive permissions，导致补件或拒审。下面 en 是可直接粘贴的正式答案（已按每框 1000 字符上限压缩）（审核通用语言，优先用），zh 为逐句对应的中文对照，便于自查。两段文案已按 1.5.10 源码逐条核对，与 manifest 的 9 项 permissions / 36 条 host_permissions、Remote code = No、data_use_disclosure 及 privacy_policy_url 口径一致。",
+    "verified_against": "manifest.json（permissions 9 项、host_permissions 36 条）、background.js runInPage()（1507–1536 行，WALLET_PROVIDERS / WALLET_CONNECT 两个消息入口）、wallet.js pageBridge()（155–239 行）；版本 1.5.10。",
+    "fields": [
+      {
+        "field": "scripting justification",
+        "required": true,
+        "form_location": "Developer Dashboard → 条目编辑页 → Privacy 页 → scripting justification *（标 * 必填）",
+        "fill_with": "粘贴 en；zh 留作同口径中文对照",
+        "en": "chrome.scripting.executeScript() is used for one read-only wallet probe triggered by the user. When the user clicks 'Connect wallet' in the popup, the extension runs one self-contained function shipped in the package (Wallet.pageBridge, wallet.js) in world: 'MAIN'. MAIN world is required: EIP-6963 / EIP-1193 providers (window.ethereum, etc.) are page-world objects an isolated content script cannot see. It dispatches eip6963:requestProvider to list installed wallets, then calls eth_requestAccounts and eth_chainId on the wallet the user selects to return a public address and chain ID. It never reads page text, DOM, images, cookies, forms or history; never signs or sends transactions; injects no remote or fetched code; installs no listeners; does not persist. If none is found, one non-focused background tab on the separately authorised https://tapeout.firsto.ai/ retries once. The address is stored locally (AES-GCM) for public read-only balance queries.",
+        "zh": "本权限仅用于一次由用户主动触发的只读钱包探测。用户在弹窗点击「连接钱包」或展开钱包列表时，扩展调用一次 chrome.scripting.executeScript()，以 world:'MAIN' 执行随扩展包一起分发、完全自包含的函数（wallet.js 的 Wallet.pageBridge）。必须用 MAIN world，是因为 EIP-6963 / EIP-1193 注入式钱包对象（window.ethereum、window.okxwallet 等）只存在于页面主世界，隔离环境的内容脚本访问不到。该函数只派发 eip6963:requestProvider / announceProvider 列出已安装钱包，并对用户选定的钱包调用 eth_requestAccounts 与 eth_chainId，取回公开地址与链 ID。不读取页面正文、DOM、图片、Cookie、表单或浏览历史；不签名、不授权、不发交易；不注入任何远程或动态下载的代码，不注册监听、不常驻。若当前页未探测到钱包，才打开一个非激活的后台标签（单独授权的 https://tapeout.firsto.ai/）重试一次。地址在本机 AES-GCM 加密保存，仅用于公开只读余额查询。",
+        "en_chars": 963,
+        "zh_chars": 536
+      },
+      {
+        "field": "activeTab justification",
+        "required": true,
+        "form_location": "Developer Dashboard → 条目编辑页 → Privacy 页 → activeTab justification *（标 * 必填）",
+        "fill_with": "粘贴 en；zh 留作同口径中文对照",
+        "en": "activeTab is the least-privileged host access that makes the scripting call above possible. Wallets can be installed on any site and the user may connect from any tab; without activeTab the extension would need permanent host access to all sites. activeTab grants temporary access to the single active tab only after an explicit user gesture (clicking the extension action or a popup button), revoked as soon as the tab is navigated away or closed. The extension reads only that tab's URL to confirm it is a normal http(s) page before injecting. It does not access other tabs, does not collect URL / title / favicon for analytics, and does not monitor page content. The fallback tab https://tapeout.firsto.ai/ has its own listed host permission, not activeTab. No broad host permission is granted at install time: optional_host_permissions https://*/* stays ungranted unless the user opts in for a custom API gateway.",
+        "zh": "activeTab 是让上述 scripting 调用得以成立的最小化主机访问方式。注入式钱包可能安装在任意网站，用户也可能在任意标签页点「连接钱包」；没有 activeTab，扩展就必须申请对所有网站的持久主机权限。activeTab 只在明确的用户手势（点击扩展图标 / 弹窗按钮）之后，临时授予当前活动标签一个标签页的访问权，标签页一导航或关闭即失效。扩展只读取当前标签的 URL 以确认是可注入的普通 http(s) 页面；不访问其它标签、不收集 URL / 标题 / 图标做分析、不监听导航或页面内容、不保留任何持久访问。兜底标签 https://tapeout.firsto.ai/ 由单独列出的主机权限覆盖，不依赖 activeTab。安装时不授予任何宽泛主机权限：optional_host_permissions 的 https://*/* 默认为未授予，仅在用户为自定义网关主动授权时才生效。",
+        "en_chars": 917,
+        "zh_chars": 406
+      }
+    ],
+    "consistency_note": "容易被审核方追问的两点：① manifest 里另有一条静态 MAIN world content script（grok-native.js，仅 x.com / twitter.com），它由 content_scripts 声明、不需要 scripting 权限；scripting 只用于 wallet.js 这一次性动态探测，两者不要混为一谈。② optional_host_permissions 的 https://*/* 默认未授予，仅用于用户主动申请自定义兼容网关，详见 broad_host_permission_justification；不能在两项 justification 里声称扩展拥有全站访问权。",
+    "form_limit": "每个 Permission Justification 文本框上限 1000 字符（Single Purpose / Remote Code Justification 同为 1000；Description 16000；Summary 132）。上方 en 已按该上限压缩，粘贴前可用 en_chars 核对。"
   },
   "data_use_disclosure": {
     "collects_personal_data": false,
@@ -142,20 +170,22 @@
   "pre_submit_checklist": [
     "用 Google 账号登录 Chrome Web Store Developer Dashboard，并完成一次性开发者注册（注册费 US$5）",
     "已为 Google 账号开启两步验证（2FA）并退出重登 Dashboard，否则上传会报 Enabling 2 step verification…",
-    "在 Dashboard 点「Add new item」上传 store/TapePost_1.5.8_store.zip（29 文件，与 1.5.7 相同；已有条目则选「上传新版本」，不要新建第二个条目）",
+    "在 Dashboard 点「Add new item」上传 store/TapePost_1.5.10_store.zip（29 文件，与 1.5.9 相同；已有条目则选「上传新版本」，不要新建第二个条目）",
     "把本文件里的名称、摘要、详细描述、分类、单一用途、逐项权限理由复制到商店表单",
+    "【必填】在 Privacy 页把 dashboard_permission_justifications.fields[0].en 粘到 scripting justification *、fields[1].en 粘到 activeTab justification *（两个标 * 的框不填无法提交；中文对照见同字段 zh）",
+    "【必填】核对两段 justification 与代码一致：scripting 只用于用户点「连接钱包」时的一次性 MAIN world 只读探测且无远程代码；activeTab 只在用户手势后临时授予当前标签、导航或关闭即失效；两者都不读取页面内容或其它标签页",
     "隐私政策已托管在 GitHub Pages：https://kenter1643.github.io/TapePost/privacy.html ，直接填入表单即可（如改用自有域名，替换 privacy_policy_url 并同步更新页面）",
     "上传 128×128 图标之外的 3 张截图与 440×280 宣传图；建议替换为真机截图",
     "勾选数据使用声明：不收集个人数据、无远程代码、无第三方分析；但「是否将数据传出设备」必须选「是」—— 用户切到 API 模式时扩展会向 xAI / DeepSeek 发送文字/链接；默认站内直连由 X 页面向 X/Grok 发送请求，详见 data_use_disclosure",
     "保存草稿并预览，确认无误后点「Submit for review」",
     "首次上架因「新开发者 + 新扩展 + https://*/* 宽泛主机权限」会进入 in-depth review，通常数天到 3 周（不是 1–3 天）；超过 3 周再联系 developer support",
-    "在「数据使用」页如实披露 xAI Grok 与 DeepSeek 为第三方 AI 服务，并确认隐私政策链接指向 1.5.8 最新版（含 AI 章节、站内直连数据流向、本机图片处理 / 行情说明、回复框回写与连接自愈说明）",
+    "在「数据使用」页如实披露 xAI Grok 与 DeepSeek 为第三方 AI 服务，并确认隐私政策链接指向最新版（数据流向自 1.5.8 起未变，1.5.9 / 1.5.10 仅改界面与产品名；含 AI 章节、站内直连数据流向、本机图片处理 / 行情说明、回复框回写与连接自愈说明）",
     "把 broad_host_permission_justification 粘到 Privacy 页主机访问理由 / Reviewer notes，说明 https://*/* 默认不授予、仅按单一网关域名动态申请",
     "Settings 页填写 publisher contact email 并完成邮箱验证（点验证邮件链接，状态变为 Verified）",
     "Privacy practices 页勾选 Data usage 两组复选框 + Limited Use 认证，逐项按 data_usage_form_answers 填",
     "确认 Dashboard 披露 / 隐私政策 / 代码行为三者一致（不一致可导致整个发布者实体被封）",
     "Privacy practices 第一组勾 3 项：Authentication information、User activity、Website content；其余 6 项不勾（详见 data_usage_form_answers）",
-    "确认隐私政策页已同步 1.5.8、站内直连与凭证读取口径（Dashboard 披露 / 隐私政策 / 代码行为三者一致）",
+    "确认隐私政策页（品牌名已同步为 TapePost信仰者工具）、站内直连与凭证读取口径（Dashboard 披露 / 隐私政策 / 代码行为三者一致）",
     "Remote code 选 No；「是否将数据传出设备」选是、「是否收集个人数据」选否；第三方 AI 服务填 X/Grok、xAI 与 DeepSeek",
     "确认 manifest 新增的 api.deepseek.com 主机权限已写入 Privacy 页主机访问理由，且只在用户主动选择 DeepSeek API 模式时使用（默认不发起任何 DeepSeek 请求）",
     "重载扩展并刷新微博页后，确认首页带视频的帖子与 /tv 视频频道能看到「一键转发 + 视频剪辑」悬浮入口（1.5.4 修复），且图文帖按钮不受影响",
