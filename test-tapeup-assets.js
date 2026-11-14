@@ -169,7 +169,13 @@ ok(!!live.elements.__tpup_probe && /TapePost内盘/.test(live.elements.__tpup_pr
   '内容脚本：原有价格浮层未被破坏');
 
 const noConnect = runScript(EMPTY, '/zh/trade/assets');
-eq('内容脚本：未连接钱包不回传资产', noConnect.sent.filter((m) => m.type === 'TAPUP_ASSETS').length, 0);
+const ncMsgs = noConnect.sent.filter((m) => m.type === 'TAPUP_ASSETS');
+// 1.5.14：失败不再静默，回传一条不带数值的诊断，后台才好把「未采集」说清楚
+eq('内容脚本：未连接钱包只回传一条诊断', ncMsgs.length, 1);
+const ncPl = ncMsgs[0] && ncMsgs[0].payload;
+ok(ncPl && ncPl.ok === false && ncPl.connected === false, '内容脚本：诊断标记未连接');
+eq('内容脚本：诊断不带任何数值字段', ncPl && Object.keys(ncPl.fields || {}).length, 0);
+ok(ncPl && ncPl.probe && ncPl.probe.connected === false, '内容脚本：诊断带 probe');
 ok(/未连接钱包/.test(noConnect.elements.__tpup_assets_probe.textContent), '内容脚本：浮层提示先连接钱包');
 
 const otherPage = runScript(TABLE_ZH, '/zh/trade/token?id=1');
@@ -198,7 +204,9 @@ ok(/cleaned\.connected && cleaned\.ok/.test(bg), '后台：空态不覆盖有效
 ok(/asset-grid tapeup-grid/.test(html), '弹窗：TapeUP 资产组独立于两条链');
 ok(/PoB 买入预算|页面展示值/.test(html + pop), '弹窗：明确标注不是链上余额');
 ok(/function renderTapeUpAssets/.test(pop), '弹窗：渲染函数存在');
-ok((pop.match(/renderTapeUpAssets\(r\.tapeup\)/g) || []).length === 2, '弹窗：首屏与刷新两条路径都渲染');
+ok((pop.match(/renderTapeUpAssets\(r\.tapeup\)/g) || []).length >= 2, '弹窗：首屏与刷新两条路径都渲染');
+ok(/ASSETS_TAPEUP_COLLECT/.test(pop) && /chrome\.storage\.onChanged/.test(pop),
+  '弹窗：状态可点立即采集 + 缓存变化自动回刷');
 ok(/不是链上锁仓/.test(pop), '弹窗：说明待释放口径');
 ok(/超过 30 分钟未刷新/.test(pop), '弹窗：过期提示');
 ok(/#ff6b6b/.test(pop) && /#4ade80/.test(pop), '弹窗：涨红跌绿（国内习惯）');

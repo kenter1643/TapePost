@@ -107,7 +107,7 @@
    * 不读取钱包地址、不注入页面脚本、不调用站内接口。 */
   var ASSET_LABELS = { held: '持仓', pending: '待释放', boostable: '可加速',
     valueUsd: '估值', changePct: '24H' };
-  var lastAssetsSig = '', lastAssetsScan = 0;
+  var lastAssetsSig = '', lastAssetsDiagSig = '', lastAssetsScan = 0;
 
   function isAssetsPage() {
     try { return /\/trade\/assets(?:\/|[?#]|$)/i.test(location.pathname + location.search); }
@@ -157,7 +157,10 @@
   }
 
   var latestAssets = null;
-  function sendAssets(force) {
+  /* 1.5.14：定时/弹窗/刷新都会催一次扫描。失败也回传 probe 诊断——
+   * 后台才能把「未采集」拆成「页面要连站内钱包」「没认出数值列」，
+   * 而不是让用户对着六个横杠猜原因。probe 只有布尔值与短文本，不含页面原文。 */
+  function sendAssets(force, forceSend) {
     if (!isAssetsPage() || typeof T.extractAssets !== 'function') return;
     var now = Date.now();
     if (!force && now - lastAssetsScan < 1500) return;
@@ -166,14 +169,17 @@
     latestAssets = r;
     ensureAssetProbe();
     paintAssetProbe(r);
-    // 未连接钱包 / 一个字段都没认出时不回传，避免用空表覆盖上次的有效缓存
-    if (!r || !r.ok) return;
     var sig = JSON.stringify([r.tokenName, r.tokenCount, r.fields, r.note, r.strategy]);
-    if (sig === lastAssetsSig) return;
+    var diagSig = JSON.stringify([r.connected, r.ok, r.note, r.strategy, r.textLen, r.headerFound]);
+    if (!forceSend && sig === lastAssetsSig && diagSig === lastAssetsDiagSig) return;
     var payload = {
       ok: r.ok, connected: r.connected, tokenCount: r.tokenCount,
-      tokenName: r.tokenName, fields: r.fields, note: r.note,
-      strategy: r.strategy, at: Date.now()
+      tokenName: r.tokenName, fields: r.ok ? r.fields : {}, note: r.note,
+      strategy: r.strategy, at: Date.now(),
+      probe: {
+        connected: r.connected, ok: r.ok, note: String(r.note || '').slice(0, 80),
+        strategy: r.strategy, textLen: r.textLen, headerFound: !!r.headerFound
+      }
     };
     try {
       // 1.5.11 同款冷启动保护：先发 TAPE_WAKE 让 service worker 把顶层代码跑完，
@@ -181,12 +187,23 @@
       chrome.runtime.sendMessage({ type: 'TAPE_WAKE' }, function () {
         try {
           chrome.runtime.sendMessage({ type: 'TAPUP_ASSETS', payload: payload }, function () {
-            if (chrome.runtime && chrome.runtime.lastError) lastAssetsSig = '';
+            if (chrome.runtime && chrome.runtime.lastError) {
+              lastAssetsSig = ''; lastAssetsDiagSig = '';
+            }
           });
           lastAssetsSig = sig;
-        } catch (e) { lastAssetsSig = ''; }
+          lastAssetsDiagSig = diagSig;
+        } catch (e) { lastAssetsSig = ''; lastAssetsDiagSig = ''; }
       });
-    } catch (e) { lastAssetsSig = ''; }
+    } catch (e) { lastAssetsSig = ''; lastAssetsDiagSig = ''; }
+  }
+  if (chrome.runtime && chrome.runtime.onMessage && chrome.runtime.onMessage.addListener) {
+    chrome.runtime.onMessage.addListener(function (m) {
+      if (!m || m.type !== 'TAPUP_ASSETS_SCAN') return;
+      // 后台定时/弹窗要求立即重扫：清签名，哪怕数值没变也回传一次
+      lastAssetsSig = ''; lastAssetsDiagSig = '';
+      sendAssets(true, true);
+    });
   }
 
   function send() {
