@@ -365,7 +365,7 @@
 </head>
 <body>
   <!-- 1.5.10：标题补回 TapePost，插件全名为「TapePost信仰者工具」；品牌字标与中文名分层，靠 5px 视觉间距分隔 -->
-  <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.14</span></h1>
+  <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.15</span></h1>
 
   <!-- 1.5.5：BEM 置顶为主卡（最大字号），TapeUP / 矿机日产并排第二行；描述一律 8px -->
   <section class="tape-prices" id="pricePanel">
@@ -641,7 +641,7 @@
   </select>
 
   <details class="grok" open>
-    <summary>🤖 Grok 设置（AI 评论 / 链接核验）</summary>
+    <summary>🤖 AI 设置（DeepSeek / xAI / Grok）</summary>
 
     <div class="row" style="margin:9px 0">
       <input type="checkbox" id="aiComment" />
@@ -650,6 +650,23 @@
     <div class="row" style="margin:9px 0">
       <input type="checkbox" id="grokFastMode" />
       <label for="grokFastMode" style="margin:0;font-weight:400">AI 评论快速模式（默认开启：不思考、不并排生成、拿到答案即收尾）</label>
+    </div>
+    <!-- 1.5.15：候选条数默认 5、最多 10；结果面板里也有同样的下拉，可随时改并重生成 -->
+    <div class="row" style="margin:9px 0;align-items:center;gap:8px;flex-wrap:wrap">
+      <label for="commentCount" style="margin:0;font-weight:600;white-space:nowrap">每次生成候选</label>
+      <select id="commentCount" style="width:auto;min-width:62px;margin:0;padding:4px 6px;font-size:var(--fs-form)">
+        <option value="1">1 条</option>
+        <option value="2">2 条</option>
+        <option value="3">3 条</option>
+        <option value="4">4 条</option>
+        <option value="5" selected>5 条</option>
+        <option value="6">6 条</option>
+        <option value="7">7 条</option>
+        <option value="8">8 条</option>
+        <option value="9">9 条</option>
+        <option value="10">10 条</option>
+      </select>
+      <span class="tiny" style="margin:0;color:var(--text-2)">默认 5 条，最多 10 条；4 条起结果面板自动排成两列</span>
     </div>
 
     <div class="promptbox" id="promoBox">
@@ -666,7 +683,7 @@
       <p class="tiny" style="margin:0 0 8px">全页只出现一个 T 按钮，跟着当前回复框走。左键随机换一句、右键去掉；写回一次全量替换，不压字、不重复、不弄丢正文。</p>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoEnabled" />
-        <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的 3 条候选自动随机附一句（默认关闭）</label>
+        <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的候选自动随机附一句（默认关闭）</label>
       </div>
       <label for="promoTarget">推广主题</label>
       <select id="promoTarget">
@@ -710,7 +727,7 @@
       <option value="deepseek">DeepSeek API（需 Key，OpenAI 兼容）</option>
     </select>
     <div class="mode-hint">
-      自动模式用你已登录的 X 会话直连 Grok，不开标签、不模拟点击。选「DeepSeek API」会展开独立配置，不影响上面的 xAI 设置。
+      自动模式用你已登录的 X 会话直连 Grok，不开标签、不模拟点击。选「DeepSeek API」会展开独立配置，不影响上面的 xAI 设置。<b>1.5.15 起等待提示、候选面板与预览都会写明当前真实供应商（DeepSeek / xAI / Grok），不再一律显示 Grok</b>。
       <button type="button" class="infobtn" data-info="modes">模式说明</button>
     </div>
 

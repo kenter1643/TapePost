@@ -739,13 +739,17 @@
       .replace(/^\*\*|\*\*$/g, '').trim();
   }
 
+  /* 1.5.15：候选条数由后台的 GROK_NATIVE_CALL 带进来（默认 3、最多 10）。
+   * 保持模块级默认值 3，历史自检与未带 count 的旧消息行为不变。 */
+  var wantedCount = 3;
+
   function dedupe(arr) {
     var out = [];
     arr.forEach(function (s) {
       var c = String(s || '').trim().slice(0, 240);
       if (c && !isNoise(c) && !isMeta(c) && out.indexOf(c) === -1) out.push(c);
     });
-    return out.slice(0, 3);
+    return out.slice(0, wantedCount);
   }
 
   /* 1.4.18：对齐 XVM extractComments 的三段兜底（代码块 → 列表 → 段落）。
@@ -779,7 +783,7 @@
 
     var quoted = joined.match(/"([^"\n]{8,240})"/g);
     if (quoted && quoted.length >= 3) {
-      return dedupe(quoted.slice(0, 3).map(function (q) { return cleanLine(q.slice(1, -1)); }));
+      return dedupe(quoted.slice(0, wantedCount).map(function (q) { return cleanLine(q.slice(1, -1)); }));
     }
 
     var keep = function (s) {
@@ -813,6 +817,9 @@
   }
 
   async function generate(prompt, opts) {
+    // 1.5.15：按后台传来的条数裁剪输出；旧消息没带 count 时仍是 3 条
+    var n = parseInt(opts && opts.count, 10);
+    wantedCount = isFinite(n) && n >= 1 ? Math.min(10, n) : 3;
     /* 1.4.11：默认快速模式（短提示词 / 不并排 / 拿到答案即收尾）。
      * 1.4.12：自有直连默认用公开 bearer，避免实时 bearer 与会话不匹配导致 401。 */
     var fast = !(opts && opts.fast === false);
@@ -1046,7 +1053,7 @@
     };
     var job = d.action === 'ping' ? Promise.resolve({ ok: true, status: status() })
       : d.action === 'check' ? checkReady().then(function (r) { return { ok: true, check: r }; })
-        : generate(d.prompt || '', { fast: d.fast !== false })
+        : generate(d.prompt || '', { fast: d.fast !== false, count: d.count })
           .then(function (r) { return { ok: true, comments: r.comments, raw: r.raw, via: r.via }; });
     job.catch(function (e) { return { ok: false, error: String((e && e.message) || e), status: status() }; }).then(reply);
   });

@@ -55,7 +55,8 @@
       return true;
     }
     if (msg.type === 'GROK_NATIVE_CALL') {
-      call({ action: 'generate', prompt: msg.prompt || '', fast: msg.fast !== false },
+      // 1.5.15：候选条数随消息带到 MAIN world，站内直连也按用户设定生成
+      call({ action: 'generate', prompt: msg.prompt || '', fast: msg.fast !== false, count: msg.count },
         msg.timeoutMs || 90000).then(sendResponse);
       return true;
     }

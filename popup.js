@@ -33,7 +33,8 @@ const DEFAULTS = Object.assign({
   promoQuickCount: 4,            // 兼容旧配置，1.4.8 起不再使用
   // 1.4.11
   promoCopyOnly: false,          // T 只复制、不改 X 编辑器
-  grokFastMode: true             // AI 评论非思考快速模式
+  grokFastMode: true,            // AI 评论非思考快速模式
+  commentCount: 5                // 1.5.15：每次生成的候选条数（1~10，默认 5）
 }, PAGE_DEFAULTS);
 
 // 页面模式的文本配置项；选择器全部可改，X 改版时不用升版本
@@ -149,6 +150,12 @@ function syncDeepseekPanel() {
   if (!box) return;
   const mode = String((document.getElementById('grokMode') || {}).value || 'auto');
   box.hidden = mode !== 'deepseek';
+  // 1.5.15：DeepSeek / xAI API 模式用不到 X 网页 Grok 标签，别再露出「打开 Grok 页面」这类入口
+  const apiOnly = mode === 'deepseek' || mode === 'api';
+  ['openGrok', 'resetGrokTab'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = apiOnly ? 'none' : '';
+  });
 }
 
 function grokStatus(text, good) {
@@ -181,6 +188,12 @@ function load() {
     if (ai) ai.checked = s.enableAiComment !== false;
     const fastMode = document.getElementById('grokFastMode');
     if (fastMode) fastMode.checked = s.grokFastMode !== false;
+    // 1.5.15：候选条数（非法值回落到默认 5）
+    const cnt = document.getElementById('commentCount');
+    if (cnt) {
+      const n = parseInt(s.commentCount, 10);
+      cnt.value = String(isFinite(n) && n >= 1 && n <= 10 ? n : 5);
+    }
     // 1.4.5 / 1.4.8 / 1.4.11：评论末尾推广（自动附加 + 单个 T 按钮 + 安全模式）
     const quickOn = document.getElementById('promoQuickButtons');
     if (quickOn) quickOn.checked = s.promoQuickButtons !== false;
@@ -261,6 +274,12 @@ function save() {
     enableAiComment: !!(document.getElementById('aiComment') || {}).checked,
     // 1.4.11：AI 快速模式 / T 安全模式
     grokFastMode: (document.getElementById('grokFastMode') || { checked: true }).checked !== false,
+    // 1.5.15：候选条数，前后都夹一次，防止手改 DOM / 旧值越界
+    commentCount: (() => {
+      const el = document.getElementById('commentCount');
+      const n = parseInt(el ? el.value : 5, 10);
+      return isFinite(n) ? Math.max(1, Math.min(10, n)) : 5;
+    })(),
     promoCopyOnly: !!(document.getElementById('promoCopyOnly') || {}).checked,
     // 1.4.5：推广开关与话术
     promoEnabled: !!(document.getElementById('promoEnabled') || {}).checked,
@@ -307,7 +326,10 @@ function save() {
 }
 
 function testGrok() {
-  grokStatus('正在连接 Grok…', true);
+  const m = String((document.getElementById('grokMode') || {}).value || 'auto');
+  const who = m === 'deepseek' ? 'DeepSeek API' : (m === 'api' ? 'xAI API' :
+    (m === 'native' ? 'X 站内 Grok' : '当前 AI 模式'));
+  grokStatus('正在连接 ' + who + '…', true);
   saveGrokSecrets().then(() => {
     try {
       sendBg({ type: 'GROK_TEST' }, (r, err) => {
@@ -337,6 +359,10 @@ function previewPrompt() {
   const native = !apiMode && (mode === 'native' ||
     (mode === 'auto' && (document.getElementById('grokPreferNative') || {}).checked !== false));
   const samplePost = '（示例推文）TapeOut 生态又多了一个链上应用，DeWeb 容器索引突破 200 个。';
+  // 1.5.15：预览必须和真实请求一样按设置的条数生成
+  const cntEl = document.getElementById('commentCount');
+  const cntN = parseInt(cntEl ? cntEl.value : 5, 10);
+  const count = isFinite(cntN) ? Math.max(1, Math.min(10, cntN)) : 5;
   // 1.5.3：DeepSeek 开启 JSON Output 且提示词里没有 json 字样时，后台会补一条 system 提示；
   // 预览必须与实际发送一致，所以这里做同样的归一化（xAI API 模式不补）。
   const dsJsonOn = mode === 'deepseek' &&
@@ -350,11 +376,10 @@ function previewPrompt() {
     .map((m) => '【' + m.role + '】\n' + m.content).join('\n\n');
   // 1.4.18：站内直连的 AI 评论走 XVM 式极简模板，预览必须与实际发送一致
   const comment = apiMode
-    ? fmtApi(TapeAI.buildCommentMessages(samplePost, val('commentPrompt')))
+    ? fmtApi(TapeAI.buildCommentMessages(samplePost, val('commentPrompt'), count))
     : native
-      ? TapeAI.buildNativeCommentPrompt(samplePost, val('commentPrompt'), extra)
-      : TapeAI.buildPagePrompt(
-          TapeAI.buildCommentMessages(samplePost, val('commentPrompt')), extra);
+      ? TapeAI.buildNativeCommentPrompt(samplePost, val('commentPrompt'), extra, count)
+      : TapeAI.buildPageCommentPrompt(samplePost, val('commentPrompt'), extra, count);
   const buildVerify = (messages, kind) => apiMode
     ? fmtApi(messages)
     : native
@@ -362,8 +387,10 @@ function previewPrompt() {
       : TapeAI.buildPagePrompt(messages, extra);
   const verify = buildVerify(
     TapeAI.buildVerifyMessages('https://tapeout.net/', val('verifyPrompt')), 'verify');
+  const who = native ? 'X 站内 Grok'
+    : (mode === 'deepseek' ? 'DeepSeek API' : (mode === 'api' ? 'xAI API' : 'X 页面 Grok'));
   box.style.display = 'block';
-  box.textContent = '【AI 评论 · 实际发送内容】\n' + comment +
+  box.textContent = '【AI 评论 · 实际发送内容｜' + who + ' · ' + count + ' 条候选】\n' + comment +
     '\n\n────────────────────\n\n【链接核验 · 实际发送内容】\n' +
     verify.slice(0, 1600) + (verify.length > 1600 ? '\n…（清单摘要较长，此处省略）' : '');
   const label = native ? '站内直连'
@@ -867,7 +894,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.14 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.15 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

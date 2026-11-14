@@ -369,6 +369,83 @@ var TapeAI = (function () {
     '"""'
   ].join('\n');
 
+  /* ------------------------------------------------------------------
+   * 1.5.15：一次生成几条回复候选由用户设定（默认 5 条、最多 10 条）。
+   * 兼容策略：count 不传（旧调用 / 历史自检）一律按 LEGACY=3 条，
+   * 后台与「预览实际发送内容」显式传用户配置时才按 1~10 生成。
+   * ------------------------------------------------------------------ */
+  var COMMENT_COUNT_MAX = 10;
+  var COMMENT_COUNT_LEGACY = 3;
+  var COMMENT_COUNT_DEFAULT = 5;
+  var CN_NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+
+  function normalizeCommentCount(v, fallback) {
+    var f = parseInt(fallback, 10);
+    var d = isFinite(f) ? Math.max(1, Math.min(COMMENT_COUNT_MAX, f)) : COMMENT_COUNT_LEGACY;
+    var n = parseInt(v, 10);
+    if (!isFinite(n) || n < 1) return d;
+    return Math.max(1, Math.min(COMMENT_COUNT_MAX, n));
+  }
+
+  function commentJsonExample(n) {
+    var out = [];
+    for (var i = 0; i < n; i++) out.push('"第' + (CN_NUM[i] || String(i + 1)) + '条"');
+    return '[' + out.join(', ') + ']';
+  }
+
+  function commentPromptFor(n) {
+    var k = normalizeCommentCount(n, COMMENT_COUNT_DEFAULT);
+    return [
+      '你是「昆哥」（TapeOut 社区成员）的 X 回复助手。请根据下面这条推文，写出 ' + k + ' 条可以直接发布的回复候选。',
+      '',
+      '要求：',
+      '1. ' + k + ' 条角度尽量不同：认同并补充信息、提出有价值的问题、给出简短独立观点、换个角度类比、点到为止的提醒等，避免互相重复。',
+      '2. 中文为主；如果原文是英文，可以用英文回复。语气自然克制、像真人，不要营销腔、不要吹捧、不要喊口号。',
+      '3. 每条不超过 180 个字符，不带话题标签、不带链接、不带引号包裹，不编造事实、不给投资建议、不引战。',
+      '4. 只输出评论文本，严格返回 JSON 数组：' + commentJsonExample(k) + '。不要输出任何解释或 Markdown 代码块。',
+      '',
+      '推文正文：',
+      '"""',
+      '{POST}',
+      '"""'
+    ].join('\n');
+  }
+
+  /* 用户自定义模板里写死的「3 条 / 三条」要跟设置同步，否则模型只给 3 条。
+   * 未显式传 count 时原样返回，保证旧自定义话术与历史自检一字不改。 */
+  function applyCommentCount(tpl, count) {
+    if (count === undefined || count === null) return String(tpl || '');
+    var k = normalizeCommentCount(count, COMMENT_COUNT_DEFAULT);
+    var t = String(tpl || '')
+      .replace(/(?:3|三)\s*条/g, function (m, off, s) {
+        var prev = s.charAt(off - 1);
+        return (/[\u4e00-\u9fa5]/.test(prev) ? ' ' : '') + k + ' 条';
+      })
+      .replace(/\[\s*"第一条"\s*,\s*"第二条"\s*,\s*"第三条"\s*\]/g, commentJsonExample(k));
+    if (!/\d+\s*条/.test(t)) t += '\n请输出恰好 ' + k + ' 条候选，按顺序放进 JSON 数组。';
+    return t;
+  }
+
+  function nativeCommentTemplate(n) {
+    var k = normalizeCommentCount(n, COMMENT_COUNT_LEGACY);
+    return [
+      '{POST}',
+      '',
+      '为这条推文写 ' + k + ' 条可以直接发布的中文回复，语气自然、像真人，每条不超过 60 字。',
+      '每条回复用一个代码块包裹。'
+    ].join('\n');
+  }
+
+  function pageCommentTemplate(n) {
+    var k = normalizeCommentCount(n, COMMENT_COUNT_LEGACY);
+    return [
+      '{POST}',
+      '',
+      '为这条推文写 ' + k + ' 条可以直接发布的中文回复，语气自然、像真人，每条不超过 60 字。',
+      '只输出一个 JSON 数组：' + commentJsonExample(k) + '。不要输出解释、编号或 Markdown 代码块。'
+    ].join('\n');
+  }
+
   var DEFAULT_VERIFY_PROMPT = [
     '你是 TapeOut 生态的「链接真伪核验」助手。插件已在本地用内置白名单精确比对过这条链接，下面的【本地权威结论】不可被推翻。',
     '',
@@ -557,10 +634,10 @@ var TapeAI = (function () {
     return /严格返回 JSON 数组|不要输出任何解释或 Markdown 代码块|你是「昆哥」|【输出格式（必须严格遵守）】|不要思考、不要分析背景/.test(t);
   }
 
-  function buildNativeCommentPrompt(postText, promptTpl, extra) {
+  function buildNativeCommentPrompt(postText, promptTpl, extra, count) {
     var text = String(postText || '').slice(0, 1200);
     var raw = String(promptTpl || '').trim();
-    var tpl = isLegacyCommentTpl(raw) ? NATIVE_COMMENT_TEMPLATE : raw;
+    var tpl = isLegacyCommentTpl(raw) ? nativeCommentTemplate(count) : applyCommentCount(raw, count);
     // 模板缺 {POST} 时把推文正文补到末尾，和 XVM 的 renderPrompt 一致
     var prompt = fillTemplate(tpl, { '{POST}': text }, text);
     var tail = String(extra == null ? '' : extra).trim();
@@ -580,10 +657,10 @@ var TapeAI = (function () {
     '只输出一个 JSON 数组：["第一条", "第二条", "第三条"]。不要输出解释、编号或 Markdown 代码块。'
   ].join('\n');
 
-  function buildPageCommentPrompt(postText, promptTpl, extra) {
+  function buildPageCommentPrompt(postText, promptTpl, extra, count) {
     var text = String(postText || '').slice(0, 1200);
     var raw = String(promptTpl || '').trim();
-    var tpl = isLegacyCommentTpl(raw) ? PAGE_COMMENT_TEMPLATE : raw;
+    var tpl = isLegacyCommentTpl(raw) ? pageCommentTemplate(count) : applyCommentCount(raw, count);
     var body = fillTemplate(tpl, { '{POST}': text }, text);
     var tail = String(extra == null ? '' : extra).trim();
     return (PROMPT_TAG + '\n' + body + (tail ? '\n\n' + tail : '') + '\n' + PROMPT_END).trim();
@@ -873,9 +950,12 @@ var TapeAI = (function () {
     return t;
   }
 
-  function buildCommentMessages(postText, promptTpl) {
+  function buildCommentMessages(postText, promptTpl, count) {
     var text = String(postText || '').slice(0, 1200);
-    var tpl = promptTpl || DEFAULT_COMMENT_PROMPT;
+    var raw = String(promptTpl || '').trim();
+    // 1.5.15：内置默认模板按用户设定的条数生成；自定义模板只在显式给了 count 时同步条数
+    var tpl = raw ? applyCommentCount(raw, count)
+      : commentPromptFor(count === undefined ? COMMENT_COUNT_LEGACY : count);
     var prompt = fillTemplate(tpl, { '{POST}': text }, '推文正文：\n"""\n' + text + '\n"""');
     return [
       { role: 'system', content: SYSTEM_HINT },
@@ -912,7 +992,7 @@ var TapeAI = (function () {
       .trim();
   }
 
-  function parseThreeComments(raw) {
+  function parseThreeComments(raw, count) {
     var s = stripCodeFence(raw);
     var out = [];
     try {
@@ -945,7 +1025,7 @@ var TapeAI = (function () {
     }
     out = out.map(function (c) { return String(c).slice(0, 240); })
       .filter(function (c, i, a) { return c && a.indexOf(c) === i; });
-    return out.slice(0, 3);
+    return out.slice(0, normalizeCommentCount(count, COMMENT_COUNT_LEGACY));
   }
 
   function parseVerdict(raw) {
@@ -1087,14 +1167,16 @@ var TapeAI = (function () {
   /* 网页版 Grok 实测（2026-11-08）会输出不带方括号的裸引号列表：
    * "确实看到越来越多AI生成的评论……", "有没有比较靠谱的办法……", "评论区堆满……"
    * 这不是合法 JSON，但确实是 3 条候选。取最后 3 个引号片段即可。 */
-  function quotedTriples(s) {
+  function quotedTriples(s, count) {
+    var max = normalizeCommentCount(count, COMMENT_COUNT_LEGACY);
     var re = /["“”「]([^"“”「」\n]{8,240})["”」]/g;
     var out = [], m;
     while ((m = re.exec(s))) {
       var t = cleanCommentLine(m[1]);
       if (t && t.length >= 8 && !isPageNoiseLine(t)) out.push(t);
     }
-    return out.length >= 3 ? out.slice(-3) : [];
+    // 至少 3 条才认（防侧栏噪声凑数），上限跟随用户设定
+    return out.length >= 3 ? out.slice(-max) : [];
   }
 
   function looksLikeInstruction(x) {
@@ -1104,14 +1186,15 @@ var TapeAI = (function () {
   /* 1.3.2 页面模式专用：只接受「清洗后的回答文本」。
    * 严格 JSON → 裸引号列表 → 编号列表 → 3 行独立候选；
    * 每行至少 8 字，绝不再把一句自然语言或页面按钮文字塞成候选。 */
-  function parsePageAnswer(raw, kind) {
+  function parsePageAnswer(raw, kind, count) {
+    var max = normalizeCommentCount(count, COMMENT_COUNT_LEGACY);
     var cleaned = cleanPageAnswer(raw);
     var hit = extractJsonLoose(cleaned, kind);
-    if (hit) return kind === 'verdict' ? parseVerdict(hit.text) : parseThreeComments(hit.text);
+    if (hit) return kind === 'verdict' ? parseVerdict(hit.text) : parseThreeComments(hit.text, max);
     if (kind === 'verdict') return null;
 
-    var quoted = quotedTriples(cleaned);
-    if (quoted.length === 3) return quoted;
+    var quoted = quotedTriples(cleaned, max);
+    if (quoted.length >= 3) return quoted;
 
     // 「1. xxx 2. xxx 3. xxx」写在一行时，先按编号切开
     var parts = cleaned.split(/(?:^|\s)(?:[①②③]|\d+[\.、)）])\s*/).map(function (x) {
@@ -1119,14 +1202,14 @@ var TapeAI = (function () {
     }).filter(function (x) {
       return x && x.length >= 8 && !isPageNoiseLine(x) && !looksLikeInstruction(x);
     });
-    if (parts.length >= 3) return parts.slice(0, 3).map(function (x) { return x.slice(0, 240); });
+    if (parts.length >= 3) return parts.slice(0, max).map(function (x) { return x.slice(0, 240); });
 
     var lines = cleaned.split(/\n+/).map(function (x) { return cleanCommentLine(x); })
       .filter(function (x) {
         return x && x.length >= 8 && !isPageNoiseLine(x) && !looksLikeInstruction(x) &&
           !/^(?:verdict|reason|risk|matched|comments|replies)\s*[:：]/i.test(x);
       });
-    return lines.length >= 3 ? lines.slice(0, 3) : [];
+    return lines.length >= 3 ? lines.slice(0, max) : [];
   }
 
   return {
@@ -1138,6 +1221,15 @@ var TapeAI = (function () {
     ALL_SITES: ALL_SITES,
     DEFAULT_COMMENT_PROMPT: DEFAULT_COMMENT_PROMPT,
     DEFAULT_VERIFY_PROMPT: DEFAULT_VERIFY_PROMPT,
+    // 1.5.15：候选条数（默认 5、最多 10）
+    COMMENT_COUNT_DEFAULT: COMMENT_COUNT_DEFAULT,
+    COMMENT_COUNT_MAX: COMMENT_COUNT_MAX,
+    COMMENT_COUNT_LEGACY: COMMENT_COUNT_LEGACY,
+    normalizeCommentCount: normalizeCommentCount,
+    commentPromptFor: commentPromptFor,
+    applyCommentCount: applyCommentCount,
+    nativeCommentTemplate: nativeCommentTemplate,
+    pageCommentTemplate: pageCommentTemplate,
     SYSTEM_HINT: SYSTEM_HINT,
     PAGE_MODE_DEFAULTS: PAGE_MODE_DEFAULTS,
     PAGE_OUTPUT_RULE: PAGE_OUTPUT_RULE,

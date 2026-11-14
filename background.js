@@ -203,7 +203,7 @@ async function getGrokConfig() {
   const [secret, pref] = await Promise.all([
     storageGet('local', ['grokApiKey', 'grokBaseUrl', 'grokModel', 'grokProtocol', 'grokTemperature',
       'deepseekApiKey', 'deepseekBaseUrl', 'deepseekModel', 'deepseekTemperature', 'deepseekJsonMode']),
-    storageGet('sync', ['commentPrompt', 'verifyPrompt'].concat(PAGE_CFG_KEYS))
+    storageGet('sync', ['commentPrompt', 'verifyPrompt', 'commentCount'].concat(PAGE_CFG_KEYS))
   ]);
   const page = {};
   PAGE_CFG_KEYS.forEach((k) => {
@@ -223,6 +223,9 @@ async function getGrokConfig() {
   return Object.assign({}, GROK_DEFAULTS, DEEPSEEK_DEFAULTS, page, secret, {
     commentPrompt: pref.commentPrompt || '',
     verifyPrompt: pref.verifyPrompt || '',
+    // 1.5.15：候选条数是用户设置（默认 5、最多 10），三条生成链路统一读取
+    commentCount: (typeof TapeAI !== 'undefined' && TapeAI.normalizeCommentCount)
+      ? TapeAI.normalizeCommentCount(pref.commentCount, TapeAI.COMMENT_COUNT_DEFAULT || 5) : 5,
     // 1.5.3：只有显式选了 DeepSeek 模式才把供应商切过去；其它模式一律保持 xAI 口径，
     // 这样用户既有的 xAI Key / 网关设置与 1.5.2 的行为完全一致。
     aiProvider: String(page.grokMode || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'xai'
@@ -553,10 +556,26 @@ async function callGrokNative(preferredId, message) {
   return Object.assign({ tabId }, r);
 }
 
+/* 1.5.15：面板上的「谁在生成」必须跟真实接收方一致。
+ * 选了 DeepSeek 就不能再写 Grok —— 等待浮层、结果头部与错误提示都用这个标签。 */
+function aiProviderLabel(mode) {
+  const m = String(mode || '').toLowerCase();
+  if (m === 'deepseek') return 'DeepSeek API';
+  if (m === 'api') return 'xAI API';
+  if (m === 'native') return 'X 站内 Grok';
+  if (m === 'page') return 'X 站内 Grok（页面模式）';
+  return 'Grok';
+}
+
+function commentMaxTokens(count) {
+  // 5 条候选 700 token 容易截断；按条数放宽，10 条最多 2400
+  return Math.min(2400, 320 + (Number(count) || 5) * 180);
+}
+
 /* 网页 Grok 会把思考过程 / 用户气泡 / 侧栏按钮一起渲染。
  * 1.3.2：整页 innerText 必须先 cleanPageAnswer 去掉噪声，才允许进入解析；
  * 按行兜底也换成 parsePageAnswer（只认清洗后的回答，不接受 UI 词）。 */
-function parsePageText(r, kind) {
+function parsePageText(r, kind, count) {
   const cleanAll = TapeAI.cleanPageAnswer((r && r.allText) || '');
   const tries = [r && r.text]
     .concat((r && r.candidates) || [])
@@ -565,7 +584,7 @@ function parsePageText(r, kind) {
   for (const t of tries) {
     const hit = TapeAI.extractJsonLoose(t, kind);
     if (!hit) continue;
-    const out = kind === 'verdict' ? TapeAI.parseVerdict(hit.text) : TapeAI.parseThreeComments(hit.text);
+    const out = kind === 'verdict' ? TapeAI.parseVerdict(hit.text) : TapeAI.parseThreeComments(hit.text, count);
     const good = kind === 'verdict' ? !!out.parsed : out.length > 0;
     if (good) return { out, strict: true, text: t };
   }
@@ -573,9 +592,9 @@ function parsePageText(r, kind) {
   // 避免侧栏/提示词把引号列表的后 3 条挤掉。
   const primary = String((r && r.text) || '').trim();
   const raw = primary || tries.join('\n');
-  let out = TapeAI.parsePageAnswer(raw, kind);
+  let out = TapeAI.parsePageAnswer(raw, kind, count);
   const empty = Array.isArray(out) ? !out.length : (!out || out.parsed === false);
-  if (empty && primary && tries.length > 1) out = TapeAI.parsePageAnswer(tries.join('\n'), kind);
+  if (empty && primary && tries.length > 1) out = TapeAI.parsePageAnswer(tries.join('\n'), kind, count);
   return { out, strict: false, text: raw };
 }
 
@@ -608,7 +627,7 @@ async function runGrok(messages, maxTokens, cfg, kind, postText) {
   }
   // 1.4.18：页面模式的 AI 评论也改用无角色/无矛盾指令的提示词（保留任务标记与 JSON 输出）
   const prompt = (kind === 'comments' && postText !== undefined)
-    ? TapeAI.buildPageCommentPrompt(postText, c.commentPrompt, c.pagePromptExtra)
+    ? TapeAI.buildPageCommentPrompt(postText, c.commentPrompt, c.pagePromptExtra, c.commentCount)
     : TapeAI.buildPagePrompt(messages, c.pagePromptExtra);
   const r = await callGrokPage(prompt, c, 'auto');
   if (r.prepared) return { prepared: true, mode: 'page', prompt, endpoint: r.url, note: r.note || '' };
@@ -730,7 +749,8 @@ async function handleGrokMessage(msg, sender) {
   }
 
   if (msg.type === 'GROK_COMMENTS') {
-    const messages = TapeAI.buildCommentMessages(payload.text || '', cfg.commentPrompt);
+    const count = cfg.commentCount;
+    const messages = TapeAI.buildCommentMessages(payload.text || '', cfg.commentPrompt, count);
     let nativeFailure = null;
 
     // 1.4.0 主路径：直接调 X 自带 Grok 接口，不依赖 /i/grok 标签与 DOM 文本读取
@@ -739,15 +759,16 @@ async function handleGrokMessage(msg, sender) {
         // 1.4.18：站内直连改用 XVM 式极简提示词（推文原文 + 一句自然语言要求），
         // 不再叠加角色扮演 / system / 自相矛盾的 JSON+代码块双重约束，
         // 否则 X 自带 Grok persona 会回 "I can't follow that format or role"。
-        const prompt = TapeAI.buildNativeCommentPrompt(payload.text || '', cfg.commentPrompt, cfg.pagePromptExtra);
+        const prompt = TapeAI.buildNativeCommentPrompt(payload.text || '', cfg.commentPrompt, cfg.pagePromptExtra, count);
         const fast = cfg.grokFastMode !== false;
         const r = await callGrokNative(tabId, {
-          type: 'GROK_NATIVE_CALL', prompt, kind: 'comments',
+          type: 'GROK_NATIVE_CALL', prompt, kind: 'comments', count: count,
           fast: fast, timeoutMs: fast ? 40000 : 90000
         });
         if (r && r.comments && r.comments.length) {
           return {
-            ok: true, comments: r.comments, model: 'X 站内 Grok（直连）', mode: 'native', strict: true,
+            ok: true, comments: r.comments.slice(0, count), model: 'X 站内 Grok（直连）', mode: 'native', strict: true,
+            provider: aiProviderLabel('native'), count: count,
             raw: String(r.raw || '').slice(0, 1200),
             diagnostics: {
               transport: '站内直连 · X 自带 Grok 接口',
@@ -777,7 +798,7 @@ async function handleGrokMessage(msg, sender) {
     }
 
     let r;
-    try { r = await runGrok(messages, 700, cfg, 'comments', payload.text || ''); }
+    try { r = await runGrok(messages, commentMaxTokens(count), cfg, 'comments', payload.text || ''); }
     catch (e) {
       if (nativeFailure) {
         // 1.4.1：把直连的真实失败原因放在最前面，避免被页面模式的
@@ -798,21 +819,23 @@ async function handleGrokMessage(msg, sender) {
       throw e;
     }
     if (r.prepared) {
-      return { ok: false, prepared: true, mode: 'page', prompt: r.prompt,
+      return { ok: false, prepared: true, mode: 'page', prompt: r.prompt, count: count,
+        provider: aiProviderLabel('page'),
         error: '已把提示词填进 X 的 Grok 输入框（当前设为「不自动发送」）。请到 Grok 里按发送，回答出来后点「读取 Grok 回答」。' };
     }
     const p = r.mode === 'page'
-      ? parsePageText(r, 'comments')
-      : { out: TapeAI.parseThreeComments(r.text), strict: true, text: r.text };
-    const comments = p.out || [];
+      ? parsePageText(r, 'comments', count)
+      : { out: TapeAI.parseThreeComments(r.text, count), strict: true, text: r.text };
+    const comments = (p.out || []).slice(0, count);
     if (!comments.length) {
-      throw new Error('没从 Grok 的回答里解析出 3 条评论（网页版 Grok 可能没按 JSON 输出，或回答被截断）。' +
-        '请点「重新生成」；仍失败就用候选面板的「复制提示词（手动）」到 Grok 里发送，再点「读取 Grok 回答」。' +
+      throw new Error('没从 ' + aiProviderLabel(r.mode) + ' 的回答里解析出可用评论（可能没按 JSON 输出，或回答被截断）。' +
+        '请点「重新生成」；仍失败就用候选面板的「复制提示词（手动）」发送，再读回回答。' +
         (nativeFailure ? '（站内直连失败原因：' + nativeFailure.slice(0, 180) + '）' : '') +
         '读到的原文：' + String(p.text || r.text || '').slice(0, 200));
     }
     return {
       ok: true, comments, model: r.model, mode: r.mode, strict: p.strict,
+      provider: aiProviderLabel(r.mode), count: count,
       raw: String(p.text || r.text || '').slice(0, 1200),
       diagnostics: Object.assign(pageDiagnostics(r),
         nativeFailure ? { nativeFallback: nativeFailure } : {})
@@ -858,17 +881,18 @@ async function handleGrokMessage(msg, sender) {
   if (msg.type === 'GROK_PAGE_PREPARE') {
     const kind = payload.kind === 'verify' ? 'verify' : 'comments';
     const prompt = kind === 'comments'
-      ? TapeAI.buildPageCommentPrompt(payload.text || '', cfg.commentPrompt, cfg.pagePromptExtra)
+      ? TapeAI.buildPageCommentPrompt(payload.text || '', cfg.commentPrompt, cfg.pagePromptExtra, cfg.commentCount)
       : TapeAI.buildPagePrompt(messagesFor(kind, payload, cfg), cfg.pagePromptExtra);
     const r = await callGrokPage(prompt, cfg, 'prepare');
-    return { ok: true, mode: 'page', prompt, page: { url: r.url, hasSend: r.hasSend }, createdTab: r.createdTab };
+    return { ok: true, mode: 'page', prompt, count: cfg.commentCount,
+      provider: aiProviderLabel('page'), page: { url: r.url, hasSend: r.hasSend }, createdTab: r.createdTab };
   }
 
   // 手动兜底：用户已在 Grok 里发送并等回答出来，这里读回最后一条回答并解析
   if (msg.type === 'GROK_PAGE_READ') {
     const kind = payload.kind === 'verify' ? 'verify' : 'comments';
     const r = await callGrokPage('', cfg, 'read');
-    const p = parsePageText(r, kind);
+    const p = parsePageText(r, kind, cfg.commentCount);
     if (kind === 'verify') {
       const local = TapeAI.matchOfficial(payload.url || '');
       const grok = p.out;
@@ -876,7 +900,8 @@ async function handleGrokMessage(msg, sender) {
       return { ok: local.status !== 'invalid', local: localOut(local), grok, aiError: null,
         mode: 'page', strict: p.strict, raw: String(p.text || '').slice(0, 1200), source: TapeAI.SOURCE };
     }
-    return { ok: true, comments: p.out || [], mode: 'page', strict: p.strict,
+    return { ok: true, comments: (p.out || []).slice(0, cfg.commentCount), mode: 'page', strict: p.strict,
+      provider: aiProviderLabel('page'), count: cfg.commentCount,
       raw: String(p.text || '').slice(0, 1200), diagnostics: pageDiagnostics(r) };
   }
 
