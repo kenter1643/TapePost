@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：**1.5.4**（本仓库源码）　｜　Chrome Web Store 上架包：`store/TapePost_1.5.4_store.zip`　｜　Manifest V3　｜　Chrome 116+
+- 版本：**1.5.5**（本仓库源码）　｜　Chrome Web Store 上架包：`store/TapePost_1.5.5_store.zip`　｜　Manifest V3　｜　Chrome 116+
 - **版本规则**：未经明确授权，只在 1.5 系列里顺延补丁号（1.5.3 → 1.5.4 …），**不自行跳 1.6 / 2.0 等大版本**；新增功能一律算补丁，不改动 minor / major 号。
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
@@ -21,7 +21,37 @@
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-14）**：本仓库 `main` 是 **1.5.4**（**本次修复**：微博首页带视频的帖子仍然看不到「一键转发」按钮 —— 真机（已登录 weibo.com）确认扩展已加载 v1.5.3、图文帖按钮正常，视频帖的入口被播放器图层 / 微博框架重渲染抹掉，且播放器无障碍文本不断变化让内容指纹抖动；现在视频入口改挂在页面根层的固定悬浮条，按卡片位置跟随，视频卡片内部不再写入任何按钮。仍是纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。此前 **1.5.3**（**新增**：AI 回复可选 DeepSeek API 模式 —— 运行模式新增第五种「DeepSeek API」，Key / 模型 / 接口地址独立配置，两个 AI 功能与「测试当前模式」都走 DeepSeek；新增 `api.deepseek.com` 一条主机权限，只在用户主动选择并发起 AI 请求时使用；默认站内直连与既有 xAI 设置一行未动）。此前 **1.5.2**（**修复**：微博首页视频微博与 /tv 视频频道看不到「一键转发」按钮 —— 视频信号识别放宽到播放按钮 / 视频链接 / 播放器容器，找不到锚点时退回卡片本身，卡片选择器覆盖不到的视频单元注入独立悬浮入口「一键转发 + 视频剪辑」，层级提到播放器之上；纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。同一个 1.5.2 补丁里还包含（新增视频一键转发工作台：卡片「视频剪辑」快捷入口、1~4 段剪接拼接、逐帧去水印、MP4/WebM 导出；含视频的一键转发不再自动开窗抢焦点；此前按真机反馈修复右下角水印漏检：瓦片贴边扫描 + 自适应行阈值 + 结构校验 + 条带纹理重建；商店上架包 `store/TapePost_1.5.2_store.zip`，`store/listing.json` 已同步；TapeUP 卡片删掉与主值重复的页头美元折算价；此前 1.4.29 多图托盘缩略图可点开大图浏览：左右切换 / 1:1 原图 / ESC 或点空白关闭；此前 1.4.28 按真机反馈重写水印检测：拼接长图中间 / 多帧重复水印也能逐处去掉；此前 1.4.27 把所有图片逐张全图去水印 + 4K 高清输出；此前 1.4.26 行情区压成两行：UP 单行 + ②③ 并排；此前 1.4.25 移除昆哥个人介绍卡与生态面板徽章；此前 1.4.24 把行情区精简为只留数字、去掉来源与版本说明；此前 1.4.23 把 UP 主值改抓 K 线图右侧绿色「当前价标签」那个随成交跳动的动态价，页头三数完整保留；行情区按紧凑版重排，收窄到 330px；此前 1.4.22 把行情面板改版为上中下三块、完整展示全部字段；此前 1.4.21 按真机页面重新校准 TapeUP 内盘价为 `0.0264 BEM/UP · $0.3181 · +19.44%`，BEM 与矿机日产价两项明确标注来自 Firsto；矿机日产价改用 /circuits/other 页顶实时挂单参考价；版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板）；Chrome Web Store 待上架版本为 **1.5.4**（此前首次提交审核的条目是 1.4.2，代码不同但数据流向口径一致）。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取；1.4.20 只在**同一个已授权域名** `api-tapeout.firsto.ai` 上换了一个公开只读接口路径（`/v1/analytics/circuits` → `/v1/circuit-holders`），并把矿机卡跳转改到 `tapeout.firsto.ai/circuits/other`（普通网页跳转，不需要新权限），不新增域名、权限或网络接收方。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。**1.5.4 已同步** `store/listing.json`（含行情域名、`alarms` / `notifications` 权限理由）与 `docs/privacy.html`，提交前按 `pre_submit_checklist` 核对 Dashboard 表单即可。**1.4.22 只改本机行情面板的布局与文案**（三列 → 上中下三块 + 完整字段 + 可折叠采集明细），不新增数据源、权限、域名或网络接收方。**1.4.23 也只改本机采集与渲染**（新增读取同一页面上已存在的 K 线图例文本 + 收紧布局），不新增数据源、权限、域名或网络接收方。1.5 上架时上述资料已一次性统一，不再需要分版本补件。
+> **版本状态（2026-11-14）**：本仓库 `main` 是 **1.5.5**（本次更新见下一节；以下为 1.5.4 及更早的历史记录）。此前 **1.5.4**（**修复**：微博首页带视频的帖子仍然看不到「一键转发」按钮 —— 真机（已登录 weibo.com）确认扩展已加载 v1.5.3、图文帖按钮正常，视频帖的入口被播放器图层 / 微博框架重渲染抹掉，且播放器无障碍文本不断变化让内容指纹抖动；现在视频入口改挂在页面根层的固定悬浮条，按卡片位置跟随，视频卡片内部不再写入任何按钮。仍是纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。此前 **1.5.3**（**新增**：AI 回复可选 DeepSeek API 模式 —— 运行模式新增第五种「DeepSeek API」，Key / 模型 / 接口地址独立配置，两个 AI 功能与「测试当前模式」都走 DeepSeek；新增 `api.deepseek.com` 一条主机权限，只在用户主动选择并发起 AI 请求时使用；默认站内直连与既有 xAI 设置一行未动）。此前 **1.5.2**（**修复**：微博首页视频微博与 /tv 视频频道看不到「一键转发」按钮 —— 视频信号识别放宽到播放按钮 / 视频链接 / 播放器容器，找不到锚点时退回卡片本身，卡片选择器覆盖不到的视频单元注入独立悬浮入口「一键转发 + 视频剪辑」，层级提到播放器之上；纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。同一个 1.5.2 补丁里还包含（新增视频一键转发工作台：卡片「视频剪辑」快捷入口、1~4 段剪接拼接、逐帧去水印、MP4/WebM 导出；含视频的一键转发不再自动开窗抢焦点；此前按真机反馈修复右下角水印漏检：瓦片贴边扫描 + 自适应行阈值 + 结构校验 + 条带纹理重建；商店上架包 `store/TapePost_1.5.2_store.zip`，`store/listing.json` 已同步；TapeUP 卡片删掉与主值重复的页头美元折算价；此前 1.4.29 多图托盘缩略图可点开大图浏览：左右切换 / 1:1 原图 / ESC 或点空白关闭；此前 1.4.28 按真机反馈重写水印检测：拼接长图中间 / 多帧重复水印也能逐处去掉；此前 1.4.27 把所有图片逐张全图去水印 + 4K 高清输出；此前 1.4.26 行情区压成两行：UP 单行 + ②③ 并排；此前 1.4.25 移除昆哥个人介绍卡与生态面板徽章；此前 1.4.24 把行情区精简为只留数字、去掉来源与版本说明；此前 1.4.23 把 UP 主值改抓 K 线图右侧绿色「当前价标签」那个随成交跳动的动态价，页头三数完整保留；行情区按紧凑版重排，收窄到 330px；此前 1.4.22 把行情面板改版为上中下三块、完整展示全部字段；此前 1.4.21 按真机页面重新校准 TapeUP 内盘价为 `0.0264 BEM/UP · $0.3181 · +19.44%`，BEM 与矿机日产价两项明确标注来自 Firsto；矿机日产价改用 /circuits/other 页顶实时挂单参考价；版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板）；Chrome Web Store 待上架版本为 **1.5.5**（此前首次提交审核的条目是 1.4.2，代码不同但数据流向口径一致）。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取；1.4.20 只在**同一个已授权域名** `api-tapeout.firsto.ai` 上换了一个公开只读接口路径（`/v1/analytics/circuits` → `/v1/circuit-holders`），并把矿机卡跳转改到 `tapeout.firsto.ai/circuits/other`（普通网页跳转，不需要新权限），不新增域名、权限或网络接收方。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。**1.5.4 已同步** `store/listing.json`（含行情域名、`alarms` / `notifications` 权限理由）与 `docs/privacy.html`，提交前按 `pre_submit_checklist` 核对 Dashboard 表单即可。**1.4.22 只改本机行情面板的布局与文案**（三列 → 上中下三块 + 完整字段 + 可折叠采集明细），不新增数据源、权限、域名或网络接收方。**1.4.23 也只改本机采集与渲染**（新增读取同一页面上已存在的 K 线图例文本 + 收紧布局），不新增数据源、权限、域名或网络接收方。1.5 上架时上述资料已一次性统一，不再需要分版本补件。
+
+### 1.5.5：行情重排 + 只读钱包 / TapeOut API 资产 + $BEM 信仰者全网打卡
+
+用户要求：「把价格数字做的最大，其他描述性的做小；BEM 放第一位；加入连接钱包（欧意、币安、TP 等常用钱包），地址加密记录在本地；底层调用 TapeOutAPI 最新版本读取钱包下的矿机、挖掘出的资产；针对 BEM 的价格加入信仰者支持投票，投票全网记账、按天累计显示、提醒信仰者打卡支持」。
+
+**① 面板（`popup.html` / `popup.js`，纯本机渲染）**
+- BEM 提到第一行独占一张主卡：价格数字 **30px**，TapeUP / 矿机日产并排第二行数字 **16px**；所有标签、单位、来源、说明统一压到 **8px**，仍是两行紧凑布局，弹窗宽度不撑大。`price.js` 的 `KEYS` 顺序不动（提醒状态机与阈值设置保持原样），只重排 DOM。
+- BEM 主卡底部直接显示「今日 N 票支持 · 连续 X 天 · 全网/本机」，把价格与信仰者打卡串在一起。
+
+**② 只读钱包（`wallet.js` + `background.js`）**
+- 用户点「连接钱包」时，后台用 `chrome.scripting` 在**当前活动标签页的 MAIN world** 跑一次自包含探测函数：先按 EIP-6963 收 `announceProvider`，再兜底 EIP-1193 传统注入（`window.okxwallet`、`window.binancewallethooks`、`window.ethereum.providers`、`isTokenPocket` / `isMetaMask` 等）。列出检测到的钱包让用户选，选定后只调 `eth_requestAccounts` 与 `eth_chainId` 取**公开地址**；当前页不可用时后台打开 `tapeout.firsto.ai` 再探一次。也保留手动填地址。
+- **不接触私钥 / 助记词，不 `eth_sign`、不请求授权额度、不发交易**，钱包弹窗由用户自己确认；只读，不能动用资产。
+- 地址 + 钱包名 + 链 ID 用 Web Crypto **AES-GCM** 加密存 `chrome.storage.local`；32 字节密钥在安装时本机随机生成，同样只存本机、不同步、不随扩展分发。popup 只拿到遮罩后的 `0x1234…abcd`，明文地址不进 UI 层的消息回包；点「断开」删除密文与资产缓存。
+- 新增 `scripting` / `activeTab` 两项权限，只在这一次用户触发的探测里使用，不常驻、不监听页面。
+
+**③ TapeOut API 最新版本（`tapeout-api.js`）**
+按「最新版本优先、旧字段兜底」接两套公开只读接口，响应里的 `schemaVersion` 会记录到面板，上游从 1 升 2 不会把面板闪成空：
+- **Firsto TapeOut API v1**（`api-tapeout.firsto.ai`，路径取自 `tapeout.firsto.ai` 前端 bundle）：`/v1/account/{addr}/portfolio`（BNB、NAND/LATCH）、`/v1/account/{addr}/circuit-summary`（持有矿机数、市值、盈亏）、`/v1/pod/miners/{addr}`（逐台矿池 / 权重 / 预估 24h 产出）、`/v1/pod/claims/{addr}?limit=100`（累计已领取 $BEM 与流水）。
+- **TapeAPI 3.0.0**（2026-11-06 发布，当前最新版）公共签名读取：`POST https://api.tapeapi.fun/tapeapi/v1/{balance|tokenBalance|bnbUsd}`，免密钥、锚定区块、带 `sig` / `blockPinned`。扩展只取 `result` 里的公开余额数字，界面明确标注「链上签名读取（未本机验签）」，不作为交易决策依据；SDK 未引入（避免外部依赖 / 远程代码）。
+- 面板六格：矿机台数、预估日产 BEM、持仓 BEM、累计领取 BEM、BNB 余额、矿机市值 BNB；副行给 NAND/LATCH、BEM 持仓美元估值、接口版本与失败项数。任一接口挂了不拖垮其它项，后台缓存 2 分钟，`↻ 读资产` 强制刷新。
+
+**④ $BEM 信仰者打卡 / 全网账本（`vote.js` + `vote-ledger/`）**
+- 「💪 支持 / 🤔 观望」每日一票，按**北京时间（UTC+8）**切天，所有用户看到同一张日账；界面给今日支持数、累计票数、连续打卡天数、近 7 天趋势条。当天没打卡显示红字提醒，并可在设置里开每日系统通知（默认 20:00，一天最多一次）。
+- 共享账本：零依赖 Node HTTP 服务 `vote-ledger/server.js`，已发布为在线服务，扩展默认指向它（设置里可改自建地址）。协议 `GET /api/state`、`POST /api/vote {day, stance, voterId}`、`GET /api/health`，网页版日账在 `/vote`，同一应用根路径仍是隐私政策独立副本。
+- 隐私边界：账本**只收日期、立场与「本机随机盐 + 日期」算出的 SHA-256 每日匿名去重哈希**（每天轮换，无法跨天关联同一个人），**绝不上传钱包地址 / API Key / 页面内容 / 身份信息**；同一天同一哈希只算一票，改立场是替换不是累加。断网 / 未配置账本时自动降级「本机账本」，界面标签明确写「本机」，联网后把待补投票补投并清掉本机叠加计数，不会假装是全网数据。
+
+**⑤ 权限与合规**
+- `manifest.json`：`permissions` 7 → **9**（+`scripting`、+`activeTab`）；`host_permissions` 30 → **33**（+`https://tapeout.firsto.ai/*`、+`https://api.tapeapi.fun/*`、+`https://tapepost-privacy.app.workbuddy.host/*`）。
+- 新增数据接收方：Firsto TapeOut API（收一个公开地址）、TapeAPI 公共签名服务（收一个公开地址）、$BEM 共享账本（收日期 / 立场 / 匿名哈希）。`README.md`、`store/listing.json`、`docs/privacy.html` 与 `store/privacy-site/index.html` 已同步为 1.5.5 口径，包括「开发者运营投票账本」这一事实（此前「无自有服务器」的表述已修正）。
+- 自检：`node test-wallet-vote-assets.js` 70/70（加 `--live` 为 73/73，对线上账本与真实接口做只读冒烟）；`test-harness.js` 489/532 与 1.5.4 基线一致（43 项是 1.4.x 旧断言）；`test-deepseek.js` 30/30；`test-video-entry.js` 18/18；20+ 个 JS 全部 `node --check` 通过。按用户要求不跑给用户看的真机测试。
 
 ### 1.5.4：修复微博视频帖仍看不到「一键转发」按钮（真机复核）
 
@@ -102,11 +132,11 @@
 
 ### 1.5 正式版：Chrome Web Store 上架包
 
-- **交付物**：`store/TapePost_1.5_store.zip`（正式首发）／`store/TapePost_1.5.1_store.zip`（水印修复版）／`store/TapePost_1.5.4_store.zip`（**当前唯一上架包**，25 个文件，根目录即 `manifest.json`，不含 `.git` / 文档 / 测试 / 商店素材）；版本 `1.5.4`，UI 各处显示 `v1.5.4`。此前误标为大版本号的同名包一律作废，请勿提交。
+- **交付物**：`store/TapePost_1.5_store.zip`（正式首发）／`store/TapePost_1.5.1_store.zip`（水印修复版）／`store/TapePost_1.5.5_store.zip`（**当前唯一上架包**，28 个文件，根目录即 `manifest.json`，不含 `.git` / 文档 / 测试 / 商店素材）；版本 `1.5.5`，UI 各处显示 `v1.5.5`（`popup.html` / `panel.html` / `content.js` 的写死值只作兜底，运行时一律读 `chrome.runtime.getManifest().version`）。1.5.5 起新增 `wallet.js` / `tapeout-api.js` / `vote.js` 三个运行时文件，专项自检脚本 `test-wallet-vote-assets.js` **不进包**。此前误标为大版本号的同名包一律作废，请勿提交。
 - **相对商店首次提交的 1.4.2，正式版包含**：TapeOut 实时行情（TapeUP 内盘动态价 / 矿机日产 / BEM，含上下限提醒）、7 站所有图片逐张全图去水印与 4K PNG 无损输出、多图托盘点缩略图放大浏览、AI 评论提示词对齐站内 Grok、界面两行紧凑布局。全部为既有链路的本机能力，**没有新增第三方数据接收方**。
-- **上架资料已同步**：`store/listing.json` 版本号、摘要与详细描述、`alarms` / `notifications` 权限理由、30 条主机权限（含 `api.deepseek.com` AI 接口、`api-tapeout.firsto.ai` / `tapeup.io` 只读行情）、数据使用披露与 `pre_submit_checklist`；`docs/privacy.html` 与 `store/privacy-site/index.html` 副本同步为 1.5 口径。
+- **上架资料已同步**：`store/listing.json` 版本号、摘要与详细描述、`scripting` / `activeTab` / `alarms` / `notifications` 权限理由、33 条主机权限（含 `api.deepseek.com` AI 接口、`api-tapeout.firsto.ai` / `tapeup.io` 只读行情、`api.tapeapi.fun` / `tapeout.firsto.ai` 钱包资产、投票账本服务）、第三方数据接收方披露与 `pre_submit_checklist`；`docs/privacy.html` 与 `store/privacy-site/index.html` 副本同步为 1.5.5 口径。
 - **上架前必做**（与 zip 无关，在 Developer Dashboard 完成）：确认 Privacy practices 勾 3 项（Authentication information / User activity / Website content）、Remote code 选 No、「数据传出设备」选是、publisher contact email 已验证、隐私政策 URL 指向 GitHub Pages 最新版；首次提交或含 `https://*/*` 可选权限会进入 in-depth review。详见 `store/listing.json` 的 `pre_submit_checklist` 与 `review_warning_note`。
-- **验证**：所有 JS 通过 `node --check`，manifest 中 `content_scripts` / `background` / `offscreen` / 弹窗引用的文件逐一核对存在，zip 内版本与源码一致。按用户要求未跑真机回归（`test-harness.js` 仍为旧版口径）。
+- **验证**：所有 JS 通过 `node --check`，manifest 中 `content_scripts` / `background` / `offscreen` / 弹窗引用的文件逐一核对存在，zip 内版本与源码一致；`test-harness.js` 维持 489/532 历史基线（43 项为 1.4.x 旧断言，新增失败 0），`test-deepseek.js` 30/30、`test-video-entry.js` 18/18、`test-wallet-vote-assets.js` 77/77（加 `--live` 80/80）。按用户要求不跑真机完整回归，交付后由用户在 `chrome://extensions` 重载 / 加载新版 `unpacked/` 自测。
 
 ### 1.4.30：TapeUP 卡片去掉重复的美元价
 
@@ -695,6 +725,7 @@ zip -q store/TapePost_1.4.2_store.zip \
 
 - **转发**：图片去水印（默认开）、视频取原片、正文 `#` 话题的三种处理方式、附原推链接、附个人署名、X 域名、7 个站点开关；
 - **Grok**：运行模式（自动 / X 站内 Grok / xAI API）、两套可编辑提示词 + 页面模式附加要求 + 「预览实际发送内容」、页面选择器与自动发送/新建对话开关、打开 Grok 页面；API 模式专属：xAI API Key、接口协议、模型 ID、接口地址、测试连接、允许自定义网关域名；
+- **行情 / 钱包 / 打卡**：行情区 BEM 置顶大数字、上下限提醒；「👛 我的 TapeOut 钱包」连接注入式钱包（OKX / 币安 / TP / MetaMask 等）或手动填地址，只读展示矿机 / 日产 / 持仓 / 已领取 / BNB / 市值；「🔥 $BEM 信仰者打卡」每日一票、全网按天累计、连续打卡与定时提醒，账本地址与提醒时间可改；
 - **工具**：「🔍 运行环境自检」（Service Worker / DNR 规则 / 离屏文档状态）、「打开 TapeOut 生态面板」。
 
 密钥与接口配置只存 `chrome.storage.local`（本机、不同步、不入库）；模式、页面选择器、偏好与提示词存 `chrome.storage.sync`。提示词留空＝用 `grok.js` 内置默认；删掉 `{POST}` / `{LOCAL_RESULT}` / `{OFFICIAL_LIST}` / `{URL}` 占位符时，插件会自动把对应内容补到提示词末尾。
@@ -716,7 +747,13 @@ zip -q store/TapePost_1.4.2_store.zip \
 ├── inpaint.js             # 纯 JS 水印检测与重建
 ├── popup.html/js          # 设置面板（转发 / Grok / 面板入口）
 ├── panel.html/js          # TapeOut 生态面板（绿标清单 + 链接真伪查询）
+├── wallet.js              # 1.5.5 只读钱包：AES-GCM 本机加密、地址校验、EIP-6963/1193 页面探测桥
+├── tapeout-api.js         # 1.5.5 TapeOut API v1 + TapeAPI 3.0.0 资产读取（版本协商 / 字段兜底）
+├── vote.js                # 1.5.5 北京时间切天、按天累计、连续打卡、全网账本协议
 ├── test-harness.js        # Node 端到端回归（无需浏览器）
+├── test-wallet-vote-assets.js # 1.5.5 专项自检（不进商店包）
+├── test-deepseek.js / test-video-entry.js # 专项自检（不进商店包）
+├── vote-ledger/           # 1.5.5 独立部署的 $BEM 全网账本（零依赖 Node 服务，不属于扩展包）
 ├── tools/refresh-sites.mjs # 从导航站公开数据重新生成收录清单
 ├── docs/                  # GitHub Pages：介绍页 + 隐私政策 + 静态资源
 └── store/                 # 上架素材：listing.json、截图、宣传图、上传脚本
@@ -725,8 +762,12 @@ zip -q store/TapePost_1.4.2_store.zip \
 ## 开发与测试
 
 ```bash
-node test-harness.js                  # 163 个场景：转发链路 + 全量清单防伪 + 分级判定 + 回复框按钮注入/候选回写 + 非 API 页面模式端到端
+node test-harness.js                  # 532 个场景（489 通过，43 项是 1.4.x 旧断言，与 1.5.4 基线一致）
 WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
+node test-wallet-vote-assets.js       # 1.5.5 钱包 / 资产 / 投票 70 项
+node test-wallet-vote-assets.js --live # 追加线上账本与真实 TapeOut API 只读冒烟（73 项）
+node test-deepseek.js                 # 30 项
+node test-video-entry.js              # 18 项
 ```
 
 改动 `content.js` 后记得在 `chrome://extensions` 点刷新，并刷新来源站页面；扩展有「上下文已失效」提示时按提示刷新即可。
@@ -739,7 +780,7 @@ WBX_VERBOSE=1 node test-harness.js   # 打印详细流水
 
 ## 隐私
 
-**转发链路纯本地**：无自有服务器、无账号、无遥测、无远程代码。所有提取、去水印、剪贴板写入与下载都发生在本机。
+**转发链路纯本地**：无账号、无遥测、无远程代码；所有提取、去水印、剪贴板写入与下载都发生在本机。**1.5.5 起有一个例外**：$BEM 信仰者投票使用一个由开发者运营的公开共享账本（只收日期 / 立场 / 每日匿名哈希），以及两个按公开地址查询资产的只读接口；完整口径见第 3 节与隐私政策。钱包地址本身加密后只留在本机，从不上传。
 
 **转发全链路纯本地**。**AI 功能分两种模式**：① `api` 模式：只有你主动点「AI 评论」/「核验链接」并填了自己的 Key，扩展才把推文正文或待核验链接（连同本地结论、清单摘要、提示词）发给 `api.x.ai` 或自填网关；② `page` 模式（免 Key）：扩展**不向任何 AI 服务发请求**，只把提示词填进你已登录的 X 站内 Grok 页面、由 X 完成对话，再读取该页回答文本在本机解析 —— 这段对话受 X 的条款与隐私政策约束。两种模式都不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容；插件也不读取或存储 X 的登录凭据。
 

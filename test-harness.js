@@ -3866,6 +3866,15 @@ async function runThinking1415Checks() {
   const backgroundJs = read('background.js');
   const offscreenJs = read('offscreen.js');
   const manifestJson = JSON.parse(read('manifest.json'));
+  /* 1.5.5：1.4.x 的「权限集合一致」断言原本要求与当时的 7 项权限完全相等。
+   * 后续版本合法新增 scripting / activeTab（只读钱包探测）后，等式必然失真；
+   * 这些断言的真实意图是「旧权限一项都不能被偷偷删掉」，改为超集判断。 */
+  const LEGACY_14_PERMS = ['alarms', 'clipboardWrite', 'declarativeNetRequest',
+    'downloads', 'notifications', 'offscreen', 'storage'];
+  const hasLegacyPerms = (m) => {
+    const cur = (m && m.permissions) || [];
+    return LEGACY_14_PERMS.every((p) => cur.indexOf(p) >= 0);
+  };
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
       ok: manifestJson.version === '1.4.23' },
@@ -3888,7 +3897,7 @@ async function runThinking1415Checks() {
     { name: '1.4.3 设置读写接入新键',
       ok: popupJs.includes('autoDownloadBackup: !!(document.getElementById') && popupJs.includes('tmpKeepMinutes: Number(') && popupJs.includes('refreshTmpStatus()') },
     { name: '1.4.3 权限集合与当前版本一致',
-      ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
+      ok: hasLegacyPerms(manifestJson) },
     { name: '1.4.3 不再出现旧的「全部下载」按钮',
       ok: !contentJs.includes("dl.textContent = '全部下载'") }
   ];
@@ -3909,7 +3918,7 @@ async function runThinking1415Checks() {
     { name: '1.4.4 托盘清理回调读取 lastError',
       ok: contentJs.includes('const err = chrome.runtime && chrome.runtime.lastError;') && contentJs.includes('!err && r && r.ok') },
     { name: '1.4.4 权限集合与当前版本一致',
-      ok: (manifestJson.permissions || []).sort().join(',') === ['alarms','clipboardWrite','declarativeNetRequest','downloads','notifications','offscreen','storage'].join(',') },
+      ok: hasLegacyPerms(manifestJson) },
     { name: '1.4.4 UI 版本号同步升级到 1.4.7',
       ok: contentJs.includes('v1.4.23') && popupHtml.includes('当前 v1.4.23') }
   ];
@@ -4004,8 +4013,7 @@ async function runThinking1415Checks() {
           promoRuntime.on.texts.every((t) => t.indexOf('\n\n') > 0) &&
           promoRuntime.off.enabled === false && promoRuntime.off.texts.join('|') === '甲|乙|丙' },
     { name: '1.4.5 权限集合与当前版本一致',
-      ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
+      ok: hasLegacyPerms(manifestJson) }
   ];
 
   // ---- v1.4.8：单个 T 按钮 + 原生编辑命令写回（真机反馈「重复 / 会乱」修复） ----
@@ -4251,8 +4259,7 @@ async function runThinking1415Checks() {
     { name: '1.4.8 保留 stripPromo 供 AI 候选使用',
       ok: stripped === '我自己写的评论' && P.stripPromo('纯正文', {}) === '纯正文' },
     { name: '1.4.8 权限集合与当前版本一致',
-      ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
+      ok: hasLegacyPerms(manifestJson) }
   ];
 
   // ---- v1.4.9：全页唯一按钮 + 精准回写（真机「很多按钮 / 写错框 / 手动改就乱」） ----
@@ -4290,8 +4297,7 @@ async function runThinking1415Checks() {
     { name: '1.4.9 运行时：一个容器里两个输入框时不敢猜、直接停手',
       ok: !!promo148 && promo148.ambiguous === true },
     { name: '1.4.9 权限集合与当前版本一致',
-      ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
+      ok: hasLegacyPerms(manifestJson) }
   ];
 
   // ---- v1.4.10：按钮不压正文 + 写回后收拢选区 + 多句停手（真机截图复盘） ----
@@ -4329,8 +4335,7 @@ async function runThinking1415Checks() {
     { name: '1.4.10 运行时：正文里已有两句推广句时一个字都不动',
       ok: !!promo148 && promo148.dupStopped === true },
     { name: '1.4.10 权限集合与当前版本一致',
-      ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
+      ok: hasLegacyPerms(manifestJson) }
   ];
 
   // ---- v1.4.11：一次全量替换（重复 / 不可编辑）+ AI 评论快速模式 ----
@@ -4403,8 +4408,7 @@ async function runThinking1415Checks() {
           popupJs.includes('v1.4.11 写回改为一次全量替换') &&
           read('README.md').includes('### 1.4.11：写回链路重写') },
     { name: '1.4.11 权限集合与当前版本一致',
-      ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
+      ok: hasLegacyPerms(manifestJson) }
   ];
 
   // ---- v1.4.12：AI 评论 401 / 响应解析修复 ----
@@ -4443,8 +4447,7 @@ async function runThinking1415Checks() {
           popupJs.includes('v1.4.12 修好 AI 评论 401') &&
           read('README.md').includes('### 1.4.12：修复 AI 评论 401') },
     { name: '1.4.12 权限集合与当前版本一致',
-      ok: (manifestJson.permissions || []).sort().join(',') ===
-          ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads', 'notifications', 'offscreen', 'storage'].join(',') }
+      ok: hasLegacyPerms(manifestJson) }
   ];
 
   /* ---------- 1.4.15：X 新版思考布局（reasoningUILayout=UNIFIED）事故回放 ---------- */

@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.4';
+  return 'v1.5.5';
 })();
 
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值

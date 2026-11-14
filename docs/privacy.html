@@ -39,10 +39,10 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 14 日（1.5.4：修复微博视频帖看不到「一键转发」按钮，视频入口改为页面根层固定悬浮条，视频卡片内部不再写入按钮；仍为纯本机页面 DOM 注入，不新增权限 / 主机权限 / 网络请求 / 数据接收方。此前 1.5.3 新增可配置的 DeepSeek API 模式与 api.deepseek.com 一条主机权限）　｜　适用版本：1.5.4（历史版本 1.4.2 及以上同样适用）　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 14 日（1.5.5：行情改为 BEM 置顶大数字、描述文字缩小；新增只读钱包连接（OKX 欧意 / 币安 Web3 / TokenPocket / MetaMask 等注入式钱包，地址 AES-GCM 加密仅存本机）、基于 TapeOut API v1 与 TapeAPI 3.0.0 的钱包资产读取、$BEM 信仰者每日打卡与全网共享账本。新增 scripting / activeTab 两项权限与 api.tapeapi.fun、tapeout.firsto.ai、账本服务三条主机权限，数据流向见第 3 节。此前 1.5.4 修复微博视频帖入口、1.5.3 新增 DeepSeek API 模式）　｜　适用版本：1.5.5（历史版本 1.4.2 及以上同样适用）　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
-    <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」或「DeepSeek API」模式并填写自己的 Key 时，接收方才改为对应服务商（xAI 或 DeepSeek）；两家的 Key 与配置分开保存，同一时刻只会向你选定的那一家发请求。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。
+    <strong>一句话总结：</strong> 扩展本身<strong>没有账号体系、没有统计或遥测</strong>，除 1.5.5 新增的 $BEM 投票共享账本外<strong>没有其它服务器</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」或「DeepSeek API」模式并填写自己的 Key 时，接收方才改为对应服务商（xAI 或 DeepSeek）；两家的 Key 与配置分开保存，同一时刻只会向你选定的那一家发请求。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。<strong>1.5.5 起</strong>：只读钱包绑定会把一个公开地址用 AES-GCM 加密存在本机，加密密钥同样只在本机；扩展不接触私钥 / 助记词、不签名、不发交易。读取资产时会把这个公开地址发给 Firsto 的 TapeOut API 与 TapeAPI 公共签名读取服务（只读，不含身份信息）。$BEM 信仰者打卡会向一个公开的共享账本提交「日期 + 立场 + 当日匿名去重哈希」，<strong>绝不上传钱包地址</strong>；该账本由开发者运营，除此以外扩展仍无账号体系、无统计或遥测。
   </div>
 
   <h2>1. 我们会处理哪些数据</h2>
@@ -53,6 +53,8 @@
     <li>这条内容的固定链接与公开标识（用于可选的原推链接标注、回复目标定位、文件命名）；</li>
     <li>你在生态面板输入框里粘贴的待核验链接；</li>
     <li>页面 DOM 结构（用于定位正文、内容图与插入按钮）。</li>
+    <li><strong>1.5.5：</strong>你主动点「连接钱包」时由已安装钱包返回的一个<strong>公开钱包地址</strong>（或你手动填入的地址）与其链 ID；不读取私钥、助记词、签名内容、交易记录或钱包里的其它账号；</li>
+    <li><strong>1.5.5：</strong>你主动点「支持 / 观望」时生成的当日打卡立场（support / watch），以及本机按「随机盐 + 日期」算出的匿名去重哈希；不读取身份、钱包地址或设备标识。</li>
   </ul>
   <p>扩展不会读取与你正在操作的内容无关的标签页，不会读取密码、表单输入，不建立浏览历史（访问列表 / 页面标题 / 访问时间）记录，也不会上传图片或视频文件。</p>
   <p><strong>认证凭证（如实披露）：</strong>仅在「X 站内直连」模式下，页面内脚本会读取 X 的 <code>ct0</code> 认证 Cookie（用作 <code>x-csrf-token</code>），并通过轻量包装 <code>window.fetch</code> 观察 X 自身请求头中的 <code>authorization</code> bearer 与 <code>x-client-transaction-id</code>，用于把 Grok 请求发回 X 自己。这些值只存在于该 X 页面的内存变量中，<strong>不写入 <code>chrome.storage</code> / <code>localStorage</code>、不导出、不上传给开发者或任何第三方</strong>，接收方始终只有 X/Grok；扩展不读取你的密码、PIN 或安全问题。因官方把 authentication cookies 归入「Authentication information」，且本地处理同样需要披露，商店 Privacy practices 中已勾选该项，并同时勾选「User activity」（fetch 请求头观察）与「Website content」。</p>
@@ -65,12 +67,22 @@
     <li><strong>文字</strong>只通过 URL 参数预填到 <code>x.com/intent/tweet</code> 或 <code>twitter.com/intent/tweet</code> 的新标签页，由你手动点击发送。扩展不调用任何发布接口，也不会替你发帖或回复。</li>
     <li><strong>生态收录清单</strong>（295 条）是内置在扩展代码里的静态数据，来源为 <a href="https://tapeout.link/">TapeOut.link</a> 公开的站点数据与 <a href="https://web.tapeout.link/">web.tapeout.link</a> 的 DeWeb 索引（核验日期 2026-11-08），不会联网拉取，也不包含你的任何信息。</li>
     <li><strong>1.4.13 行情数据（仅存本机）：</strong>价格上下限、提醒开关、检查间隔等偏好保存在 <code>chrome.storage.sync</code>；最近一次行情快照、提醒状态机、系统通知 id 与交易所链接的对应关系保存在 <code>chrome.storage.local</code>。这些值只含公开行情数字与你自己填写的阈值，<strong>不含任何账号、身份、页面内容或浏览历史</strong>，也不会上传给开发者或第三方。可在面板「价格提醒设置」里关闭提醒或清空阈值。</li>
+    <li><strong>1.5.5 钱包地址（加密、仅本机）：</strong>公开地址与所用钱包名称、链 ID 一起用 Web Crypto AES-GCM 加密后存 <code>chrome.storage.local</code>；32 字节密钥在安装时由本机随机生成，也只存本机、不同步、不随扩展分发。点「断开」即删除密文与资产缓存。扩展<strong>不保存明文地址、不接触私钥 / 助记词，也不请求签名或交易授权</strong>。</li>
+    <li><strong>1.5.5 投票与资产缓存（仅本机）：</strong>打卡历史（哪天投了什么立场）、待补投票、最近一次全网账本快照、资产快照、账本地址与提醒时间都存 <code>chrome.storage.local</code>；不含身份信息，也不含钱包地址。账本地址可在设置里改成你自己的兼容服务。</li>
   </ul>
-  <p>我们（开发者）不运营任何后端服务，因此无法访问、收集、存储或分析上述数据。</p>
+  <p>除第 3 节披露的「$BEM 信仰者投票共享账本」外，开发者不运营任何其它后端服务，也不设账号体系、统计或遥测；该账本只接收日期、立场与每日匿名去重哈希，<strong>不接收钱包地址、API Key、页面内容、推文正文或任何身份信息</strong>。因此开发者无法访问、收集或分析上述本机数据。</p>
 
   <h2>3. 网络请求</h2>
   <p><strong>转发链路：</strong>扩展会向内容所在的图片/视频 CDN 发起请求以下载媒体（例如 sinaimg.cn、zhimg.com、qpic.cn、hdslb.com、doubanio.com、xhscdn.com、twimg.com）。为通过图床防盗链校验，扩展会用 <code>declarativeNetRequest</code> 为这些请求设置对应站点的 <code>Referer</code> 请求头。微博视频会优先查询公开的 <code>m.weibo.cn/statuses/show</code> 接口获取高清地址（请求中仅包含该条内容的公开 ID）。</p>
   <p><strong>AI 链路（仅主动使用时）：</strong>见下节。</p>
+  <p><strong>1.5.5 只读钱包连接（用户主动点击才发生）：</strong>点「连接钱包」后，扩展用 <code>chrome.scripting</code> 在<strong>当前这一个标签页</strong>的页面环境里探测 EIP-6963 / EIP-1193 注入式钱包（OKX 欧意、币安 Web3、TokenPocket、MetaMask 等），并对你选定的钱包调用 <code>eth_requestAccounts</code> 取回一个公开地址；当前页不可用时会在后台打开 <code>tapeout.firsto.ai</code> 再探测一次。这一步<strong>不读取页面正文、图片、Cookie、表单、浏览历史或其它标签页，不签名、不请求授权额度、不发起链上交易</strong>，钱包弹窗由你自己在钱包里确认。也可以完全不装钱包，直接手动填一个公开地址。地址与链 ID 加密后只存本机；<code>scripting</code> / <code>activeTab</code> 两项权限仅用于这一次用户触发的探测。</p>
+  <p><strong>1.5.5 TapeOut API 资产读取（只读、按你绑定的地址）：</strong>为显示「矿机台数 / 预估日产 / 持仓 BEM / 累计领取 / BNB / 市值」，扩展后台会向以下<strong>公开只读接口</strong>发起请求，请求里只包含你的公开钱包地址（路径或 JSON 参数），<strong>不携带 Cookie、认证头、API Key、页面内容、推文正文、设备标识或任何身份信息</strong>：</p>
+  <ul>
+    <li><code>https://api-tapeout.firsto.ai/v1/account/{地址}/portfolio</code>、<code>/circuit-summary</code>、<code>/v1/pod/miners/{地址}</code>、<code>/v1/pod/claims/{地址}?limit=100</code>（Firsto 的 TapeOut API v1 索引层，schemaVersion 1 / 2 兼容，按最新版本字段解析、旧字段兜底）；</li>
+    <li><code>https://api.tapeapi.fun/tapeapi/v1/{balance|tokenBalance|bnbUsd}</code>（TapeAPI 3.0.0 公共签名读取，POST 的 <code>params</code> 里只有地址与 $BEM 合约地址；响应带签名回执，扩展只取其中的公开余额数字，<strong>未在本机验签</strong>，也不把它当作交易决策依据）。</li>
+  </ul>
+  <p>资产快照只缓存到本机 <code>chrome.storage.local</code>（2 分钟），点「↻ 读资产」才强制刷新；不上传给开发者、不写入账本、不与打卡数据关联。接收方为 Firsto 与 TapeAPI 公共服务的运营方，各自按其服务条款处理这一个公开地址。</p>
+  <p><strong>1.5.5 $BEM 信仰者打卡与全网账本（唯一会写入外部服务的功能）：</strong>点「支持 / 观望」时，扩展后台会向公开的共享账本 <code>https://tapepost-privacy.app.workbuddy.host/api/vote</code> 提交 <code>{ day, stance, voterId }</code>：<code>day</code> 是按北京时间切分的日期，<code>stance</code> 是 support / watch，<code>voterId</code> 是本机随机盐与日期经 SHA-256 得到的<strong>每日轮换匿名哈希</strong>（每天不同，无法跨天关联同一个人）。打开弹窗时会 GET <code>/api/state</code> 拉取按天累计的全网票数。<strong>钱包地址、API Key、页面内容、推文正文、设备标识与任何身份信息一律不发送</strong>；账本也只保存日期、立场与该匿名哈希用于同日去重。开发者运营这个账本服务，除此之外不接收也不留存任何用户数据；账本地址可在设置里改成你自建的兼容服务，断网时自动降级为纯本机账本并在界面标注「本机」。<code>notifications</code> 权限还用于你开启的每日打卡提醒（默认北京时间 20:00，可关闭），通知文字不含任何个人数据。</p>
   <p><strong>1.4.13 行情链路（后台定时，纯只读）：</strong>为在面板顶端显示三项公开行情，扩展后台默认每 5 分钟（可设 1 / 5 / 15 / 30 分钟，也可手动点 ↻ 立即刷新）向以下两个<strong>公开只读接口</strong>发起 GET 请求。<strong>其中 $BEM 与矿机日产能价这两项数据都来自 Firsto</strong>（接口域名 <code>api-tapeout.firsto.ai</code>，数据页 <code>tapeout.firsto.ai</code>）；第三项 TapeUP 内盘价来自 tapeup.io，见下一段，与 Firsto 无关：</p>
   <ul>
     <li><code>https://api-tapeout.firsto.ai/v1/analytics/bem?range=24h</code> 与 <code>/v1/circuit-holders?page=1</code>：$BEM 现价与 TapeOut 矿机日产能价（后台 GET）。后者是 <code>https://tapeout.firsto.ai/circuits/other</code> 页顶「日产能价参考价」所用的同源公开接口；<strong>1.4.20 起</strong>替换原来的 <code>/v1/analytics/circuits?range=24h</code>（24h 成交序列，会滞后）。接口路径变了，但域名、请求方式与只读性质不变；</li>
@@ -78,7 +90,7 @@
   <p><strong>1.4.16 TapeUP $UP 内盘价（内容脚本采集，非后台 GET）：</strong>tapeup.io 整站 Cloudflare 防护，后台直接 <code>fetch</code> 会被拦，因此 TapeUP $UP 的内盘价（页面标注 <code>BEM/UP</code>，即 UP 以 BEM 计价，如 <code>0.0264 BEM/UP</code>，并同时给出美元折算价 <code>$0.3181</code>；来自 <code>https://tapeup.io/zh/trade/token?id=1</code>）改由扩展的<strong>内容脚本</strong>在你已通过 CF 的浏览器会话里读取页面显示的内盘价，再回传后台缓存。<strong>1.4.21 起</strong>只按页面上的 <code>BEM/UP</code> 标签与「价 + 美元 + 百分比」组合定位价格，钱包余额、待释放余额、统计区数字与图表坐标只作本机诊断候选、不参与取价；认不出就显示未采集。扩展仅在 <code>tapeup.io</code> 注入内容脚本读取该页显示的价格数字，<strong>不读取页面外数据、不发送任何本机数据、不在该域发起额外网络请求</strong>。</p>
   <p><strong>1.4.22 界面改版（仅本机渲染）：</strong>行情面板由三列挤压改为「上 TapeUP / 中 矿机日产 / 下 BEM」三块整行卡片，把主值、另一计价口径、涨跌、来源、更新时间、实时或缓存状态，以及可折叠的「采集明细」（原始字段、采集锚点与本机诊断候选）完整显示出来。这些信息全部来自上述同源公开数据与本机缓存，<strong>只为解决文字被裁切的问题，不新增任何网络请求、权限、域名、数据接收方，也不额外读取或上传页面内容</strong>。BEM 与矿机日产能价仍来自 Firsto，TapeUP 内盘价仍来自 tapeup.io，与 Firsto 无关。</p>
   <p><strong>1.5.4 视频帖按钮入口（仍为纯本机）：</strong>为了让微博首页带视频的帖子与 /tv 视频频道稳定显示「一键转发 + 视频剪辑」，扩展不再把按钮写进视频卡片内部，而是把一条本机生成的固定悬浮条挂到<strong>当前页面的根层</strong>，按该内容单元在视口中的位置跟随定位；卡片滚出视口时自动隐藏，卡片被页面框架重渲染或换掉后会在下一次扫描时重建。为此扩展只读取<strong>页面上已经显示给用户的</strong>视频播放器 / 播放按钮 / 视频链接与内容单元的位置和尺寸，用于放置按钮与解析本条内容；<strong>不读取 Cookie、账号凭据、浏览历史或其它标签页，不新增权限、主机权限、网络请求或数据接收方，也不向任何第三方发送页面内容</strong>。视频本身的读取与处理仍全程在本机离屏文档内完成。</p>
-  <p><strong>1.5.3 AI 回复新增 DeepSeek API 模式（第三方 AI 服务，如实披露）：</strong>运行模式新增第五种「DeepSeek API」。用户显式选择并填入自己的 Key 后，两个手动触发的 AI 功能（X 一键评论、链接真伪查询）与「测试当前模式」会由扩展后台向 <code>api.deepseek.com/chat/completions</code>（或用户自填的兼容网关）发送用户点选的推文正文（≤1200 字符）或待核验链接、本地比对结论、少量相关清单条目与设定提示词，用用户自己的 DeepSeek Key 认证，接收方是 DeepSeek（或该自填网关），<strong>开发者不接收、不留存</strong>。Key、模型 ID、接口地址与「强制 JSON 输出」开关共四项只存本机 <code>chrome.storage.local</code>，与 xAI 的配置完全隔离；同一时刻只向用户选定的一家发请求，不读取 / 不发送 X 登录凭据与图片视频文件。为此<strong>新增且仅新增一条主机权限 <code>https://api.deepseek.com/*</code></strong>（合计 30 条），仅在该模式被主动选中并发起 AI 请求时使用；默认站内直连、既有 xAI 设置与图片 / 视频 / 行情链路均不变。发送给 DeepSeek 的内容受其隐私政策与服务条款约束，调用费用由用户承担。商店上架资料的第三方 AI 服务申报、数据使用披露与主机访问理由已同步列出 X/Grok、xAI 与 DeepSeek。</p>
+  <p><strong>1.5.3 AI 回复新增 DeepSeek API 模式（第三方 AI 服务，如实披露）：</strong>运行模式新增第五种「DeepSeek API」。用户显式选择并填入自己的 Key 后，两个手动触发的 AI 功能（X 一键评论、链接真伪查询）与「测试当前模式」会由扩展后台向 <code>api.deepseek.com/chat/completions</code>（或用户自填的兼容网关）发送用户点选的推文正文（≤1200 字符）或待核验链接、本地比对结论、少量相关清单条目与设定提示词，用用户自己的 DeepSeek Key 认证，接收方是 DeepSeek（或该自填网关），<strong>开发者不接收、不留存</strong>。Key、模型 ID、接口地址与「强制 JSON 输出」开关共四项只存本机 <code>chrome.storage.local</code>，与 xAI 的配置完全隔离；同一时刻只向用户选定的一家发请求，不读取 / 不发送 X 登录凭据与图片视频文件。为此<strong>新增且仅新增一条主机权限 <code>https://api.deepseek.com/*</code></strong>（当时合计 30 条；1.5.5 起为 33 条），仅在该模式被主动选中并发起 AI 请求时使用；默认站内直连、既有 xAI 设置与图片 / 视频 / 行情链路均不变。发送给 DeepSeek 的内容受其隐私政策与服务条款约束，调用费用由用户承担。商店上架资料的第三方 AI 服务申报、数据使用披露与主机访问理由已同步列出 X/Grok、xAI 与 DeepSeek。</p>
   <p><strong>1.5.2 视频剪接与逐帧去水印（仍为纯本机）：</strong>含视频的内容现在会在页面上弹出「视频工作台」，可设置 1~4 段起止时间（顺序拼接）、选择是否逐帧去水印与输出画质，再导出片段用于转发。视频只由扩展在自己已获授权的<strong>离屏文档</strong>里读取为同源 <code>blob:</code> 并用本机 <code>&lt;video&gt;</code> / Canvas / MediaRecorder 逐帧重建与重新编码：首帧在本机检测水印条带，后续帧只对本机像素做条带纹理重建；成品只写入本机剪贴板、本机下载目录或本机临时目录，并由用户自己拖入 / 粘贴到 X。<strong>视频字节不上传、不调用任何云端 AI / 视频修复服务、不发送给任何第三方，也不新增权限、主机权限、网络请求或数据接收方</strong>；除用户主动在已授权来源站读取那条视频本身外，不额外读取页面文字、账号或其它页面内容。音频在本机尽力保留，离屏环境无用户手势时可能无声；输出优先 MP4，旧版 Chrome 回退 WebM。</p>
   <p><strong>1.5.2 视频内容的按钮注入（仍为纯本机）：</strong>为了让微博首页视频微博、/tv 视频频道与 video.weibo.com 播放页上的视频内容也能看到「一键转发」与「视频剪辑」，扩展会在<strong>当前已授权页面的 DOM 里</strong>识别视频播放器 / 播放按钮 / 视频链接，并把一个本机生成的按钮条挂到该内容单元上。这一步只读取页面上已经显示给用户的元素与文字，用于定位按钮与解析本条内容；<strong>不读取 Cookie、账号凭据、浏览历史或其它标签页，不新增权限、主机权限、网络请求或数据接收方，也不向任何第三方发送页面内容</strong>。视频本身的读取与处理仍按上一段所述全程在本机离屏文档内完成。</p>
   <p><strong>1.5.1 右下角水印修复（仍为纯本机）：</strong>水印检测改为「贴边瓦片扫描 + 宽松亮笔画种子 + 自适应行阈值 + 结构校验」，填充改为条带纹理重建，用来解决压在图像最右下角、以及压在浅色衣服上的白色半透明水印漏检，并避免把拼接长图之间的纯白分隔条、天花板灯、衣物高光误当成水印。<strong>这些改动全部是离屏文档内的本机像素计算：不上传图片、不调用任何云端 AI / 图像修复服务、不新增权限、主机权限、网络请求或数据接收方</strong>；未检出水印时原图像素一字节不改。</p>
@@ -93,7 +105,7 @@
   <p><strong>1.4.23 动态价采集（仍为同一页面、仅本机渲染）：</strong>为按用户要求显示 K 线图右侧绿色「当前价标签」那个随成交跳动的动态价，内容脚本额外读取<strong>同一个 tapeup.io 交易页上已经显示的图表图例文字</strong>（形如 <code>开=… 高=… 低=… 收=0.31542257 … Vol 9</code>），并把它与页头 <code>0.0254 BEM/UP · $0.3154 · +19.25%</code> 一起存入本机缓存供弹窗显示。这只是对已打开页面可见文字的本机解析，<strong>不新增接口、不发起任何额外网络请求、不新增权限 / 域名 / 数据接收方，也不读取页面外的其它标签、账号或钱包信息，更不上传任何本机数据</strong>。采集到的价格数字只写入本机 <code>chrome.storage.local</code> 缓存与本机弹窗。BEM 与矿机日产能价仍来自 Firsto，TapeUP 仍来自 tapeup.io，与 Firsto 无关；行情区同时收紧为更紧凑的布局，属纯界面调整。</p>
   <p>请求仅携带 <code>Accept: application/json</code> 与 <code>cache: no-store</code>，<strong>不携带 Cookie、认证头、API Key、页面内容、推文正文、用户标识或任何本机数据</strong>；接口不要求登录，响应只含公开行情数字。点行情卡片或点提醒弹窗时，浏览器会打开 <code>https://firsto.ai/data</code>、<code>/data/bem</code>，或（1.4.20 起矿机卡）<code>https://tapeout.firsto.ai/circuits/other</code> 这类普通网页，该页面由 Firsto 运营，其后产生的访问遵循 Firsto 自己的隐私政策；扩展不会替你登录、下单或提交任何表单。链接经本机白名单校验，只放行 <code>firsto.ai</code> 及其子域与 <code>tapeup.io</code> 及其子域。</p>
   <p><strong>1.4.14 签名帧（仅本机 DOM）：</strong>站内直连的 <code>x-client-transaction-id</code> 需要 X 自带签名模块读取 X 首页下发的 4 个加载动画 SVG 的几何数据。扩展会以你已登录的会话读取一次 <code>https://x.com/</code> 的 HTML（GET，接收方仅 X），只取这 4 个帧的 path 数据，并在当前 X 页面临时插入隐藏帧供签名模块读取，签名完成后立即移除。该过程不读取页面文字、推文内容或账号信息，不新增网络接收方，也不上传任何数据。</p>
-  <p>扩展没有分析、广告或跟踪代码，没有远程加载的脚本，也不连接开发者自建的服务器。</p>
+  <p>扩展没有分析、广告或跟踪代码，没有远程加载的脚本；除本节明示的公开只读接口与 $BEM 共享账本外，不连接开发者自建的服务器。</p>
 
   <h2>4. AI 功能：运行模式与数据流向</h2>
   <div class="box">
@@ -136,13 +148,17 @@
     <tr><td><code>tapeup.io</code> 主机权限（1.4.17 新增）</td><td>仅用于在 tapeup.io 交易页注入内容脚本读取页面显示的内盘价（页面标注 <code>BEM/UP</code>，UP 以 BEM 计价；1.4.21 起按明确的 <code>BEM/UP</code> 锚点取价并读取同页美元折算价；1.4.23 起另读同页 K 线图例「收=」文本作为动态当前价）；不发请求、不读页面外数据、不发送任何本机数据</td></tr>
     <tr><td>X 站点主机权限 / 内容脚本</td><td>在你已打开的 X 页面上注入「一键转发 / AI 评论」按钮；站内直连时由 X 页面自身向 X 自有 Grok 接口发请求，并在该页面内读取 <code>ct0</code> 与 <code>authorization</code> 以复用会话（仅内存、不存储不导出，接收方仅 X 自己）；页面模式下仅定位 Grok 输入框与读取回答文本</td></tr>
     <tr><td>认证 Cookie / bearer（页面内读取）</td><td>仅在站内直连时于 X 页面内存中读取并随请求发回 X 自己；不写入任何持久化存储、不上传给开发者或第三方，详见第 1 节</td></tr>
+    <tr><td>scripting / activeTab（1.5.5 新增）</td><td>仅在你主动点「连接钱包」时，在<strong>当前活动标签页</strong>探测注入式钱包并读取其返回的公开地址；不常驻、不监听页面、不读取页面内容，也不作用于其它标签页</td></tr>
+    <tr><td><code>api.tapeapi.fun</code> 主机权限（1.5.5 新增）</td><td>仅在绑定地址后读取 BNB / $BEM 余额与 BNB 现价这三个公开只读签名方法；免密钥、不携带任何身份或页面数据</td></tr>
+    <tr><td><code>tapeout.firsto.ai</code> 主机权限（1.5.5 新增）</td><td>仅作两件事：当前页无法探测钱包时打开该站再探测一次；以及点卡片跳转该站资产 / 电路市场页面。不读取该站页面内容、不注入常驻脚本</td></tr>
+    <tr><td><code>tapepost-privacy.app.workbuddy.host</code> 主机权限（1.5.5 新增）</td><td>$BEM 信仰者投票共享账本：GET 按天票数、POST 每日一票（日期 / 立场 / 当日匿名哈希）；该域名同时托管隐私政策独立副本。不发送钱包地址或其它个人数据</td></tr>
     <tr><td>可选主机权限（默认未授予）</td><td>仅当你在设置里填写自定义网关并主动点「允许网关域名」时，才申请该域名的访问权</td></tr>
   </table>
   </div>
   <p>你可以在扩展设置面板里逐个关闭站点；关闭某个站点后，扩展不会在该站点注入任何界面。</p>
 
   <h2>6. 第三方内容与你的责任</h2>
-  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）、xAI 与 DeepSeek 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。1.4.13 起面板顶端的行情与价格提醒：<strong>BEM 与矿机日产价这两项都来自 Firsto</strong>（BEM 来自 Firsto 官方 analytics，矿机日产价自 1.4.20 起来自 tapeout.firsto.ai/circuits/other 页顶实时挂单参考价的同源只读接口）；<strong>TapeUP $UP 内盘价来自 tapeup.io 交易页</strong>（1.4.21 起按页面 BEM/UP 锚点由内容脚本采集，与 Firsto 无关），<strong>仅供参考、可能延迟或缺失，不构成投资建议</strong>；扩展不替你下单、不连接钱包、不读取你的持仓。</p>
+  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）、xAI 与 DeepSeek 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。1.4.13 起面板顶端的行情与价格提醒：<strong>BEM 与矿机日产价这两项都来自 Firsto</strong>（BEM 来自 Firsto 官方 analytics，矿机日产价自 1.4.20 起来自 tapeout.firsto.ai/circuits/other 页顶实时挂单参考价的同源只读接口）；<strong>TapeUP $UP 内盘价来自 tapeup.io 交易页</strong>（1.4.21 起按页面 BEM/UP 锚点由内容脚本采集，与 Firsto 无关），<strong>仅供参考、可能延迟或缺失，不构成投资建议</strong>；扩展不替你下单；1.5.5 起的钱包连接是<strong>只读</strong>的（只取公开地址并读取公开链上 / 索引数据），不签名、不授权、不转账，也不能动用你的资产。资产数字来自第三方公开接口，可能延迟或缺失，<strong>仅供参考，不构成投资建议</strong>；$BEM 信仰者投票只是社区表态，与价格、收益及官方立场无关。</p>
 
   <h2>7. 儿童隐私</h2>
   <p>本扩展不面向 13 岁以下儿童，也不会有意收集任何年龄信息。</p>
@@ -150,7 +166,7 @@
   <h2>8. 变更与联系</h2>
   <p>如政策有实质变更，我们会更新本页并同步提升扩展版本号。本项目源码公开，可自行审计数据处理逻辑：<a href="https://github.com/kenter1643/TapePost">github.com/kenter1643/TapePost</a>。如需咨询或反馈，请在 <a href="https://github.com/kenter1643/TapePost/issues">GitHub Issues</a> 提交，或通过 Chrome 网上应用店该扩展页面的「支持 / 开发者联系方式」渠道联系开发者。</p>
 
-  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · AI 默认免 Key 走 X 站内模式，可选 xAI / DeepSeek API · 行情仅取公开只读接口　｜　Last updated: 2026-11-14</footer>
+  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · AI 默认免 Key 走 X 站内模式，可选 xAI / DeepSeek API · 行情与钱包资产仅取公开只读接口 · 打卡只提交匿名日期立场　｜　Last updated: 2026-11-14</footer>
 </div>
 </body>
 </html>

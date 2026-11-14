@@ -853,7 +853,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.4 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.5 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
@@ -861,3 +861,248 @@ if (priceApi) {
     if (v && n) n.textContent = 'v' + v;
   } catch (e) {}
 })();
+
+/* =====================================================================
+ * 1.5.5：钱包 / TapeOut API 资产 / BEM 信仰者投票
+ * popup 只做展示与按钮，抓取、加密、缓存、提醒全在后台，
+ * 钱包地址明文不进入 popup（只回传遮罩后的 0x1234…abcd）。
+ * ===================================================================== */
+const wbxEl = (id) => document.getElementById(id);
+const wbxText = (id, v) => { const e = wbxEl(id); if (e) e.textContent = v; };
+const wbxVal = (id) => { const e = wbxEl(id); return e ? String(e.value || '').trim() : ''; };
+const voteApi = (typeof Vote !== 'undefined') ? Vote : null;
+const assetsApi = (typeof TapeOutAPI !== 'undefined') ? TapeOutAPI : null;
+let voteSummary = null;
+let walletProviders = [];
+
+function wbxStatus(id, msg, bad) {
+  const e = wbxEl(id);
+  if (!e) return;
+  e.textContent = msg || '';
+  e.className = (id === 'walletStatus' ? 'wallet-status' : 'vote-status') + (bad ? ' err' : '');
+}
+
+/* ---------- 投票 ---------- */
+function renderVote(sum) {
+  if (!voteApi || !sum) return;
+  voteSummary = sum;
+  const src = wbxEl('voteSource');
+  if (src) { src.textContent = sum.source === 'network' ? '全网' : '本机'; src.className = sum.source === 'network' ? '' : 'local'; }
+  const remind = wbxEl('voteRemind');
+  if (remind) {
+    remind.className = 'vote-remind' + (sum.checkedIn ? ' done' : '');
+    remind.textContent = sum.checkedIn
+      ? '今日已打卡 ✓ 明天记得再来为 BEM 站台'
+      : '今天还没打卡 · 点一下为 BEM 站台';
+  }
+  const sBtn = wbxEl('voteSupport'), wBtn = wbxEl('voteWatch');
+  if (sBtn) sBtn.className = sum.myStance === 'support' ? 'active' : '';
+  if (wBtn) wBtn.className = sum.myStance === 'watch' ? 'active' : '';
+  wbxText('voteTodaySupport', sum.todayCount.support);
+  wbxText('voteTotalVotes', sum.total.total);
+  wbxText('voteStreak', sum.streak);
+
+  const trend = wbxEl('voteTrend');
+  if (trend) {
+    trend.textContent = '';
+    const max = Math.max(1, ...sum.trend.map((d) => d.total));
+    sum.trend.forEach((d) => {
+      const bar = document.createElement('i');
+      const fill = document.createElement('u');
+      fill.style.height = Math.max(2, Math.round(d.total / max * 24)) + 'px';
+      bar.appendChild(fill);
+      bar.title = d.day + '：支持 ' + d.support + ' · 观望 ' + d.watch;
+      trend.appendChild(bar);
+    });
+  }
+  wbxStatus('voteStatus',
+    (sum.source === 'network' ? '全网账本已同步' : '当前为本机账本（未联到全网账本）') +
+    (sum.pending ? ' · 待补投 ' + sum.pending + ' 票' : '') +
+    ' · 北京时间按天累计');
+  const foot = wbxEl('bemFoot');
+  if (foot) foot.textContent = '🔥 今日 ' + sum.todayCount.support + ' 票支持 · 连续 ' + sum.streak +
+    ' 天 · ' + (sum.source === 'network' ? '全网' : '本机');
+  const cfg = sum.config || voteApi.normalizeConfig(null);
+  const baseEl = wbxEl('voteLedgerBase');
+  if (baseEl && document.activeElement !== baseEl) baseEl.value = cfg.ledgerBase;
+  const en = wbxEl('voteReminderEnabled'); if (en) en.checked = cfg.reminderEnabled;
+  const hr = wbxEl('voteReminderHour'); if (hr) hr.value = String(cfg.reminderHour);
+}
+
+function loadVote() {
+  sendBg({ type: 'VOTE_STATE' }, (r, err) => {
+    if (err || !r || !r.ok) { wbxStatus('voteStatus', '账本读取失败，请重新加载扩展。', true); return; }
+    renderVote(r.summary);
+  });
+}
+
+function castVote(stance) {
+  wbxStatus('voteStatus', '正在记票…');
+  sendBg({ type: 'VOTE_CAST', stance: stance }, (r, err) => {
+    if (err || !r || !r.ok) { wbxStatus('voteStatus', '记票失败：' + String((r && r.error) || (err && err.message) || '后台无响应'), true); return; }
+    renderVote(r.summary);
+    wbxStatus('voteStatus', r.summary.source === 'network'
+      ? '已记入全网账本 ✓ 今日一票，明天记得回来打卡'
+      : '已记入本机账本 ✓ 联网后会自动补投到全网');
+  });
+}
+
+function saveVoteConfig() {
+  const cfg = {
+    ledgerBase: wbxVal('voteLedgerBase'),
+    reminderEnabled: !!(wbxEl('voteReminderEnabled') || {}).checked,
+    reminderHour: Number(wbxVal('voteReminderHour') || 20)
+  };
+  wbxStatus('voteStatus', '保存中…');
+  sendBg({ type: 'VOTE_CONFIG', config: cfg }, (r, err) => {
+    if (err || !r || !r.ok) { wbxStatus('voteStatus', '保存失败：' + String((r && r.error) || '后台无响应'), true); return; }
+    renderVote(r.summary);
+    wbxStatus('voteStatus', '已保存 ✓ 正在重新同步账本…');
+    setTimeout(() => sendBg({ type: 'VOTE_SYNC' }, (s) => { if (s && s.ok) renderVote(s.summary); }), 200);
+  });
+}
+
+/* ---------- 钱包 + 资产 ---------- */
+function fmtAsset(v, digits) {
+  if (v == null || !isFinite(Number(v))) return '—';
+  return assetsApi ? assetsApi.compact(v) : String(v);
+}
+function renderAssets(a) {
+  if (!a) {
+    ['assetMiners', 'assetDaily', 'assetBem', 'assetClaimed', 'assetBnb', 'assetValue']
+      .forEach((id) => wbxText(id, '—'));
+    wbxText('walletSub', '连接钱包后自动读取：矿机 / 预估日产 / 持仓 / 已领取 / BNB / 市值');
+    return;
+  }
+  const c = a.circuits || {}, bem = a.bem || {}, bnb = a.bnb || {}, tr = a.transistors || {};
+  wbxText('assetMiners', c.count == null ? '—' : assetsApi.fmt(c.count, 0));
+  wbxText('assetDaily', fmtAsset(bem.daily));
+  wbxText('assetBem', fmtAsset(bem.balance));
+  wbxText('assetClaimed', fmtAsset(bem.claimedTotal));
+  wbxText('assetBnb', bnb.balance == null ? '—' : assetsApi.fmt(bnb.balance, 4));
+  wbxText('assetValue', fmtAsset(c.marketValueBnb));
+  const v = a.versions || {};
+  const bits = ['TapeOut API v1', 'TapeAPI ' + (v.tapeapi || '3.0.0')];
+  if (v.chainSigned) bits.push('链上签名读取（未本机验签）');
+  if (tr.nand != null || tr.latch != null) {
+    bits.push('NAND ' + assetsApi.fmt(tr.nand, 0) + ' / LATCH ' + assetsApi.fmt(tr.latch, 0));
+  }
+  if (bem.balanceUsd != null) bits.push('持仓约 $' + assetsApi.fmt(bem.balanceUsd, 2));
+  if (a.errors && a.errors.length) bits.push('部分接口未响应：' + a.errors.length + ' 项');
+  wbxText('walletSub', bits.join(' · '));
+}
+
+function renderWallet(r) {
+  if (!r || !r.ok) return;
+  const st = wbxEl('walletState');
+  if (st) { st.textContent = r.bound ? '已连接（只读）' : '未连接'; st.className = r.bound ? 'on' : ''; }
+  wbxText('walletAddr', r.bound
+    ? r.mask + (r.providerName ? ' · ' + r.providerName : '') + (r.chainId ? ' · 链 ' + r.chainId : '')
+    : '未绑定地址 · 只读，不要私钥、不签名、不转账');
+  renderAssets(r.assets);
+  if (r.assetsError) wbxStatus('walletStatus', r.assetsError, true);
+  else if (r.bound && r.assets) wbxStatus('walletStatus', '资产更新 ' + String(r.assets.asOf || '').slice(11, 19) + ' UTC · 仅本机展示');
+}
+
+function loadWallet(force) {
+  sendBg({ type: force ? 'ASSETS_GET' : 'WALLET_STATUS', force: !!force }, (r, err) => {
+    if (err || !r || !r.ok) {
+      wbxStatus('walletStatus', '读取失败：请到 chrome://extensions 重新加载扩展。', true);
+      return;
+    }
+    if (force) {
+      if (r.assets) renderAssets(r.assets);
+      wbxStatus('walletStatus', r.error ? ('部分数据未取到：' + r.error) : '已从 TapeOut API 刷新 ✓');
+    } else renderWallet(r);
+  });
+}
+
+function showProviders(list, note) {
+  const box = wbxEl('walletProviders');
+  if (!box) return;
+  box.textContent = '';
+  walletProviders = Array.isArray(list) ? list : [];
+  if (!walletProviders.length) {
+    const span = document.createElement('span');
+    span.className = 'hint';
+    span.textContent = note || '未检测到注入式钱包';
+    box.appendChild(span);
+    return;
+  }
+  walletProviders.forEach((p) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = p.name || p.id;
+    b.title = '用 ' + (p.name || p.id) + ' 读取公开地址（只读）';
+    b.addEventListener('click', () => connectWith(p.id));
+    box.appendChild(b);
+  });
+}
+
+function connectWith(providerId) {
+  wbxStatus('walletStatus', '正在向钱包请求公开地址…');
+  sendBg({ type: 'WALLET_CONNECT', providerId: providerId || '' }, (r, err) => {
+    if (err || !r || !r.ok) {
+      wbxStatus('walletStatus', '连接失败：' + String((r && r.error) || (err && err.message) || '无响应') +
+        '。可在下方手动填地址。', true);
+      return;
+    }
+    renderWallet(r);
+    wbxStatus('walletStatus', '已连接 ✓ 地址加密存本机，只读资产');
+  });
+}
+
+function connectWallet() {
+  wbxStatus('walletStatus', '正在探测已安装钱包…');
+  sendBg({ type: 'WALLET_PROVIDERS' }, (r, err) => {
+    if (err || !r || !r.ok) { wbxStatus('walletStatus', '探测失败，请手动填地址。', true); return; }
+    const list = r.providers || [];
+    showProviders(list, r.note || '未检测到注入式钱包，可手动填地址');
+    if (list.length === 1) connectWith(list[0].id);
+    else if (list.length > 1) wbxStatus('walletStatus', '检测到 ' + list.length + ' 个钱包，点上面的名称选一个连接');
+    else wbxStatus('walletStatus', '没检测到注入式钱包（OKX / 币安 / TP / MetaMask），可在下方手动填地址');
+  });
+}
+
+if (voteApi) {
+  bind('voteSupport', () => castVote('support'));
+  bind('voteWatch', () => castVote('watch'));
+  bind('voteSaveCfg', saveVoteConfig);
+  bind('voteSync', () => {
+    wbxStatus('voteStatus', '同步中…');
+    sendBg({ type: 'VOTE_SYNC' }, (r) => {
+      if (r && r.ok) { renderVote(r.summary); wbxStatus('voteStatus', '同步完成 ✓'); }
+      else wbxStatus('voteStatus', '同步失败，已保留本机账本。', true);
+    });
+  });
+  bind('voteOpen', () => {
+    const url = (voteSummary && voteSummary.publicPage) || voteApi.publicPage(voteApi.DEFAULT_LEDGER);
+    try { chrome.tabs.create({ url: url, active: true }); } catch (e) {}
+  });
+  loadVote();
+}
+
+if (assetsApi) {
+  bind('walletConnect', connectWallet);
+  bind('walletRefresh', () => loadWallet(true));
+  bind('walletClear', () => {
+    sendBg({ type: 'WALLET_CLEAR' }, (r) => {
+      if (r && r.ok) {
+        renderWallet({ ok: true, bound: false });
+        showProviders([]);
+        wbxStatus('walletStatus', '已断开并删除本机加密地址 ✓');
+      }
+    });
+  });
+  bind('walletManualSave', () => {
+    const addr = wbxVal('walletManualAddr');
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) { wbxStatus('walletStatus', '地址格式不对：要 0x 开头 + 40 位十六进制。', true); return; }
+    wbxStatus('walletStatus', '保存中…');
+    sendBg({ type: 'WALLET_MANUAL', address: addr }, (r, err) => {
+      if (err || !r || !r.ok) { wbxStatus('walletStatus', '保存失败：' + String((r && r.error) || '后台无响应'), true); return; }
+      renderWallet(r);
+      wbxStatus('walletStatus', '已加密保存 ✓ 正在读取资产…');
+    });
+  });
+  loadWallet(false);
+}

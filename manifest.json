@@ -2,10 +2,10 @@
   "manifest_version": 3,
   "name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "author": "TapeOut 社区 · 昆哥",
   "minimum_chrome_version": "116",
-  "description": "7 站点一键转发到 X：图片逐张去水印 + 4K、视频本机剪接与逐帧去水印、多图放大浏览；免 Key 用 X 自带 Grok 生成评论，也可自备 Key 走 xAI / DeepSeek API；内置生态导航核验与行情提醒。",
+  "description": "7 站点一键转发到 X：图片逐张去水印 + 4K、视频本机剪接与逐帧去水印、多图放大浏览；免 Key 用 X 自带 Grok 生成评论，也可自备 Key 走 xAI / DeepSeek API；内置 TapeOut 行情、只读钱包资产（OKX / 币安 / TP 等）、$BEM 信仰者每日打卡全网账本与生态导航核验。",
   "action": {
     "default_popup": "popup.html",
     "default_title": "TapePost · 转发 / AI 评论 / 生态面板",
@@ -23,7 +23,9 @@
     "offscreen",
     "declarativeNetRequest",
     "alarms",
-    "notifications"
+    "notifications",
+    "scripting",
+    "activeTab"
   ],
   "host_permissions": [
     "https://weibo.com/*",
@@ -54,8 +56,11 @@
     "https://api.x.ai/*",
     "https://api.deepseek.com/*",
     "https://api-tapeout.firsto.ai/*",
+    "https://tapeout.firsto.ai/*",
     "https://tapeup.io/*",
-    "https://*.tapeup.io/*"
+    "https://*.tapeup.io/*",
+    "https://api.tapeapi.fun/*",
+    "https://tapepost-privacy.app.workbuddy.host/*"
   ],
   "optional_host_permissions": [
     "https://*/*"

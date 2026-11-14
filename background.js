@@ -1357,3 +1357,388 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
   chrome.runtime.onStartup.addListener(function () { ensureAlarm().catch(function () {}); refresh().catch(function () {}); });
   ensureAlarm().catch(function () {});
 })();
+
+/* =====================================================================
+ * 1.5.5：钱包（只读 + 本机加密） / TapeOut API 资产 / BEM 信仰者全网账本
+ * 独立 IIFE + 独立 listener，不与 CROSSPOST / GROK_* / PRICE_* 三条路由耦合。
+ * ===================================================================== */
+(function walletVoteModule() {
+  try {
+    if (typeof importScripts === 'function') {
+      if (typeof Wallet === 'undefined') importScripts('wallet.js');
+      if (typeof TapeOutAPI === 'undefined') importScripts('tapeout-api.js');
+      if (typeof Vote === 'undefined') importScripts('vote.js');
+    }
+  } catch (e) { console.warn('[bg][1.5.5] 模块加载失败: ' + String(e && e.message || e)); }
+  if (typeof Wallet === 'undefined' || typeof TapeOutAPI === 'undefined' || typeof Vote === 'undefined') return;
+
+  const K_KEY = 'wbxWalletKeyV1';       // 本机 AES-GCM 密钥（base64，随机生成，不同步）
+  const K_SALT = 'wbxVoteSaltV1';        // 本机投票匿名盐
+  const K_BIND = 'wbxWalletBindV1';      // 加密后的地址信封
+  const K_ASSETS = 'wbxAssetsCacheV1';  // 最近一次资产快照
+  const K_VOTE = 'wbxVoteStateV1';       // 账本缓存 / 本机打卡历史 / 待补投
+  const VOTE_ALARM = 'bemVoteDailyCheck';
+  const CRYPTO = (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
+
+  function sget(keys) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.local.get(keys, function (o) { void (chrome.runtime && chrome.runtime.lastError); resolve(o || {}); }); }
+      catch (e) { resolve({}); }
+    });
+  }
+  function sset(obj) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.local.set(obj, function () { void (chrome.runtime && chrome.runtime.lastError); resolve(true); }); }
+      catch (e) { resolve(false); }
+    });
+  }
+  function sremove(keys) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.local.remove(keys, function () { void (chrome.runtime && chrome.runtime.lastError); resolve(true); }); }
+      catch (e) { resolve(false); }
+    });
+  }
+  async function secrets() {
+    const o = await sget([K_KEY, K_SALT]);
+    const key = o[K_KEY] || Wallet.newKey(CRYPTO);
+    const salt = o[K_SALT] || Wallet.newSalt(CRYPTO);
+    if (!o[K_KEY] || !o[K_SALT]) await sset({ [K_KEY]: key, [K_SALT]: salt });
+    return { key: key, salt: salt };
+  }
+  async function fetchJson(url, init, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, ms || 6000);
+    try {
+      const res = await fetch(url, Object.assign({ cache: 'no-store' }, init || {}, { signal: ctrl.signal }));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    } finally { clearTimeout(timer); }
+  }
+
+  /* ---------- 钱包绑定 ---------- */
+  async function saveBinding(address, providerId, providerName, chainId) {
+    const s = await secrets();
+    const payload = await Wallet.encryptText(CRYPTO, s.key, JSON.stringify({
+      address: String(address).toLowerCase(), providerId: providerId || '',
+      providerName: providerName || '', chainId: chainId || '', at: Date.now()
+    }));
+    await sset({ [K_BIND]: payload });
+  }
+  async function readBinding() {
+    const o = await sget([K_BIND, K_KEY]);
+    if (!o[K_BIND] || !o[K_KEY]) return null;
+    const raw = await Wallet.decryptText(CRYPTO, o[K_KEY], o[K_BIND]);
+    if (!raw) return null;
+    try {
+      const j = JSON.parse(raw);
+      return Wallet.normalizeAddress(j.address) ? j : null;
+    } catch (e) { return null; }
+  }
+  /*
+   * 资产快照里带有查询用的完整钱包地址。缓存与发往 popup 的消息都先去掉它：
+   * 明文地址只存在于 AES-GCM 加密的 K_BIND 里，storage.local 的资产缓存与
+   * runtime 消息里只留数字（面板也只需要数字）。
+   */
+  function publicAssets(a) {
+    if (!a || typeof a !== 'object') return a;
+    const out = Object.assign({}, a);
+    delete out.address;
+    return out;
+  }
+  async function assetsOf(binding, mode) {
+    const cached = publicAssets((await sget([K_ASSETS]))[K_ASSETS]);
+    // 'cache'：弹窗首屏只读缓存，不发起 7 个资产请求，避免打开弹窗被网络拖慢；
+    // true / 'force'：连接钱包、手动填地址、点 ↻ 读资产时才真正拉取。
+    if (mode === 'cache') return { assets: cached || null, error: null };
+    if (!mode && cached && cached.fetchedAt && (Date.now() - Date.parse(cached.fetchedAt) < 120000)) {
+      return { assets: cached, error: null };
+    }
+    const snap = (await sget(['tapePriceSnapshot']))['tapePriceSnapshot'];
+    const priceUsd = snap && snap.items && snap.items.bem ? snap.items.bem.value : null;
+    try {
+      const a = await Promise.race([
+        TapeOutAPI.fetchAssets(fetch, binding.address, { priceUsd: priceUsd }),
+        new Promise(function (r) { setTimeout(function () { r(null); }, 11000); })
+      ]);
+      if (!a || !a.ok) return { assets: cached || null, error: (a && a.error) || '资产接口超时' };
+      const clean = publicAssets(a);
+      await sset({ [K_ASSETS]: clean });
+      return { assets: clean, error: a.errors && a.errors.length ? a.errors.join('；') : null };
+    } catch (e) {
+      return { assets: cached || null, error: String(e && e.message || e) };
+    }
+  }
+  async function walletStatus(binding, force) {
+    const a = binding ? await assetsOf(binding, force) : { assets: null, error: null };
+    return {
+      ok: true, bound: !!binding,
+      mask: binding ? Wallet.checksumHint(binding.address) : '',
+      providerName: binding ? (binding.providerName || '') : '',
+      chainId: binding ? (binding.chainId || '') : '',
+      assets: a.assets, assetsError: a.error
+    };
+  }
+
+  /* ---------- 页面 MAIN world 钱包探测 ---------- */
+  async function waitTabLoad(tabId) {
+    return new Promise(function (resolve) {
+      let done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { chrome.tabs.onUpdated.removeListener(onUpd); } catch (e) {}
+        resolve();
+      }
+      function onUpd(id, info) { if (id === tabId && info && info.status === 'complete') finish(); }
+      const timer = setTimeout(finish, 9000);
+      try { chrome.tabs.onUpdated.addListener(onUpd); } catch (e) { finish(); }
+    });
+  }
+  async function runInPage(opts) {
+    let tabs = [];
+    try { tabs = await chrome.tabs.query({ active: true, currentWindow: true }); } catch (e) {}
+    const tab = tabs && tabs[0];
+    if (tab && tab.id && /^https?:/i.test(tab.url || '')) {
+      try {
+        const res = await chrome.scripting.executeScript({
+          target: { tabId: tab.id }, world: 'MAIN', func: Wallet.pageBridge, args: [opts]
+        });
+        const out = res && res[0] && res[0].result;
+        if (out && out.ok && opts.action === 'connect') return out;
+        if (out && out.ok && opts.action === 'list' && out.providers && out.providers.length) return out;
+        // 用户在钱包里点了「拒绝」就不再换页面重试，避免反复弹窗
+        if (out && out.error && /拒绝|rejected|denied/i.test(out.error)) return out;
+      } catch (e) { /* 换到 Firsto 页面重试 */ }
+    }
+    // 当前页不是普通 http(s)、或没探测到注入式钱包时，打开官方交易终端再探测一次
+    try {
+      const t = await chrome.tabs.create({ url: 'https://tapeout.firsto.ai/', active: false });
+      if (!t || !t.id) throw new Error('无法打开连接页');
+      await waitTabLoad(t.id);
+      const res = await chrome.scripting.executeScript({
+        target: { tabId: t.id }, world: 'MAIN', func: Wallet.pageBridge, args: [opts]
+      });
+      const out = res && res[0] && res[0].result;
+      return out || { ok: false, error: '页面没有返回探测结果' };
+    } catch (e) {
+      return { ok: false, error: '钱包探测失败：' + String(e && e.message || e) + '；可手动填地址' };
+    }
+  }
+
+  /* ---------- 全网账本 ---------- */
+  function blankVote() {
+    return { days: {}, localAdd: {}, history: {}, pending: [], totalVotes: 0,
+      config: Vote.normalizeConfig(null), ledgerAvailable: false, lastSyncAt: 0, lastError: '' };
+  }
+  async function voteState() {
+    const raw = (await sget([K_VOTE]))[K_VOTE];
+    const s = Object.assign(blankVote(), Vote.isObj(raw) ? raw : {});
+    s.config = Vote.normalizeConfig(s.config);
+    if (!Vote.isObj(s.days)) s.days = {};
+    if (!Vote.isObj(s.localAdd)) s.localAdd = {};
+    if (!Vote.isObj(s.history)) s.history = {};
+    if (!Array.isArray(s.pending)) s.pending = [];
+    return s;
+  }
+  async function syncLedger(s) {
+    const url = Vote.ledgerUrl(s.config.ledgerBase, '/api/state');
+    try {
+      const j = await fetchJson(url, { headers: { Accept: 'application/json' } }, 6000);
+      const parsed = Vote.parseState(j);
+      if (!parsed) throw new Error('账本返回格式不对');
+      s.days = parsed.days;
+      s.totalVotes = parsed.totalVotes;
+      s.ledgerAvailable = true;
+      s.lastSyncAt = Date.now();
+      s.lastError = '';
+    } catch (e) {
+      s.ledgerAvailable = false;
+      s.lastError = String(e && e.message || e);
+    }
+  }
+  async function flushPending(s, salt) {
+    if (!s.ledgerAvailable || !s.pending.length) return;
+    const keep = [], synced = {};
+    // 一次同步最多补投 5 票，剩下留到下次，避免长时间断网后打开弹窗被拖住
+    const batch = s.pending.slice(0, 5), rest = s.pending.slice(5);
+    for (let i = 0; i < batch.length; i++) {
+      const p = batch[i];
+      try {
+        const j = await fetchJson(Vote.ledgerUrl(s.config.ledgerBase, '/api/vote'), {
+          method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ day: p.day, stance: p.stance, voterId: p.voterId })
+        }, 6000);
+        if (j && j.ok && Vote.isObj(j.days)) {
+          s.days = {};
+          Object.keys(j.days).forEach(function (d) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+            s.days[d] = { support: Math.max(0, Number(j.days[d].support) || 0),
+              watch: Math.max(0, Number(j.days[d].watch) || 0) };
+          });
+          if (Number(j.totalVotes)) s.totalVotes = Number(j.totalVotes);
+          synced[p.day] = 1;
+        } else keep.push(p);
+      } catch (e) { keep.push(p); }
+    }
+    s.pending = keep.concat(rest);
+    Object.keys(synced).forEach(function (d) { delete s.localAdd[d]; });
+    void salt;
+  }
+  async function syncAll(s, salt) {
+    await syncLedger(s);
+    await flushPending(s, salt);
+    await sset({ [K_VOTE]: s });
+    return Vote.summary(s);
+  }
+  function localAddOne(s, day, stance, prev) {
+    if (!s.localAdd[day]) s.localAdd[day] = { support: 0, watch: 0 };
+    if (prev === 'support' || prev === 'watch') {
+      s.localAdd[day][prev] = Math.max(0, (s.localAdd[day][prev] || 0) - 1);
+    }
+    s.localAdd[day][stance] = (s.localAdd[day][stance] || 0) + 1;
+  }
+
+  /* ---------- 打卡提醒 ---------- */
+  async function maybeRemind() {
+    const s = await voteState();
+    const cfg = s.config;
+    if (!cfg.reminderEnabled) return;
+    const day = Vote.dayKey();
+    if (!Vote.needsCheckin(s.history, day)) return;
+    if (cfg.reminderLastDay === day) return;
+    /* 闹钟每 30 分钟醒一次，用「已到或已过设定小时」而不是等于：
+     * 用户安装时刻未必整点，等于判断可能永远碰不上 20 点整。 */
+    if (Vote.beijingHour() < cfg.reminderHour) return;
+    cfg.reminderLastDay = day;
+    s.config = cfg;
+    await sset({ [K_VOTE]: s });
+    try {
+      chrome.notifications.create('bemvote-' + day, {
+        type: 'basic', iconUrl: 'icons/icon128.png',
+        title: 'TapePost · $BEM 信仰者今天还没打卡',
+        message: '今天还没为 $BEM 投支持票，点插件图标打卡，全网按天累计记一笔。',
+        contextMessage: '点击查看全网账本 · TapePost', priority: 1
+      }, function () { void (chrome.runtime && chrome.runtime.lastError); });
+    } catch (e) {}
+  }
+  function ensureVoteAlarm() {
+    try { chrome.alarms.create(VOTE_ALARM, { delayInMinutes: 1, periodInMinutes: 30 }); } catch (e) {}
+  }
+  if (chrome.alarms && chrome.alarms.onAlarm) {
+    chrome.alarms.onAlarm.addListener(function (a) {
+      if (a && a.name === VOTE_ALARM) maybeRemind().catch(function () {});
+    });
+  }
+  if (chrome.notifications && chrome.notifications.onClicked) {
+    chrome.notifications.onClicked.addListener(function (id) {
+      if (!/^bemvote-/.test(String(id || ''))) return;
+      voteState().then(function (s) {
+        try { chrome.tabs.create({ url: Vote.publicPage(s.config.ledgerBase), active: true }); } catch (e) {}
+        try { chrome.notifications.clear(id, function () { void (chrome.runtime && chrome.runtime.lastError); }); } catch (e) {}
+      });
+    });
+  }
+  chrome.runtime.onInstalled.addListener(ensureVoteAlarm);
+  chrome.runtime.onStartup.addListener(ensureVoteAlarm);
+  ensureVoteAlarm();
+
+  /* ---------- 消息路由 ---------- */
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || !/^(WALLET_|ASSETS_|VOTE_)/.test(String(msg.type || ''))) return false;
+    (async function () {
+      const s = await secrets();
+      if (msg.type === 'WALLET_STATUS') {
+        sendResponse(await walletStatus(await readBinding(), 'cache'));
+      } else if (msg.type === 'WALLET_PROVIDERS') {
+        const out = await runInPage({ action: 'list' });
+        sendResponse(out && out.ok
+          ? { ok: true, providers: out.providers || [], note: '' }
+          : { ok: true, providers: [], note: (out && out.error) || '未检测到注入式钱包' });
+      } else if (msg.type === 'WALLET_CONNECT') {
+        const out = await runInPage({ action: 'connect', providerId: String(msg.providerId || '') });
+        if (!out || !out.ok) { sendResponse({ ok: false, error: (out && out.error) || '钱包未连接' }); return; }
+        const addr = Wallet.normalizeAddress(out.address);
+        if (!addr) { sendResponse({ ok: false, error: '钱包返回的地址无效' }); return; }
+        let chain = String(out.chainId || '');
+        if (/^0x/i.test(chain)) chain = String(parseInt(chain, 16));
+        const pname = out.providerId ? Wallet.providerName(out.providerId, out.providerId) : '注入式钱包';
+        await saveBinding(addr, out.providerId || '', pname, chain);
+        const b = await readBinding();
+        sendResponse(await walletStatus(b, true));
+      } else if (msg.type === 'WALLET_MANUAL') {
+        const addr = Wallet.normalizeAddress(msg.address);
+        if (!addr) { sendResponse({ ok: false, error: '地址格式不对（要 0x + 40 位十六进制）' }); return; }
+        await saveBinding(addr, 'manual', '手动填写', String(TapeOutAPI.CHAIN_ID));
+        sendResponse(await walletStatus(await readBinding(), true));
+      } else if (msg.type === 'WALLET_CLEAR') {
+        await sremove([K_BIND, K_ASSETS]);
+        sendResponse({ ok: true });
+      } else if (msg.type === 'ASSETS_GET') {
+        const b = await readBinding();
+        if (!b) { sendResponse({ ok: false, error: '还没有连接钱包' }); return; }
+        const a = await assetsOf(b, true);
+        sendResponse({ ok: true, assets: a.assets, error: a.error });
+      } else if (msg.type === 'VOTE_STATE') {
+        const st = await voteState();
+        sendResponse({ ok: true, summary: await syncAll(st, s.salt) });
+      } else if (msg.type === 'VOTE_SYNC') {
+        const st = await voteState();
+        sendResponse({ ok: true, summary: await syncAll(st, s.salt) });
+      } else if (msg.type === 'VOTE_CONFIG') {
+        const st = await voteState();
+        const next = Vote.normalizeConfig(Object.assign({}, st.config, msg.config || {}));
+        // 改了提醒时间就允许当天再提醒一次，避免旧的 lastDay 把新设置压住
+        if (next.reminderHour !== st.config.reminderHour || next.reminderEnabled !== st.config.reminderEnabled) {
+          next.reminderLastDay = '';
+        }
+        st.config = next;
+        await sset({ [K_VOTE]: st });
+        sendResponse({ ok: true, summary: Vote.summary(st) });
+      } else if (msg.type === 'VOTE_CAST') {
+        const stance = String(msg.stance || '');
+        if (Vote.STANCES.indexOf(stance) < 0) { sendResponse({ ok: false, error: '无效的立场' }); return; }
+        const st = await voteState();
+        const day = Vote.dayKey();
+        const prev = st.history[day] || '';
+        const voter = await Wallet.voterId(CRYPTO, s.salt, day);
+        st.history[day] = stance;
+        let posted = false;
+        try {
+          const j = await fetchJson(Vote.ledgerUrl(st.config.ledgerBase, '/api/vote'), {
+            method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ day: day, stance: stance, voterId: voter })
+          }, 6500);
+          if (j && j.ok && Vote.isObj(j.days)) {
+            st.days = {};
+            Object.keys(j.days).forEach(function (d) {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+              st.days[d] = { support: Math.max(0, Number(j.days[d].support) || 0),
+                watch: Math.max(0, Number(j.days[d].watch) || 0) };
+            });
+            if (Number(j.totalVotes)) st.totalVotes = Number(j.totalVotes);
+            st.ledgerAvailable = true;
+            st.lastSyncAt = Date.now();
+            st.lastError = '';
+            delete st.localAdd[day];
+            st.pending = st.pending.filter(function (p) { return p.day !== day; });
+            posted = true;
+          }
+        } catch (e) { st.lastError = String(e && e.message || e); }
+        if (!posted) {
+          st.ledgerAvailable = false;
+          localAddOne(st, day, stance, prev);
+          st.pending = st.pending.filter(function (p) { return p.day !== day; });
+          st.pending.push({ day: day, stance: stance, voterId: voter });
+        }
+        await sset({ [K_VOTE]: st });
+        sendResponse({ ok: true, summary: Vote.summary(st), posted: posted });
+      } else {
+        sendResponse({ ok: false, error: '未知消息类型' });
+      }
+    })().catch(function (e) {
+      try { sendResponse({ ok: false, error: String(e && e.message || e) }); } catch (e2) {}
+    });
+    return true; // 异步回包
+  });
+})();
