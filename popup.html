@@ -334,6 +334,14 @@
     .asset-grid.xlayer-grid { margin-top:var(--sp-1); }
     .asset-grid.xlayer-grid > div { background:rgba(167,139,250,.08); border-color:rgba(167,139,250,.30); }
     .asset-grid.xlayer-grid b { color:var(--violet-soft); }
+    /* 1.5.13：TapeUP 站内资产（页面采集，非链上读取），用琥珀色与两条链区分 */
+    .chain-head.up { color:var(--brand-400); }
+    .chain-head.up .dot { background:#ff9d4d; }
+    .asset-grid.tapeup-grid { margin-top:var(--sp-1); }
+    .asset-grid.tapeup-grid > div { background:rgba(255,157,77,.08); border-color:rgba(255,157,77,.30); }
+    .asset-grid.tapeup-grid b { color:#ffd08a; }
+    .tapeup-hint { font-size:var(--fs-micro); color:var(--text-3); line-height:1.55; margin-top:var(--sp-1); }
+    .tapeup-hint a { color:var(--brand-400); text-decoration:none; }
     .wallet-sub { font-size:var(--fs-micro); color:var(--text-3); line-height:1.55; }
     .wallet-status { margin-top:var(--sp-1); }
     .wallet-status.err { color:var(--danger); }
@@ -357,7 +365,7 @@
 </head>
 <body>
   <!-- 1.5.10：标题补回 TapePost，插件全名为「TapePost信仰者工具」；品牌字标与中文名分层，靠 5px 视觉间距分隔 -->
-  <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.12</span></h1>
+  <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.13</span></h1>
 
   <!-- 1.5.5：BEM 置顶为主卡（最大字号），TapeUP / 矿机日产并排第二行；描述一律 8px -->
   <section class="tape-prices" id="pricePanel">
@@ -487,6 +495,17 @@
       <div><b id="xlOkb">—</b><span>OKB 余额</span></div>
     </div>
     <div class="wallet-sub" id="xlayerSub"></div>
+    <!-- 1.5.13：TapeUP「我的资产」页采集值，与 BSC / X Layer 链上读取分开标注 -->
+    <div class="chain-head up"><span class="dot"></span>TapeUP · $UP 我的资产<span class="state" id="tapeupState">未采集</span></div>
+    <div class="asset-grid tapeup-grid" id="tapeupGrid">
+      <div><b id="tupHeld">—</b><span>持仓 UP</span></div>
+      <div><b id="tupPending">—</b><span>待释放（BEM 预算）</span></div>
+      <div><b id="tupBoost">—</b><span>可加速释放</span></div>
+      <div><b id="tupValue">—</b><span>持仓估值（USD）</span></div>
+      <div><b id="tupChange">—</b><span>24H 涨跌幅</span></div>
+      <div><b id="tupTokens">—</b><span>代币数</span></div>
+    </div>
+    <div class="wallet-sub" id="tapeupSub"></div>
     <div class="wallet-status" id="walletStatus"></div>
     <details class="wallet-manual">
       <summary>✍️ 手动填写地址（没装注入式钱包时用）</summary>

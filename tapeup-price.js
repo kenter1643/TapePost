@@ -25,6 +25,11 @@
  * 与左上角图例「收=0.31542257」一致）。浮层首行改为直接显示这个动态价，第二行
  * 完整保留页头「0.0254 BEM/UP · $0.3154 · +19.25%」三个数；回传也带上 livePrice
  * 等字段，供弹窗主值与提醒使用。
+ *
+ * 1.5.13：同一脚本兼顾「我的资产」页（/zh/trade/assets）。持仓 / 待释放 / 可加速释放 /
+ * 持仓估值 / 24H涨跌幅由 TapePrice.extractAssets 从页面文本解析后回传 TAPUP_ASSETS，
+ * 后台清洗缓存，弹窗新增 TapeUP 资产区。未连接钱包时不写缓存；页面右下角另有一个
+ * 独立浮层显示采集结果与原始片段，便于真机校准（价格浮层输出一字未改）。
  */
 (function () {
   if (!window.TapePrice || typeof window.TapePrice.extractUp !== 'function') {
@@ -95,7 +100,97 @@
     el.textContent = lines.join('\n');
   }
 
+  /* ---------- 1.5.13：TapeUP「我的资产」页采集 ----------
+   * /zh/trade/assets（含多语言前缀）显示持仓 / 待释放 / 可加速释放 / 估值 / 24H涨跌。
+   * 这些不是链上 balanceOf 能读到的（待释放是 PoB 买入预算），且整站有 Cloudflare，
+   * 后台 fetch 会被 403，所以和内盘价一样：在本页读已渲染的文本，回传后台缓存。
+   * 不读取钱包地址、不注入页面脚本、不调用站内接口。 */
+  var ASSET_LABELS = { held: '持仓', pending: '待释放', boostable: '可加速',
+    valueUsd: '估值', changePct: '24H' };
+  var lastAssetsSig = '', lastAssetsScan = 0;
+
+  function isAssetsPage() {
+    try { return /\/trade\/assets(?:\/|[?#]|$)/i.test(location.pathname + location.search); }
+    catch (e) { return false; }
+  }
+  function assetVal(r, k) {
+    var f = r.fields && r.fields[k];
+    if (!f) return '—';
+    return (k === 'valueUsd' ? '$' : '') + f.value +
+      (k === 'changePct' ? '%' : '') + (f.unit && k !== 'changePct' && k !== 'valueUsd' ? ' ' + f.unit : '');
+  }
+  function ensureAssetProbe() {
+    var el = document.getElementById('__tpup_assets_probe');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = '__tpup_assets_probe';
+    el.setAttribute('style', 'position:fixed;left:8px;bottom:8px;z-index:2147483646;' +
+      'font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#ffd08a;' +
+      'background:rgba(0,0,0,.66);padding:5px 8px;border-radius:7px;max-width:380px;' +
+      'max-height:60vh;cursor:pointer;white-space:pre-wrap;word-break:break-word;' +
+      'overflow-y:auto;box-shadow:0 0 0 1px rgba(255,190,90,.28);');
+    el.title = 'TapePost 我的资产采集（点击展开原始片段，便于真机校准）';
+    el.addEventListener('click', function () { el.__open = !el.__open; paintAssetProbe(); });
+    (document.body || document.documentElement).appendChild(el);
+    return el;
+  }
+  function paintAssetProbe(r) {
+    r = r || latestAssets;
+    var el = document.getElementById('__tpup_assets_probe');
+    if (!el || !r) return;
+    var got = Object.keys(r.fields || {}).length;
+    var head = 'TapePost资产: ' + (r.connected ? '已连接' : '未连接钱包') +
+      ' · ' + got + '/5 列 · ' + (r.tokenName || 'UP');
+    var line = '持仓 ' + assetVal(r, 'held') + ' · 待释放 ' + assetVal(r, 'pending') +
+      '\n可加速 ' + assetVal(r, 'boostable') + ' · 估值 ' + assetVal(r, 'valueUsd') +
+      ' · 24H ' + assetVal(r, 'changePct');
+    if (!el.__open) { el.textContent = head + '\n' + line + '\n点开看原始片段 ▾'; return; }
+    var lines = [head + ' ▴', line, '策略 ' + r.strategy + ' · 表头 ' + (r.headerFound ? '命中' : '未命中') +
+      ' · 页面文本 ' + r.textLen + ' 字', '说明 ' + (r.note || '—')];
+    Object.keys(ASSET_LABELS).forEach(function (k) {
+      var f = r.fields[k];
+      lines.push(ASSET_LABELS[k] + '：' + (f ? (f.raw || String(f.value)) : '—'));
+    });
+    lines.push('采集 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) +
+      ' · 未连接钱包不写缓存');
+    el.textContent = lines.join('\n');
+  }
+
+  var latestAssets = null;
+  function sendAssets(force) {
+    if (!isAssetsPage() || typeof T.extractAssets !== 'function') return;
+    var now = Date.now();
+    if (!force && now - lastAssetsScan < 1500) return;
+    lastAssetsScan = now;
+    var r = T.extractAssets(document);
+    latestAssets = r;
+    ensureAssetProbe();
+    paintAssetProbe(r);
+    // 未连接钱包 / 一个字段都没认出时不回传，避免用空表覆盖上次的有效缓存
+    if (!r || !r.ok) return;
+    var sig = JSON.stringify([r.tokenName, r.tokenCount, r.fields, r.note, r.strategy]);
+    if (sig === lastAssetsSig) return;
+    var payload = {
+      ok: r.ok, connected: r.connected, tokenCount: r.tokenCount,
+      tokenName: r.tokenName, fields: r.fields, note: r.note,
+      strategy: r.strategy, at: Date.now()
+    };
+    try {
+      // 1.5.11 同款冷启动保护：先发 TAPE_WAKE 让 service worker 把顶层代码跑完，
+      // 再发业务消息；发失败就清掉签名，下一轮（3 秒）自动重发。
+      chrome.runtime.sendMessage({ type: 'TAPE_WAKE' }, function () {
+        try {
+          chrome.runtime.sendMessage({ type: 'TAPUP_ASSETS', payload: payload }, function () {
+            if (chrome.runtime && chrome.runtime.lastError) lastAssetsSig = '';
+          });
+          lastAssetsSig = sig;
+        } catch (e) { lastAssetsSig = ''; }
+      });
+    } catch (e) { lastAssetsSig = ''; }
+  }
+
   function send() {
+    ensureProbe();   // 1.5.13 补回：此前定义了却没调用，价格调试角标一直没渲染
     var r = T.extractUp(document);
     paintProbe(r);
     // 1.4.23：页头三项都在、但动态价抓到时也要回传（哪怕 BEM/UP 暂缺）
@@ -127,15 +222,16 @@
 
   function start() {
     send();
+    sendAssets(true);
     try {
       if (window.MutationObserver) {
         // 价格常是异步渲染 / SPA 切交易对时才出现，监听子树变化补抓
-        var obs = new MutationObserver(function () { send(); });
+        var obs = new MutationObserver(function () { send(); sendAssets(); });
         obs.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
       }
     } catch (e) { /* 某些环境不支持，下面轮询兜底 */ }
     // 限频补确认：每 3 秒再核对一次（SPA 路由切换 / 数据延迟都能覆盖）
-    setInterval(send, 3000);
+    setInterval(function () { send(); sendAssets(); }, 3000);
   }
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {

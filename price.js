@@ -352,6 +352,158 @@ var TapePrice = (function () {
     }, liveFields);
   }
 
+  /*
+   * 1.5.13：TapeUP「我的资产」页采集（/zh/trade/assets 等）。
+   *
+   * 为什么不是「凭地址调接口」：tapeup.io 整站 Cloudflare，后台 fetch 直接 403；
+   * 且「待释放 / 可加速释放」是 PoB 引擎的站内买入预算，不是链上锁仓，
+   * 标准 balanceOf 读不到。所以沿用 1.4.16 内盘价的老办法——在用户浏览器里
+   * 读已经渲染好的页面文本，纯文本多策略解析，不猜接口、不注入页面脚本。
+   *
+   * 页面是 Cloudflare 后的 Next.js，class 随时会变，所以两套策略互为兜底：
+   *   A 表格布局：表头「名称 持仓 待释放 可加速释放 持仓估值 24H涨跌幅 操作」
+   *     之后按列顺序取数字，带 $ / % 的按单位归类；
+   *   B 卡片布局：找「标签 + 邻近数字」，表头整段先剥掉，避免把
+   *     「持仓估值24H涨跌幅」里的 24 误当成持仓。
+   * 认不出的字段一律留 null，绝不用页面上无关数字凑数。
+   */
+  var ASSET_KEYS = ['held', 'pending', 'boostable', 'valueUsd', 'changePct'];
+  var ASSET_LABELS = {
+    held: ['持仓', '持有量', 'Balance', 'Holdings'],
+    pending: ['待释放', '待解锁', 'Pending release', 'Pending'],
+    boostable: ['可加速释放', '可加速', 'Acceleratable', 'Boostable'],
+    valueUsd: ['持仓估值', '估值', 'Portfolio value', 'Value'],
+    changePct: ['24H涨跌幅', '24h涨跌幅', '涨跌幅', '24h Change', 'Change']
+  };
+  // 中英文表头整段，命中后从文本里剥掉，数据区才不会被表头数字污染
+  var ASSET_HEADERS = [
+    /名称\s*持仓\s*待释放\s*可加速释放\s*持仓估值\s*24\s*H?\s*涨跌幅\s*操作/gi,
+    /名称\s*持仓\s*待释放\s*可加速释放\s*持仓估值\s*涨跌幅\s*操作/gi,
+    /Token\s*Balance\s*Pending\s*Boostable\s*Value\s*24\s*h?\s*Change\s*Action/gi
+  ];
+  var ASSET_CONNECT_HINTS = [
+    /请先连接钱包/, /请连接钱包/, /连接钱包后查看/, /Connect\s*(your\s*)?wallet/i
+  ];
+
+  function clip(s, max) {
+    var t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return t.length > max ? t.slice(0, max) : t;
+  }
+  function nearNum(text, labels, maxGap) {
+    // 标签后 maxGap 个字符内的第一个数字；跳过明显是另一个标签的中文串
+    for (var i = 0; i < labels.length; i++) {
+      var re = new RegExp(labels[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+        '(?:[^\\d+\\-]{0,' + (maxGap || 12) + '}?)([+-]?\\d[\\d,]*(?:\\.\\d+)?)\\s*(%|\\$|USD|BEM|UP)?', 'i');
+      var m = re.exec(text);
+      if (!m) continue;
+      var v = stripNum(m[1]);
+      if (v == null) continue;
+      // 「持仓估值24」这类表头残留不认：数字后面紧跟 H / 中文标签的丢弃
+      return { value: v, raw: clip(m[0], 32), unit: clip(m[2] || '', 8) };
+    }
+    return null;
+  }
+
+  function extractAssets(source) {
+    var raw = toPageText(source);
+    var text = raw.replace(/\s+/g, ' ').trim();
+    var out = {
+      ok: false, connected: false, tokenCount: null,
+      tokenName: '', fields: {}, note: '', textLen: text.length,
+      headerFound: false, strategy: 'none'
+    };
+    if (!text) { out.note = '页面无可见文本'; return out; }
+    // 未连接钱包时页面只有表头和「请先连接钱包」，不能把空表当资产写进缓存
+    out.connected = !ASSET_CONNECT_HINTS.some(function (re) { return re.test(text); });
+    var cnt = /共\s*(\d+)\s*个代币/.exec(text);
+    out.tokenCount = cnt ? stripNum(cnt[1]) : null;
+    if (cnt && out.tokenCount === 0) out.connected = false;
+
+    var body = text, headerFound = false;
+    ASSET_HEADERS.forEach(function (re) {
+      if (headerFound) return;
+      re.lastIndex = 0;   // 模块级共享的 g 正则：不重置会让第 2 次采集匹配失败
+      var m = re.exec(body);
+      if (m) {
+        headerFound = true;
+        out.headerFound = true;
+        // 表头之前的内容（导航/菜单）也一起去掉，只留表头之后的数据区
+        body = body.slice(m.index + m[0].length);
+      }
+    });
+    if (!headerFound) {
+      // 卡片式 / 未知版式：仍可用表头标签本身定位，但要排除「持仓估值24」误命中
+      body = text.replace(/持仓估值\s*24\s*H?\s*涨跌幅/gi, ' ')
+                 .replace(/持仓明细/g, ' ');
+    }
+    // 数据区只取前 320 字，避免「持仓明细」后面的历史成交记录混进来
+    body = body.slice(0, 320);
+
+    /* 策略 A：表头后按列顺序。数字连同单位一起抓，带 % / $ 的单独归类，
+       其余按 held → pending → boostable 依次填。 */
+    if (headerFound) {
+      // 代币名＝表头之后、第一个数字之前的那段文字（UP / TapeUP UP 等）
+      var nm = /^\s*([A-Za-z\u4e00-\u9fa5][A-Za-z0-9\u4e00-\u9fa5\s]{0,15}?)\s*(?=[+-]?\d)/.exec(body);
+      if (nm) out.tokenName = clip(nm[1], 16);
+      // 美元符号可能写在数字前面（$31.81）或后面（31.81 USD），两种都认
+      var cells = [], numRe = /(\$|USD\s*)?([+-]?\d[\d,]*(?:\.\d+)?)\s*(%|\$|USD|BEM|UP)?/g, mm;
+      while ((mm = numRe.exec(body)) !== null) {
+        var v = stripNum(mm[2]);
+        if (v == null) continue;
+        var unit = clip(mm[3] || (mm[1] ? '$' : ''), 8);
+        cells.push({ value: v, unit: unit, raw: clip(mm[0], 32) });
+        if (cells.length >= 8) break;
+      }
+      var ordered = [];
+      cells.forEach(function (c) {
+        if (c.unit === '%') out.fields.changePct = c;
+        else if (c.unit === '$' || /^USD$/i.test(c.unit)) out.fields.valueUsd = c;
+        else ordered.push(c);
+      });
+      ['held', 'pending', 'boostable'].forEach(function (k, i) {
+        if (!out.fields[k] && ordered[i]) out.fields[k] = ordered[i];
+      });
+      out.strategy = Object.keys(out.fields).length ? 'columns' : 'labels';
+    }
+    /* 策略 B：卡片式标签邻近；也用来补齐 A 没抓到的列。 */
+    ASSET_KEYS.forEach(function (k) {
+      if (out.fields[k]) return;
+      var f = nearNum(body, ASSET_LABELS[k], k === 'held' ? 8 : 16);
+      if (f) { out.fields[k] = f; if (out.strategy === 'none' || out.strategy === 'labels') out.strategy = 'labels'; }
+    });
+
+    var got = ASSET_KEYS.filter(function (k) { return out.fields[k]; });
+    out.ok = out.connected && got.length > 0;
+    out.note = !out.connected ? '页面提示先连接钱包'
+      : (got.length ? ('命中 ' + got.length + '/5 列（' + out.strategy + '）') : '页面已连接但没认出数值列');
+    return out;
+  }
+
+  /*
+   * 回传后台前的白名单清洗：只留数值、单位与极短的原始片段。
+   * 不收地址、不收页面长文本、不收调试候选，缓存和发往 popup 的消息都用这一份。
+   */
+  function cleanAssets(p) {
+    if (!isObj(p)) return null;
+    var f = isObj(p.fields) ? p.fields : {};
+    var out = {
+      ok: !!p.ok, connected: !!p.connected,
+      at: num(p.at) || Date.now(),
+      tokenCount: num(p.tokenCount),
+      tokenName: clip(p.tokenName, 16),
+      note: clip(p.note, 80),
+      source: 'tapeup.io 我的资产页',
+      fields: {}
+    };
+    ASSET_KEYS.forEach(function (k) {
+      var v = isObj(f[k]) ? f[k] : null;
+      var n = num(v && v.value);
+      if (n == null) return;
+      out.fields[k] = { value: n, raw: clip(v.raw, 32), unit: clip(v.unit, 8) };
+    });
+    return Object.keys(out.fields).length ? out : null;
+  }
+
   // 把内容脚本采集到的内盘价并入快照（按新鲜度给 stale 标记，过期则沿用上一次、不直接拿旧值误报）
   function mergeUp(prev, cachedUp, nowMs) {
     var now = num(nowMs);
@@ -576,6 +728,9 @@ var TapePrice = (function () {
     parseBem: parseBem,
     parseMiner: parseMiner,
     extractUp: extractUp,
+    extractAssets: extractAssets,
+    cleanAssets: cleanAssets,
+    ASSET_KEYS: ASSET_KEYS,
     mergeUp: mergeUp,
     withUp: withUp,
     fetchSnapshot: fetchSnapshot,

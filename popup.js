@@ -867,7 +867,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.12 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.13 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
@@ -1143,6 +1143,46 @@ function renderAssets(a) {
   renderXLayer(a.xlayer);
 }
 
+/* 1.5.13：TapeUP「我的资产」。与上面两条链不同，它是用户在 tapeup.io 资产页
+ * 已连接钱包时看到的展示值（页面采集、本机缓存），不是按地址查的链上余额，
+ * 所以单独一组，标注来源与采集时间，避免被误当成链上数据。 */
+const TUP_IDS = ['tupHeld', 'tupPending', 'tupBoost', 'tupValue', 'tupChange', 'tupTokens'];
+function tupNum(v, key) {
+  if (v == null || !isFinite(Number(v))) return '—';
+  const n = Number(v);
+  if (key === 'changePct') return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
+  if (key === 'valueUsd') return '$' + (assetsApi ? assetsApi.fmt(n, 2) : n.toFixed(2));
+  return assetsApi ? assetsApi.compact(n) : String(n);
+}
+function renderTapeUpAssets(t) {
+  const f = (t && t.fields) || {};
+  if (!Object.keys(f).length) {
+    TUP_IDS.forEach((id) => wbxText(id, '—'));
+    wbxText('tapeupState', '未采集');
+    wbxText('tapeupSub', '打开 tapeup.io →「我的资产」并连接钱包后自动读取；数据来自页面展示值，不是链上余额，只存本机。待释放 / 可加速释放是 PoB 买入预算。');
+    return;
+  }
+  wbxText('tupHeld', tupNum(f.held && f.held.value, 'held'));
+  wbxText('tupPending', tupNum(f.pending && f.pending.value, 'pending'));
+  wbxText('tupBoost', tupNum(f.boostable && f.boostable.value, 'boostable'));
+  wbxText('tupValue', tupNum(f.valueUsd && f.valueUsd.value, 'valueUsd'));
+  wbxText('tupChange', tupNum(f.changePct && f.changePct.value, 'changePct'));
+  wbxText('tupTokens', t.tokenCount == null ? '—' : String(t.tokenCount));
+  const chg = wbxEl('tupChange');
+  if (chg && f.changePct && isFinite(Number(f.changePct.value))) {
+    // 涨红跌绿（国内习惯），只改这一格，不影响整组设计令牌
+    chg.style.color = Number(f.changePct.value) > 0 ? '#ff6b6b'
+      : (Number(f.changePct.value) < 0 ? '#4ade80' : '');
+  }
+  const at = Number(t.at) || 0;
+  const hhmm = at ? new Date(at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '—';
+  wbxText('tapeupState', '页面采集 · ' + hhmm);
+  const bits = ['来源 tapeup.io 我的资产页' + (t.tokenName ? ' · ' + t.tokenName : ''),
+    '待释放 / 可加速释放为 PoB 买入预算（BEM），不是链上锁仓', '仅供参考'];
+  if (t.stale) bits.push('超过 30 分钟未刷新，请重新打开资产页');
+  wbxText('tapeupSub', bits.join(' · '));
+}
+
 function renderWallet(r) {
   if (!r || !r.ok) return;
   const st = wbxEl('walletState');
@@ -1151,6 +1191,7 @@ function renderWallet(r) {
     ? r.mask + (r.providerName ? ' · ' + r.providerName : '') + (r.chainId ? ' · 链 ' + r.chainId : '')
     : '未绑定地址 · 只读，不要私钥、不签名、不转账');
   renderAssets(r.assets);
+  renderTapeUpAssets(r.tapeup);
   if (r.assetsError) wbxStatus('walletStatus', r.assetsError, true);
   else if (r.bound && r.assets) wbxStatus('walletStatus', '资产更新 ' + String(r.assets.asOf || '').slice(11, 19) + ' UTC · 仅本机展示');
 }
@@ -1163,6 +1204,7 @@ function loadWallet(force) {
     }
     if (force) {
       if (r.assets) renderAssets(r.assets);
+      renderTapeUpAssets(r.tapeup);
       wbxStatus('walletStatus', r.error ? ('部分数据未取到：' + r.error) : '已刷新 BSC + X Layer 双链资产 ✓');
     } else renderWallet(r);
   });

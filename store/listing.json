@@ -1,7 +1,7 @@
 {
   "product_name": "TapePost信仰者工具",
   "short_name": "TapePost信仰者工具",
-  "version": "1.5.12",
+  "version": "1.5.13",
   "manifest_description_132": "7 站一键转发到 X：逐张去水印 + 4K、视频剪接；免 Key 站内 Grok，可切 xAI / DeepSeek；BEM 行情 + 钱包双链资产（BSC BEM/矿机、X Layer FAB/矿机/OKB）；连钱包为 $BEM 打卡，名片可改可存；导航核验。",
   "summary_132": "7 站内容转 X 草稿（去水印 4K、视频剪接）；免 Key 站内 Grok / 可切 xAI、DeepSeek；BEM 行情 + 钱包双链资产（BSC BEM/矿机、X Layer FAB/矿机/OKB）；打卡全网账本；生态导航核验。",
   "category": "productivity",
@@ -10,6 +10,7 @@
     "en"
   ],
   "detailed_description": [
+    "【1.5.13：TapeUP「我的资产」接入面板】用户问「凭钱包地址能否读到 tapeup.io/zh/trade/assets 的我的资产」。实测该站整站 Cloudflare 防护（后台 fetch 返回 403），且「待释放 / 可加速释放」是 PoB 引擎的站内买入预算、不是链上锁仓，ERC-20 balanceOf 读不到；因此沿用 1.4.16 内盘价的成熟做法：由已注入 tapeup.io 全站的内容脚本，在用户自己打开「我的资产」页并连接钱包后，读取该页已显示的持仓 / 待释放 / 可加速释放 / 持仓估值 / 24H 涨跌幅，按表头或标签多策略解析，白名单清洗后回传后台存本机缓存；弹窗新增独立的「TapeUP · $UP 我的资产」组，标注来源、采集时间与「仅供参考」，与 BSC / X Layer 两组链上只读数字明确分开。未连接钱包或一栏都没认出时不写缓存；页面角标可展开查看采集到的原始片段，便于真机校准。数据只在页面会话内采集、只存本机、不上传、不读取钱包地址或凭据、不向该域发起额外网络请求、不调用站内接口；不新增权限 / 主机权限 / 域名 / 数据接收方 / 运行时文件，permissions 仍 9 项、host_permissions 仍 36 条、商店包仍 29 文件。顺带补回 1.4.22 起定义了却未调用的价格调试角标创建函数，并修复模块级全局正则 lastIndex 残留导致第二次采集列数变少的问题。",
     "【1.5.12：视频逐帧去水印真正生效】修复用户反馈的「视频去水印勾了，导出的视频水印依然存在」。根因是视频帧复用了为静态高清图片调参的水印检测阈值，而视频被缩放到 540~720p、经 H.264 压缩、水印多为半透明且只有十几像素高，检测几乎恒为「未检出」；加上只有首帧检测、检不出也不提示，整段视频等于原画面输出。本版：① 视频链路单独放宽检测参数，片头每 3 帧扫一次避开黑帧片头、之后约每 1 秒重检一次，可跟随移动水印；② 视频工作台新增「水印位置」，提供右上 / 右下 / 左上 / 左下 / 顶部整条 / 底部整条 / 中间预设（可多选）与预览拖框，手动框逐帧无条件重建，保证用户指出位置就一定生效；③ 改用同帧内左右 + 上下双向插值的重建算法，避免图片版按列插值在运动画面上拉出竖条纹；④ 自动一个框都没命中时结果栏明确报警并指引改用手动框，不再静默报「生成完成」。全程仍在本机离屏文档内做像素处理，不上传视频、不新增权限 / 域名 / 数据接收方 / 运行时文件，permissions 仍 9 项、host_permissions 仍 36 条、商店包仍 29 文件；图片去水印逻辑一字未动。",
     "【1.5.11：后台连接自愈，不用再手动刷新页面】修复用户反馈的「插件后台连接断开，请刷新微博页面 Cmd+R」：根因是 MV3 后台 service worker 空闲被回收后冷启动的第一条消息丢失，并非页面或插件损坏。新版在页面侧统一消息通道，先唤醒后台、再对冷启动竞态错误自动指数退避重连并显示重连进度，成功后自动继续原操作；后台在文件最顶部注册最小唤醒监听器消除竞态，弹窗同样加入退避重试。仅当扩展确实被重新加载、旧页面脚本上下文永久失效时，才弹出可取消的倒计时条自动刷新本页，替代手动 Cmd+R，并有防循环保护。不新增权限、域名、数据接收方或运行时文件，商店包仍 29 文件。",
     "【1.5.10：标题补回 TapePost + 按大厂设计规范统一 UI/UE】① 插件全名统一为「TapePost信仰者工具」：工具栏弹窗与侧边栏面板标题都显示完整名称（品牌字标 TapePost + 中文名分层），manifest / 上架资料 / 隐私政策的产品名同步，不再遗漏 TapePost。② 参考 Ant Design / TDesign / Material 3 / Apple HIG 对两块面板做一轮统一调整：建立完整设计令牌（色板 / 字阶 / 4pt 间距 / 圆角 / 阴影 / 动效），把散落的 8~15px 收敛为 10/11/12/13/16/30 有限字阶并提升辅助文字可读性，统一 hover / active / focus-visible / disabled 交互状态与最小点击区域，补齐键盘焦点环、滚动条、prefers-reduced-motion 与 prefers-contrast 支持；修复侧边栏跑道条纹被背景遮挡、全局 details 样式污染嵌套折叠块两处缺陷。纯界面与文案改动：不新增权限 / 域名 / 数据接收方，permissions 仍 9 项、host_permissions 仍 36 条、商店包仍 29 文件。",
@@ -97,14 +98,14 @@
     "declarativeNetRequest": "为图片/视频 CDN 请求设置对应站点的 Referer 请求头，绕过图床防盗链（否则图片 403）。规则为固定 9 条静态规则，不拦截、重定向或监控任何其它流量。",
     "alarms": "1.4.13 起用于后台定时（默认每 30 分钟、用户可改）检查公开行情是否越过用户自设阈值；只在 chrome.storage 保存上次状态，不读取网页内容、不上传数据。",
     "notifications": "1.4.13 起仅在用户开启提醒且行情越界时，用 chrome.notifications 发一条系统通知；通知文字只含公开行情数字与阈值，不含个人信息。 1.5.5 起另用于用户开启的 $BEM 每日打卡提醒（默认北京时间 20:00，一天最多一条，可在设置里关闭），通知文字不含任何个人数据。 【1.5.6】打卡提醒文案改为引导用户连接钱包后打卡，通知本身不含个人数据。",
-    "host_permissions": "7 个来源站与其媒体 CDN 用于读取当前条目内容并注入 Referer；api-tapeout.firsto.ai 仅用于定时 GET 两个公开只读行情接口，tapeup.io / *.tapeup.io 仅用于注入内容脚本读取交易页已显示的内盘价（见 host_access_justification）；api.x.ai 仅用于用户主动选择 xAI API 模式时的 AI 请求；api.deepseek.com 仅用于用户主动选择 DeepSeek API 模式时的 AI 请求；x.com / *.x.com 用于内容脚本注入，以及 X 页面自身向 grok.x.com 发起的站内直连请求。详见 host_access_justification 与 broad_host_permission_justification。 1.5.5 新增 tapeout.firsto.ai（钱包探测兜底页 / 资产跳转）、api.tapeapi.fun（TapeAPI 3.0.0 公共签名只读）、共享账本域名（投票 GET/POST），逐条理由见 host_access_justification。 1.5.8 新增 api.fabx.tech（FabX PoD 账户只读索引）、rpc.xlayer.tech / xlayerrpc.okx.com（X Layer 公共 RPC，备用节点仅在主节点失败时使用），三条都只接收一个公开钱包地址；合计 36 条，逐条理由见 host_access_justification。",
+    "host_permissions": "7 个来源站与其媒体 CDN 用于读取当前条目内容并注入 Referer；api-tapeout.firsto.ai 仅用于定时 GET 两个公开只读行情接口，tapeup.io / *.tapeup.io 仅用于注入内容脚本读取交易页已显示的内盘价、以及（1.5.13 起）用户主动打开「我的资产」页并连接钱包后该页已显示的持仓 / 待释放 / 可加速释放 / 估值 / 涨跌幅数字，两者都只在页面会话内本机解析、不发起额外请求（见 host_access_justification）；api.x.ai 仅用于用户主动选择 xAI API 模式时的 AI 请求；api.deepseek.com 仅用于用户主动选择 DeepSeek API 模式时的 AI 请求；x.com / *.x.com 用于内容脚本注入，以及 X 页面自身向 grok.x.com 发起的站内直连请求。详见 host_access_justification 与 broad_host_permission_justification。 1.5.5 新增 tapeout.firsto.ai（钱包探测兜底页 / 资产跳转）、api.tapeapi.fun（TapeAPI 3.0.0 公共签名只读）、共享账本域名（投票 GET/POST），逐条理由见 host_access_justification。 1.5.8 新增 api.fabx.tech（FabX PoD 账户只读索引）、rpc.xlayer.tech / xlayerrpc.okx.com（X Layer 公共 RPC，备用节点仅在主节点失败时使用），三条都只接收一个公开钱包地址；合计 36 条，逐条理由见 host_access_justification。",
     "optional_host_permissions": "默认未授予。声明 https://*/* 仅为支持「自定义兼容网关」：用户在设置里填写一个网关域名并主动点「允许网关域名」后，通过 chrome.permissions.request 只申请该单一 https 域名，用户可随时在扩展详情里撤回。扩展从不申请全量 https 站点访问，也不据此注入脚本或读取页面。",
     "scripting": "本权限仅用于一次由用户主动触发的只读钱包探测。用户在弹窗点击「连接钱包」或展开钱包列表时，扩展调用一次 chrome.scripting.executeScript()，以 world:'MAIN' 执行随扩展包一起分发、完全自包含的函数（wallet.js 的 Wallet.pageBridge）。必须用 MAIN world，是因为 EIP-6963 / EIP-1193 注入式钱包对象（window.ethereum、window.okxwallet 等）只存在于页面主世界，隔离环境的内容脚本访问不到。该函数只派发 eip6963:requestProvider / announceProvider 列出已安装钱包，并对用户选定的钱包调用 eth_requestAccounts 与 eth_chainId，取回公开地址与链 ID。不读取页面正文、DOM、图片、Cookie、表单或浏览历史；不签名、不授权、不发交易；不注入任何远程或动态下载的代码，不注册监听、不常驻。若当前页未探测到钱包，才打开一个非激活的后台标签（单独授权的 https://tapeout.firsto.ai/）重试一次。地址在本机 AES-GCM 加密保存，仅用于公开只读余额查询。 【1.5.10 上架表单的正式 justification 见 dashboard_permission_justifications】",
     "activeTab": "activeTab 是让上述 scripting 调用得以成立的最小化主机访问方式。注入式钱包可能安装在任意网站，用户也可能在任意标签页点「连接钱包」；没有 activeTab，扩展就必须申请对所有网站的持久主机权限。activeTab 只在明确的用户手势（点击扩展图标 / 弹窗按钮）之后，临时授予当前活动标签一个标签页的访问权，标签页一导航或关闭即失效。扩展只读取当前标签的 URL 以确认是可注入的普通 http(s) 页面；不访问其它标签、不收集 URL / 标题 / 图标做分析、不监听导航或页面内容、不保留任何持久访问。兜底标签 https://tapeout.firsto.ai/ 由单独列出的主机权限覆盖，不依赖 activeTab。安装时不授予任何宽泛主机权限：optional_host_permissions 的 https://*/* 默认为未授予，仅在用户为自定义网关主动授权时才生效。 【1.5.10 上架表单的正式 justification 见 dashboard_permission_justifications】"
   },
   "dashboard_permission_justifications": {
-    "note": "Chrome Web Store Developer Dashboard 上传 1.5.12 包后，Privacy 页会出现两个标 * 的必填文本框：scripting justification 与 activeTab justification（即用户截图里的两项）。它们属于「权限理由」，不填或写得笼统会被判 Missing or insufficient metadata / excessive permissions，导致补件或拒审。下面 en 是可直接粘贴的正式答案（已按每框 1000 字符上限压缩）（审核通用语言，优先用），zh 为逐句对应的中文对照，便于自查。两段文案已按 1.5.12 源码逐条核对，与 manifest 的 9 项 permissions / 36 条 host_permissions、Remote code = No、data_use_disclosure 及 privacy_policy_url 口径一致。",
-    "verified_against": "manifest.json（permissions 9 项、host_permissions 36 条）、background.js runInPage()（1525–1554 行，WALLET_PROVIDERS / WALLET_CONNECT 两个消息入口；1.5.11 因文件顶部新增早期唤醒监听器整体后移 18 行）、wallet.js pageBridge()（155–239 行）；版本 1.5.12。",
+    "note": "Chrome Web Store Developer Dashboard 上传 1.5.13 包后，Privacy 页会出现两个标 * 的必填文本框：scripting justification 与 activeTab justification（即用户截图里的两项）。它们属于「权限理由」，不填或写得笼统会被判 Missing or insufficient metadata / excessive permissions，导致补件或拒审。下面 en 是可直接粘贴的正式答案（已按每框 1000 字符上限压缩）（审核通用语言，优先用），zh 为逐句对应的中文对照，便于自查。两段文案已按 1.5.13 源码逐条核对，与 manifest 的 9 项 permissions / 36 条 host_permissions、Remote code = No、data_use_disclosure 及 privacy_policy_url 口径一致。",
+    "verified_against": "manifest.json（permissions 9 项、host_permissions 36 条）、background.js runInPage()（1555–1584 行，WALLET_PROVIDERS / WALLET_CONNECT 两个消息入口；1.5.11 因文件顶部新增早期唤醒监听器后移 18 行，1.5.13 因新增 TAPUP_ASSETS 消息分支与资产缓存函数再后移 30 行）、wallet.js pageBridge()（155–239 行）；版本 1.5.13。1.5.13 的 TapeUP 资产采集由 content_scripts 覆盖 tapeup.io 全站，不使用 scripting / activeTab，两段 justification 的说明不受影响。",
     "fields": [
       {
         "field": "scripting justification",
@@ -172,7 +173,7 @@
   "pre_submit_checklist": [
     "用 Google 账号登录 Chrome Web Store Developer Dashboard，并完成一次性开发者注册（注册费 US$5）",
     "已为 Google 账号开启两步验证（2FA）并退出重登 Dashboard，否则上传会报 Enabling 2 step verification…",
-    "在 Dashboard 点「Add new item」上传 store/TapePost_1.5.12_store.zip（29 文件，与 1.5.11 相同；已有条目则选「上传新版本」，不要新建第二个条目）",
+    "在 Dashboard 点「Add new item」上传 store/TapePost_1.5.13_store.zip（29 文件，与 1.5.12 相同；已有条目则选「上传新版本」，不要新建第二个条目）",
     "把本文件里的名称、摘要、详细描述、分类、单一用途、逐项权限理由复制到商店表单",
     "【必填】在 Privacy 页把 dashboard_permission_justifications.fields[0].en 粘到 scripting justification *、fields[1].en 粘到 activeTab justification *（两个标 * 的框不填无法提交；中文对照见同字段 zh）",
     "【必填】核对两段 justification 与代码一致：scripting 只用于用户点「连接钱包」时的一次性 MAIN world 只读探测且无远程代码；activeTab 只在用户手势后临时授予当前标签、导航或关闭即失效；两者都不读取页面内容或其它标签页",
@@ -181,7 +182,7 @@
     "勾选数据使用声明：不收集个人数据、无远程代码、无第三方分析；但「是否将数据传出设备」必须选「是」—— 用户切到 API 模式时扩展会向 xAI / DeepSeek 发送文字/链接；默认站内直连由 X 页面向 X/Grok 发送请求，详见 data_use_disclosure",
     "保存草稿并预览，确认无误后点「Submit for review」",
     "首次上架因「新开发者 + 新扩展 + https://*/* 宽泛主机权限」会进入 in-depth review，通常数天到 3 周（不是 1–3 天）；超过 3 周再联系 developer support",
-    "在「数据使用」页如实披露 xAI Grok 与 DeepSeek 为第三方 AI 服务，并确认隐私政策链接指向最新版（数据流向自 1.5.8 起未变，1.5.9 / 1.5.10 仅改界面与产品名，1.5.11 仅改本机消息重连逻辑，1.5.12 仅改本机视频像素重建；含 AI 章节、站内直连数据流向、本机图片 / 视频处理 / 行情说明、回复框回写与连接自愈说明）",
+    "在「数据使用」页如实披露 xAI Grok 与 DeepSeek 为第三方 AI 服务，并确认隐私政策链接指向最新版（数据流向自 1.5.8 起未变，1.5.9 / 1.5.10 仅改界面与产品名，1.5.11 仅改本机消息重连逻辑，1.5.12 仅改本机视频像素重建，1.5.13 仅在本机读取 tapeup.io 资产页已显示的资产数字并缓存、不新增任何接收方；含 AI 章节、站内直连数据流向、本机图片 / 视频处理 / 行情说明、TapeUP 资产页采集、回复框回写与连接自愈说明）",
     "把 broad_host_permission_justification 粘到 Privacy 页主机访问理由 / Reviewer notes，说明 https://*/* 默认不授予、仅按单一网关域名动态申请",
     "Settings 页填写 publisher contact email 并完成邮箱验证（点验证邮件链接，状态变为 Verified）",
     "Privacy practices 页勾选 Data usage 两组复选框 + Limited Use 认证，逐项按 data_usage_form_answers 填",

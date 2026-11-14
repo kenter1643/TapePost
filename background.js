@@ -1312,7 +1312,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
 
   // 独立 listener：不与原有 CROSSPOST / GROK_* 路由耦合，回归风险最低
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (!msg || !/^(PRICE_|OPEN_PRICE_LINK|TAPUP_PRICE)/.test(String(msg.type || ''))) return false;
+    if (!msg || !/^(PRICE_|OPEN_PRICE_LINK|TAPUP_PRICE|TAPUP_ASSETS)/.test(String(msg.type || ''))) return false;
     (async function () {
       if (msg.type === 'PRICE_GET') {
         var cached = await localGet(SNAP_KEY, null);
@@ -1346,6 +1346,22 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
             at: Number(p.at) || Date.now(), debug: (p && p.debug) ? p.debug : null };
           var ups = {}; ups['tapeupPriceCache'] = upItem;
           await localSet(ups);
+        }
+        sendResponse({ ok: true });
+      } else if (msg.type === 'TAPUP_ASSETS') {
+        /* 1.5.13：内容脚本在 tapeup.io「我的资产」页读到的展示值。
+         * 只收本站页面回传，且先走 TapePrice.cleanAssets 白名单清洗（不留地址、
+         * 不留页面长文本），再写本机缓存；未连接钱包 / 空表不覆盖上次有效数据。 */
+        const tabUrl = (sender && sender.tab && sender.tab.url) ? String(sender.tab.url) : '';
+        if (/^https:\/\/(?:[a-z0-9-]+\.)*tapeup\.io\//i.test(tabUrl)) {
+          if (typeof TapePrice === 'undefined' && typeof importScripts === 'function') {
+            try { importScripts('price.js'); } catch (e) { /* 下面按无清洗器处理 */ }
+          }
+          const cleaned = (typeof TapePrice !== 'undefined' && TapePrice.cleanAssets)
+            ? TapePrice.cleanAssets(msg && msg.payload) : null;
+          if (cleaned && cleaned.connected && cleaned.ok) {
+            await localSet({ tapeupAssetsCache: cleaned });
+          }
         }
         sendResponse({ ok: true });
       } else if (msg.type === 'PRICE_SETTINGS') {
@@ -1398,6 +1414,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
   const K_SALT = 'wbxVoteSaltV1';        // 本机投票匿名盐（兼容旧逻辑/测试）
   const K_BIND = 'wbxWalletBindV1';      // 加密后的地址信封
   const K_ASSETS = 'wbxAssetsCacheV1';  // 最近一次资产快照
+  const K_TAPEUP_ASSETS = 'tapeupAssetsCache'; // 1.5.13：tapeup.io「我的资产」页采集快照
   const K_PROFILE = 'wbxBelieverProfileV1'; // 1.5.6 信仰者名片（昵称 + 内置头像编号）
   const K_VOTE = 'wbxVoteStateV1';       // 账本缓存 / 本机打卡历史 / 待补投
   const VOTE_ALARM = 'bemVoteDailyCheck';
@@ -1495,6 +1512,18 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       return { assets: cached || null, error: String(e && e.message || e) };
     }
   }
+  /*
+   * 1.5.13：TapeUP「我的资产」缓存。它不是按地址查的链上数据，而是用户在
+   * tapeup.io 资产页（已连接钱包）里看到的展示值，随页面回传写进本机。
+   * 30 分钟没刷新就标 stale，面板只提示不自动清，避免打开弹窗时闪成空。
+   */
+  async function tapeupAssets() {
+    const a = (await sget([K_TAPEUP_ASSETS]))[K_TAPEUP_ASSETS];
+    if (!a || typeof a !== 'object') return null;
+    const at = Number(a.at) || 0;
+    const age = Date.now() - at;
+    return Object.assign({}, a, { stale: age > 30 * 60000, ageMinutes: Math.round(age / 60000) });
+  }
   async function walletStatus(binding, force) {
     const a = binding ? await assetsOf(binding, force) : { assets: null, error: null };
     return {
@@ -1502,7 +1531,8 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       mask: binding ? Wallet.checksumHint(binding.address) : '',
       providerName: binding ? (binding.providerName || '') : '',
       chainId: binding ? (binding.chainId || '') : '',
-      assets: a.assets, assetsError: a.error
+      assets: a.assets, assetsError: a.error,
+      tapeup: await tapeupAssets()
     };
   }
 
@@ -1720,13 +1750,14 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
         await saveBinding(addr, 'manual', '手动填写', '');
         sendResponse(await walletStatus(await readBinding(), true));
       } else if (msg.type === 'WALLET_CLEAR') {
-        await sremove([K_BIND, K_ASSETS]);
+        // 断开钱包时连页面采集的 TapeUP 资产一起清掉，避免展示上一个地址的数据
+        await sremove([K_BIND, K_ASSETS, K_TAPEUP_ASSETS]);
         sendResponse({ ok: true });
       } else if (msg.type === 'ASSETS_GET') {
         const b = await readBinding();
         if (!b) { sendResponse({ ok: false, error: '还没有连接钱包' }); return; }
         const a = await assetsOf(b, true);
-        sendResponse({ ok: true, assets: a.assets, error: a.error });
+        sendResponse({ ok: true, assets: a.assets, error: a.error, tapeup: await tapeupAssets() });
       } else if (msg.type === 'VOTE_STATE') {
         const st = await voteState();
         sendResponse({ ok: true, summary: await syncAll(st) });
