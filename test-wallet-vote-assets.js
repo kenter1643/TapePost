@@ -5,7 +5,9 @@
  *       按天累计 / 连续打卡 / 账本 URL 保留 sharecode / 各接口解析与版本协商 /
  *       混合成功失败的资产汇总 / 本机账本降级合并 / 钱包地址脱敏；
  *       1.5.6：钱包地址哈希跨设备去重 / 10000 条话语文库 / 32 款头像 / 名片清洗 /
- *       发 X 文案与预填 URL / 后台钱包门槛静态校验。
+ *       发 X 文案与预填 URL / 后台钱包门槛静态校验；
+ *       1.5.7：名片随时可改存、改名同步更新当日墙；
+ *       1.5.8：X Layer / FabX 双链资产（FAB / 电路矿机 / 待领 / OKB / 算力 / 权限）。
  */
 'use strict';
 const fs = require('fs');
@@ -140,6 +142,27 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   console.log('\n== 5. 资产汇总（版本协商 + 部分失败不拖垮） ==');
   const tapeEnvelope = (result) => ({ ok: true, container: '0x1', sig: '0x2',
     result: Object.assign({ blockPinned: { blockNumber: 133465953 } }, result) });
+  // 1.5.8：FabX 账户挖矿快照（字段取自 api.fabx.tech/v1/accounts/{addr}/mining 真实返回）
+  const fabxMining = {
+    account: '0x0c16f7536ad60fd7cbf925f6334ac7c6b7a93fd6',
+    tu: '13299600', tv: '382120998', balance: '10500000019', boost: 10000,
+    global: { minerCount: '6959', verifMinerCount: '6843', totalMined: '15468830275624',
+      currentRate: '8333333', UNVERIFIED_BPS: 100 },
+    source: { chainId: 196, xmake: TapeOutAPI.FAB_TOKEN, circuits: TapeOutAPI.CIRCUITS_NFT },
+    blockNumber: '75874297', generatedAt: 1794643363468,
+    items: [
+      { id: 933, live: '49763741', miner: { status: 1, verifWeight: '8400' },
+        effective: { verifWeight: '8400', unverWeight: '0' } },
+      { id: 934, live: '20000000', miner: { status: 0 },
+        effective: { verifWeight: '0', unverWeight: '500' } }
+    ]
+  };
+  // batch RPC：FAB ERC-20 / 电路 ERC-721 / 原生 OKB
+  const rpcBatch = [
+    { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000271d94913' },
+    { jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000000000000000000000000000000000000000000002' },
+    { jsonrpc: '2.0', id: 3, result: '0x145eae7e28607af4' }
+  ];
   const mockFetch = (url, init) => {
     let body = null;
     if (/\/account\/.*\/portfolio/.test(url)) body = portfolio;
@@ -149,6 +172,8 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
     else if (/\/tokenBalance$/.test(url)) body = tapeEnvelope({ amount: '500.34187109', symbol: 'BEM', decimals: 8 });
     else if (/\/balance$/.test(url)) body = tapeEnvelope({ bnb: '0.008464235944401766', wei: '8464235944401766' });
     else if (/\/bnbUsd$/.test(url)) body = tapeEnvelope({ bnbUsd: '623.4369' });
+    else if (/\/v1\/accounts\//.test(url)) body = fabxMining;
+    else if (/rpc\.xlayer\.tech|xlayerrpc\.okx\.com/.test(url)) body = rpcBatch;
     else if (/\/failing/.test(url)) return Promise.resolve({ ok: false, status: 503 });
     if (!body) return Promise.resolve({ ok: false, status: 404 });
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
@@ -170,6 +195,59 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   eq('无失败项', bundle.errors.length, 0);
   eq('拒绝非法地址', (await TapeOutAPI.fetchAssets(mockFetch, 'not-an-address')).ok, false);
   eq('compact 大数', TapeOutAPI.compact(12345678), '12.35M');
+
+  console.log('\n== 5b. 1.5.8 X Layer / FabX 双链汇总 ==');
+  const xl = bundle.xlayer || {};
+  eq('X Layer 快照可读', xl.ok, true);
+  eq('X Layer chainId', xl.chainId, 196);
+  eq('versions 记录 X Layer 链', bundle.versions.xlayerChainId, 196);
+  eq('versions 记录 FabX 索引版本', bundle.versions.fabx, 'v1');
+  ok('FAB 余额优先取链上 RPC', Math.abs(xl.balance - 105.00000019) < 1e-8, String(xl.balance));
+  eq('矿机台数取 ERC-721 balanceOf', xl.miners, 2);
+  eq('登记挖矿矿机数', xl.registeredMiners, 2);
+  eq('挖矿中台数', xl.activeMiners, 1);
+  ok('待领 FAB 汇总', Math.abs(xl.pending - 0.69763741) < 1e-8, String(xl.pending));
+  ok('预估日产 FAB 为正', xl.daily > 0 && xl.daily < 100, String(xl.daily));
+  eq('已验证算力权重', xl.verifiedWeight, 8400);
+  eq('未验证算力权重', xl.unverifiedWeight, 500);
+  ok('OKB 余额来自 eth_getBalance', xl.okb > 1 && xl.okb < 2, String(xl.okb));
+  eq('全网矿机数', xl.network.minerCount, 6959);
+  eq('加成 bps', xl.boost, 10000);
+  eq('X Layer 区块号', xl.block, 75874297);
+  eq('FabX 索引来源标记', bundle.sources.xlayerFabx, true);
+  eq('X Layer RPC 来源标记', bundle.sources.xlayerRpc, true);
+  eq('双链汇总仍无失败项', bundle.errors.length, 0);
+  ok('X Layer 快照不含查询地址', !JSON.stringify(xl).includes(A));
+  eq('地址补全到 64 位', TapeOutAPI.addrWord(A).length, 64);
+  ok('eth_call data 前缀正确', TapeOutAPI.rpcPayloads(A)[0].params[0].data.startsWith('0x70a08231'));
+  eq('batch 恰好 3 个只读调用', TapeOutAPI.rpcPayloads(A).length, 3);
+  ok('batch 不含任何写入方法', TapeOutAPI.rpcPayloads(A).every((x) => /^(eth_call|eth_getBalance)$/.test(x.method)));
+  ok('hexToUnits 精确换算 8 位小数', Math.abs(TapeOutAPI.hexToUnits('0x271d94913', 8) - 105.00000019) < 1e-8);
+  ok('hexToUnits 支持 18 位小数', Math.abs(TapeOutAPI.hexToUnits('0xde0b6b3a7640000', 18) - 1) < 1e-12);
+  eq('hexToUnits 拒收脏数据', TapeOutAPI.hexToUnits('0xZZ', 8), null);
+  eq('hexToUnits 零余额返回 0 而非 null', TapeOutAPI.hexToUnits('0x0', 18), 0);
+  eq('hexToUnits 长零串也返回 0', TapeOutAPI.hexToUnits('0x0000000000000000000000000000000000000000000000000000000000000000', 8), 0);
+  eq('parseRpcBatch 乱序 id 仍可解析', TapeOutAPI.parseRpcBatch([rpcBatch[2], rpcBatch[0], rpcBatch[1]]).circuitsHeld, 2);
+  eq('parseRpcBatch 拒收单个对象', TapeOutAPI.parseRpcBatch(rpcBatch[0]), null);
+  eq('parseFabxMining 拒绝串地址', TapeOutAPI.parseFabxMining(fabxMining, '0x1111111111111111111111111111111111111111'), null);
+  eq('parseFabxMining 拒绝缺 items', TapeOutAPI.parseFabxMining({ account: A }, A), null);
+
+  // 两条链互不拖垮：X Layer 成功 / BSC 全失败，以及 X Layer 全失败 / BSC 成功
+  const onlyXl = await TapeOutAPI.fetchAssets((url) => /api\.fabx\.tech|rpc\.xlayer\.tech|xlayerrpc/.test(url)
+    ? mockFetch(url) : Promise.resolve({ ok: false, status: 503 }), A);
+  eq('BSC 全挂仍返回 X Layer', onlyXl.xlayer.ok, true);
+  eq('BSC 全挂时 BEM 为空', onlyXl.bem.balance, null);
+  ok('BSC 全挂时错误只记 BSC', onlyXl.errors.length === 7 && onlyXl.errors.every((e) => !/^xlayer/.test(e)), String(onlyXl.errors.length));
+  const onlyBsc = await TapeOutAPI.fetchAssets((url) => /api\.fabx\.tech|rpc\.xlayer\.tech|xlayerrpc/.test(url)
+    ? Promise.resolve({ ok: false, status: 503 }) : mockFetch(url), A);
+  eq('X Layer 全挂不影响 BSC', onlyBsc.bem.balance, 500.34187109);
+  eq('X Layer 全挂时快照标记失败', onlyBsc.xlayer.ok, false);
+  ok('X Layer 全挂时仍展示 BSC 数字', onlyBsc.circuits.count === 220);
+  ok('X Layer 失败项单独记录', onlyBsc.errors.some((e) => /^xlayer/.test(e)));
+  const xlFabxOnly = await TapeOutAPI.fetchXLayer((url) => /rpc\.xlayer\.tech|xlayerrpc/.test(url)
+    ? Promise.resolve({ ok: false, status: 503 }) : mockFetch(url), A);
+  ok('RPC 挂了仍能用索引层 FAB 余额', Math.abs(xlFabxOnly.data.balance - 105.00000019) < 1e-8);
+  eq('RPC 挂了矿机数回退登记数', xlFabxOnly.data.miners, 2);
 
   console.log('\n== 6. 1.5.6 钱包门槛 / 名片 / 10000 条话语 / 发 X ==');
   const A2 = '0x0C16F7536AD60FD7CBF925F6334AC7C6B7A93FD6';
@@ -268,6 +346,40 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   ok('头像宫格移到主区且默认收起', /id="voteAvatarGrid" hidden/.test(html157));
   ok('折叠设置里不再重复放头像宫格', (html157.match(/id="voteAvatarGrid"/g) || []).length === 1);
 
+  console.log('\n== 6c. 1.5.8 面板 / 权限 / 合规静态校验 ==');
+  const html158 = read('popup.html'), pop158 = read('popup.js'), bg158 = read('background.js');
+  const man158 = JSON.parse(read('manifest.json')), list158 = JSON.parse(read('store/listing.json'));
+  const priv158 = read('docs/privacy.html'), privSite158 = read('store/privacy-site/index.html');
+  ['xlMiners', 'xlActive', 'xlDaily', 'xlFab', 'xlPending', 'xlOkb'].forEach((id) => {
+    ok('X Layer 面板有 ' + id, html158.includes('id="' + id + '"'));
+  });
+  ok('X Layer 六格独立分组', /class="asset-grid xlayer-grid"/.test(html158));
+  ok('BSC 与 X Layer 双链头', /BSC · TapeOut/.test(html158) && /X Layer · FabX/.test(html158));
+  ok('手动地址占位改为双链通用', /BSC \/ X Layer 通用/.test(html158));
+  ok('popup 有 renderXLayer', /function renderXLayer\(x\)/.test(pop158));
+  ok('popup 渲染 X Layer 数字', /wbxText\('xlFab', fmtAsset\(x\.balance\)\)/.test(pop158));
+  ok('面板标注日产为估算', /仅供参考/.test(pop158));
+  ok('后台对旧缓存自动补取双链', /cached && cached\.xlayer && cached\.fetchedAt/.test(bg158));
+  eq('manifest 版本', man158.version, '1.5.8');
+  eq('listing 版本', list158.version, '1.5.8');
+  eq('permissions 仍 9 项', man158.permissions.length, 9);
+  eq('host_permissions 36 条', man158.host_permissions.length, 36);
+  ['https://api.fabx.tech/*', 'https://rpc.xlayer.tech/*', 'https://xlayerrpc.okx.com/*'].forEach((h) => {
+    ok('新增主机权限 ' + h, man158.host_permissions.includes(h));
+  });
+  eq('FAB 合约地址', TapeOutAPI.FAB_TOKEN, '0x72f349b1eee7833b26f8c81a8410775a4e231ed2');
+  eq('电路 NFT 合约地址', TapeOutAPI.CIRCUITS_NFT, '0x87bfca3494aa228ff589ab9b642143a5e8c8f9a6');
+  eq('FAB 8 位小数', TapeOutAPI.FAB_DECIMALS, 8);
+  eq('X Layer chainId', TapeOutAPI.XLAYER_CHAIN_ID, 196);
+  ok('隐私政策列出 FabX 接口', priv158.includes('api.fabx.tech') && priv158.includes('36 条'));
+  ok('独立部署副本同步', privSite158.includes('api.fabx.tech') && privSite158.includes('36 条'));
+  ok('上架资料列出三条新域名', ['api.fabx.tech', 'rpc.xlayer.tech', 'xlayerrpc.okx.com']
+    .every((h) => JSON.stringify(list158).includes(h)));
+  ok('上架详细描述含 1.5.8 说明', list158.detailed_description[0].startsWith('【1.5.8'));
+  ok('商店描述不超 132 字', man158.description.length <= 132 && list158.summary_132.length <= 132);
+  ok('UI 版本兜底统一 1.5.8', /v1\.5\.8/.test(html158) && /v1\.5\.8/.test(read('panel.html')) &&
+    /v1\.5\.8/.test(read('content.js')) && /v1\.5\.8/.test(pop158));
+
   console.log('\n== 7. 钱包地址不出缓存 / 不出 popup 消息 ==');
   const bgSrc = read('background.js');
   const fnMatch = bgSrc.match(/function publicAssets\(a\) \{[\s\S]*?\n  \}/);
@@ -293,6 +405,18 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
       const live = await TapeOutAPI.fetchAssets(fetch, A, { priceUsd: 0.01047 });
       ok('真实资产接口可达', live.ok === true && live.bem.balance != null, JSON.stringify(live.errors));
       console.log('    线上快照：矿机 ' + live.circuits.count + ' 台 / 持仓 ' + live.bem.balance + ' BEM / 已领取 ' + live.bem.claimedTotal);
+      ok('真实 X Layer 快照可读', live.xlayer && live.xlayer.ok === true, JSON.stringify(live.xlayer && live.xlayer.errors));
+      ok('真实 FAB 余额为数字', live.xlayer && typeof live.xlayer.balance === 'number');
+      ok('真实 OKB 余额为数字', live.xlayer && typeof live.xlayer.okb === 'number');
+      // 公开地址（链上确有 2 台 FabX 电路矿机），验证非零路径而不是只测空钱包
+      const XL_ADDR = '0xdbf522c712f970a2df547492df6550a06afc96bc';
+      const xlLive = await TapeOutAPI.fetchXLayer(fetch, XL_ADDR);
+      ok('真实 FabX 索引可达', xlLive.data.sources.fabx === true);
+      ok('真实 X Layer RPC 可达', xlLive.data.sources.rpc === true);
+      ok('真实地址有 FAB / 矿机', xlLive.data.balance > 0 && xlLive.data.miners >= 1,
+        'FAB=' + xlLive.data.balance + ' miners=' + xlLive.data.miners);
+      console.log('    X Layer 线上快照：FAB ' + xlLive.data.balance + ' / 矿机 ' + xlLive.data.miners +
+        ' 台 / 待领 ' + xlLive.data.pending + ' / 预估日产 ' + xlLive.data.daily + ' / OKB ' + xlLive.data.okb);
     } catch (e) { ok('线上冒烟', false, String(e && e.message || e)); }
   } else {
     console.log('    （跳过，加 --live 可对账本与 TapeOut API 做只读连通性验证）');

@@ -853,7 +853,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.7 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.8 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
@@ -1063,11 +1063,50 @@ function fmtAsset(v, digits) {
   if (v == null || !isFinite(Number(v))) return '—';
   return assetsApi ? assetsApi.compact(v) : String(v);
 }
+const XL_IDS = ['xlMiners', 'xlActive', 'xlDaily', 'xlFab', 'xlPending', 'xlOkb'];
+
+/* 1.5.8：X Layer / FabX PoD 分组。BSC 与 X Layer 各自独立，任一条链失败不影响另一条。 */
+function renderXLayer(x) {
+  if (!x || !x.ok) {
+    XL_IDS.forEach((id) => wbxText(id, '—'));
+    wbxText('xlayerState', '链 196 · 未读取');
+    wbxText('xlayerSub', '点「↻ 读资产」拉取 X Layer：FAB 余额 / 电路矿机 / 待领 / OKB' +
+      (x && x.errors && x.errors.length ? ' · ' + x.errors[0] : ''));
+    return;
+  }
+  wbxText('xlMiners', x.miners == null ? '—' : assetsApi.fmt(x.miners, 0));
+  wbxText('xlActive', x.activeMiners == null ? '—' : assetsApi.fmt(x.activeMiners, 0));
+  wbxText('xlDaily', fmtAsset(x.daily));
+  wbxText('xlFab', fmtAsset(x.balance));
+  wbxText('xlPending', fmtAsset(x.pending));
+  wbxText('xlOkb', x.okb == null ? '—' : assetsApi.fmt(x.okb, 4));
+  const bits = ['FabX PoD API v1', 'X Layer RPC 链 ' + (x.chainId || 196)];
+  if (x.verifiedWeight != null) {
+    let w = '已验证算力 ' + assetsApi.compact(x.verifiedWeight);
+    if (x.network && x.network.totalVerifWeight) {
+      w += '（全网 ' + (100 * x.verifiedWeight / x.network.totalVerifWeight).toFixed(2) + '%）';
+    }
+    bits.push(w);
+  }
+  if (x.boost != null) bits.push('加成 ' + (x.boost / 10000).toFixed(2) + '×');
+  if (x.registeredMiners != null && x.miners != null && x.registeredMiners !== x.miners) {
+    bits.push('登记挖矿 ' + x.registeredMiners + ' 台');
+  }
+  if (x.block) bits.push('区块 #' + x.block);
+  bits.push('日产按当前全网权重估算，仅供参考');
+  if (x.errors && x.errors.length) bits.push('部分接口未响应：' + x.errors.length + ' 项');
+  const src = [x.sources && x.sources.fabx ? 'FabX' : '', x.sources && x.sources.rpc ? 'RPC' : ''].filter(Boolean).join(' + ');
+  wbxText('xlayerState', '链 ' + (x.chainId || 196) + ' · ' + (src || '部分数据'));
+  wbxText('xlayerSub', bits.join(' · '));
+}
+
 function renderAssets(a) {
   if (!a) {
     ['assetMiners', 'assetDaily', 'assetBem', 'assetClaimed', 'assetBnb', 'assetValue']
       .forEach((id) => wbxText(id, '—'));
-    wbxText('walletSub', '连接钱包后自动读取：矿机 / 预估日产 / 持仓 / 已领取 / BNB / 市值');
+    wbxText('bscChainState', '链 56');
+    wbxText('walletSub', '连接钱包后自动读取 BSC：矿机 / 预估日产 / 持仓 / 已领取 / BNB / 市值');
+    renderXLayer(null);
     return;
   }
   const c = a.circuits || {}, bem = a.bem || {}, bnb = a.bnb || {}, tr = a.transistors || {};
@@ -1078,14 +1117,16 @@ function renderAssets(a) {
   wbxText('assetBnb', bnb.balance == null ? '—' : assetsApi.fmt(bnb.balance, 4));
   wbxText('assetValue', fmtAsset(c.marketValueBnb));
   const v = a.versions || {};
-  const bits = ['TapeOut API v1', 'TapeAPI ' + (v.tapeapi || '3.0.0')];
+  const bits = ['BSC · TapeOut API v1', 'TapeAPI ' + (v.tapeapi || '3.0.0')];
   if (v.chainSigned) bits.push('链上签名读取（未本机验签）');
   if (tr.nand != null || tr.latch != null) {
     bits.push('NAND ' + assetsApi.fmt(tr.nand, 0) + ' / LATCH ' + assetsApi.fmt(tr.latch, 0));
   }
   if (bem.balanceUsd != null) bits.push('持仓约 $' + assetsApi.fmt(bem.balanceUsd, 2));
-  if (a.errors && a.errors.length) bits.push('部分接口未响应：' + a.errors.length + ' 项');
+  const bscErr = (a.errors || []).filter((e) => !/^xlayer/i.test(String(e))).length;
+  if (bscErr) bits.push('部分接口未响应：' + bscErr + ' 项');
   wbxText('walletSub', bits.join(' · '));
+  renderXLayer(a.xlayer);
 }
 
 function renderWallet(r) {
@@ -1108,7 +1149,7 @@ function loadWallet(force) {
     }
     if (force) {
       if (r.assets) renderAssets(r.assets);
-      wbxStatus('walletStatus', r.error ? ('部分数据未取到：' + r.error) : '已从 TapeOut API 刷新 ✓');
+      wbxStatus('walletStatus', r.error ? ('部分数据未取到：' + r.error) : '已刷新 BSC + X Layer 双链资产 ✓');
     } else renderWallet(r);
   });
 }

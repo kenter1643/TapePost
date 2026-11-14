@@ -1452,9 +1452,13 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
   }
   async function assetsOf(binding, mode) {
     const cached = publicAssets((await sget([K_ASSETS]))[K_ASSETS]);
-    // 'cache'：弹窗首屏只读缓存，不发起 7 个资产请求，避免打开弹窗被网络拖慢；
-    // true / 'force'：连接钱包、手动填地址、点 ↻ 读资产时才真正拉取。
-    if (mode === 'cache') return { assets: cached || null, error: null };
+    // 'cache'：弹窗首屏只读缓存，不发起资产请求，避免打开弹窗被网络拖慢。
+    // 1.5.8：旧版缓存里没有 xlayer 字段，第一次打开新版时自动补取一次双链快照，
+    // 之后就恢复「首屏读缓存」；没绑定钱包时不发任何请求。
+    if (mode === 'cache') {
+      if (cached && cached.xlayer && cached.fetchedAt) return { assets: cached, error: null };
+      return binding ? assetsOf(binding, true) : { assets: null, error: null };
+    }
     if (!mode && cached && cached.fetchedAt && (Date.now() - Date.parse(cached.fetchedAt) < 120000)) {
       return { assets: cached, error: null };
     }
@@ -1463,7 +1467,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     try {
       const a = await Promise.race([
         TapeOutAPI.fetchAssets(fetch, binding.address, { priceUsd: priceUsd }),
-        new Promise(function (r) { setTimeout(function () { r(null); }, 11000); })
+        new Promise(function (r) { setTimeout(function () { r(null); }, 13000); })
       ]);
       if (!a || !a.ok) return { assets: cached || null, error: (a && a.error) || '资产接口超时' };
       const clean = publicAssets(a);
@@ -1694,7 +1698,8 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       } else if (msg.type === 'WALLET_MANUAL') {
         const addr = Wallet.normalizeAddress(msg.address);
         if (!addr) { sendResponse({ ok: false, error: '地址格式不对（要 0x + 40 位十六进制）' }); return; }
-        await saveBinding(addr, 'manual', '手动填写', String(TapeOutAPI.CHAIN_ID));
+        // 1.5.8：手动填地址时不知道钱包当前链，不谎报 chainId；资产按 BSC + X Layer 双链读取
+        await saveBinding(addr, 'manual', '手动填写', '');
         sendResponse(await walletStatus(await readBinding(), true));
       } else if (msg.type === 'WALLET_CLEAR') {
         await sremove([K_BIND, K_ASSETS]);

@@ -2,10 +2,10 @@
   "manifest_version": 3,
   "name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.5.7",
+  "version": "1.5.8",
   "author": "TapeOut 社区 · 昆哥",
   "minimum_chrome_version": "116",
-  "description": "7 站点一键转发到 X：图片逐张去水印 + 4K、视频本机剪接与逐帧去水印、多图放大浏览；免 Key 用 X 自带 Grok 生成评论，也可自备 Key 走 xAI / DeepSeek API；内置 TapeOut 行情、只读钱包资产（OKX / 币安 / TP 等）；连接钱包后可为 $BEM 打卡，昵称 / 头像 / 时间与随机激励话语记入公开全网账本，并可一键发到 X，昵称与头像随时可改可存、改动同步更新当日信仰者墙；生态导航核验。",
+  "description": "7 站一键转发到 X：逐张去水印 + 4K、视频剪接；免 Key 站内 Grok，可切 xAI / DeepSeek；BEM 行情 + 钱包双链资产（BSC BEM/矿机、X Layer FAB/矿机/OKB）；连钱包为 $BEM 打卡，名片可改可存；导航核验。",
   "action": {
     "default_popup": "popup.html",
     "default_title": "TapePost · 转发 / AI 评论 / 生态面板",
@@ -60,6 +60,9 @@
     "https://tapeup.io/*",
     "https://*.tapeup.io/*",
     "https://api.tapeapi.fun/*",
+    "https://api.fabx.tech/*",
+    "https://rpc.xlayer.tech/*",
+    "https://xlayerrpc.okx.com/*",
     "https://tapepost-privacy.app.workbuddy.host/*"
   ],
   "optional_host_permissions": [

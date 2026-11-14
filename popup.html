@@ -222,6 +222,16 @@
       font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap;
       overflow:hidden;text-overflow:ellipsis; }
     .asset-grid span { display:block;font-size:8px;color:#9aa3ae;white-space:nowrap; }
+    /* 1.5.8：BSC 与 X Layer 两组资产用链头分隔，数字仍是 15px、描述 8px */
+    .chain-head { display:flex;align-items:center;gap:4px;margin:7px 0 0;font-size:8px;
+      color:#6d28d9;font-weight:700;letter-spacing:.2px; }
+    .chain-head .dot { width:5px;height:5px;border-radius:50%;background:#7c3aed;display:inline-block;flex:0 0 5px; }
+    .chain-head .state { flex:1;text-align:right;font-weight:400;color:#9aa3ae;white-space:nowrap; }
+    .chain-head.bsc { color:#1d4ed8;margin-top:5px; }
+    .chain-head.bsc .dot { background:#2563eb; }
+    .asset-grid.xlayer-grid { margin-top:3px; }
+    .asset-grid.xlayer-grid > div { background:#fdfbff;border-color:#e6dcf8; }
+    .asset-grid.xlayer-grid b { color:#5b21b6; }
     .wallet-sub { font-size:8px;color:#8b98a8;line-height:1.5; }
     .wallet-status { font-size:8px;color:#9aa3ae;line-height:1.4;min-height:11px;margin-top:2px; }
     .wallet-status.err { color:#b91c1c; }
@@ -252,7 +262,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.7</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.8</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
   <!-- 1.5.5：BEM 置顶为主卡（最大字号），TapeUP / 矿机日产并排第二行；描述一律 8px -->
@@ -362,6 +372,7 @@
       <button id="walletClear" type="button" class="ghost">断开</button>
     </div>
     <div class="wallet-providers" id="walletProviders"></div>
+    <div class="chain-head bsc"><span class="dot"></span>BSC · TapeOut / $BEM<span class="state" id="bscChainState">链 56</span></div>
     <div class="asset-grid" id="assetGrid">
       <div><b id="assetMiners">—</b><span>矿机（台）</span></div>
       <div><b id="assetDaily">—</b><span>预估日产 BEM</span></div>
@@ -371,10 +382,21 @@
       <div><b id="assetValue">—</b><span>矿机市值 BNB</span></div>
     </div>
     <div class="wallet-sub" id="walletSub"></div>
+    <!-- 1.5.8：同一地址在 X Layer（FabX PoD）上的 FAB 与电路矿机，只读罗列 -->
+    <div class="chain-head"><span class="dot"></span>X Layer · FabX / $FAB<span class="state" id="xlayerState">链 196 · 未读取</span></div>
+    <div class="asset-grid xlayer-grid" id="xlayerGrid">
+      <div><b id="xlMiners">—</b><span>矿机（台）</span></div>
+      <div><b id="xlActive">—</b><span>挖矿中（台）</span></div>
+      <div><b id="xlDaily">—</b><span>预估日产 FAB</span></div>
+      <div><b id="xlFab">—</b><span>持仓 FAB</span></div>
+      <div><b id="xlPending">—</b><span>待领 FAB</span></div>
+      <div><b id="xlOkb">—</b><span>OKB 余额</span></div>
+    </div>
+    <div class="wallet-sub" id="xlayerSub"></div>
     <div class="wallet-status" id="walletStatus"></div>
     <details class="wallet-manual">
       <summary>✍️ 手动填写地址（没装注入式钱包时用）</summary>
-      <input type="text" id="walletManualAddr" spellcheck="false" placeholder="0x… 42 位 BSC 地址" />
+      <input type="text" id="walletManualAddr" spellcheck="false" placeholder="0x… 42 位地址（BSC / X Layer 通用）" />
       <div class="btnrow"><button type="button" id="walletManualSave">保存地址</button></div>
     </details>
   </section>
