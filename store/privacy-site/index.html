@@ -39,7 +39,7 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 13 日（1.5.3：AI 回复新增可配置的 DeepSeek API 模式，新增一条主机权限 api.deepseek.com 与对应第三方 AI 服务披露；此前 1.5.2 的视频工作台与按钮注入仍为纯本机）　｜　适用版本：1.5.3（历史版本 1.4.2 及以上同样适用）　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 14 日（1.5.4：修复微博视频帖看不到「一键转发」按钮，视频入口改为页面根层固定悬浮条，视频卡片内部不再写入按钮；仍为纯本机页面 DOM 注入，不新增权限 / 主机权限 / 网络请求 / 数据接收方。此前 1.5.3 新增可配置的 DeepSeek API 模式与 api.deepseek.com 一条主机权限）　｜　适用版本：1.5.4（历史版本 1.4.2 及以上同样适用）　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
     <strong>一句话总结：</strong> 扩展本身<strong>没有服务器、没有账号体系、没有统计或遥测</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」或「DeepSeek API」模式并填写自己的 Key 时，接收方才改为对应服务商（xAI 或 DeepSeek）；两家的 Key 与配置分开保存，同一时刻只会向你选定的那一家发请求。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。
@@ -77,6 +77,7 @@
   </ul>
   <p><strong>1.4.16 TapeUP $UP 内盘价（内容脚本采集，非后台 GET）：</strong>tapeup.io 整站 Cloudflare 防护，后台直接 <code>fetch</code> 会被拦，因此 TapeUP $UP 的内盘价（页面标注 <code>BEM/UP</code>，即 UP 以 BEM 计价，如 <code>0.0264 BEM/UP</code>，并同时给出美元折算价 <code>$0.3181</code>；来自 <code>https://tapeup.io/zh/trade/token?id=1</code>）改由扩展的<strong>内容脚本</strong>在你已通过 CF 的浏览器会话里读取页面显示的内盘价，再回传后台缓存。<strong>1.4.21 起</strong>只按页面上的 <code>BEM/UP</code> 标签与「价 + 美元 + 百分比」组合定位价格，钱包余额、待释放余额、统计区数字与图表坐标只作本机诊断候选、不参与取价；认不出就显示未采集。扩展仅在 <code>tapeup.io</code> 注入内容脚本读取该页显示的价格数字，<strong>不读取页面外数据、不发送任何本机数据、不在该域发起额外网络请求</strong>。</p>
   <p><strong>1.4.22 界面改版（仅本机渲染）：</strong>行情面板由三列挤压改为「上 TapeUP / 中 矿机日产 / 下 BEM」三块整行卡片，把主值、另一计价口径、涨跌、来源、更新时间、实时或缓存状态，以及可折叠的「采集明细」（原始字段、采集锚点与本机诊断候选）完整显示出来。这些信息全部来自上述同源公开数据与本机缓存，<strong>只为解决文字被裁切的问题，不新增任何网络请求、权限、域名、数据接收方，也不额外读取或上传页面内容</strong>。BEM 与矿机日产能价仍来自 Firsto，TapeUP 内盘价仍来自 tapeup.io，与 Firsto 无关。</p>
+  <p><strong>1.5.4 视频帖按钮入口（仍为纯本机）：</strong>为了让微博首页带视频的帖子与 /tv 视频频道稳定显示「一键转发 + 视频剪辑」，扩展不再把按钮写进视频卡片内部，而是把一条本机生成的固定悬浮条挂到<strong>当前页面的根层</strong>，按该内容单元在视口中的位置跟随定位；卡片滚出视口时自动隐藏，卡片被页面框架重渲染或换掉后会在下一次扫描时重建。为此扩展只读取<strong>页面上已经显示给用户的</strong>视频播放器 / 播放按钮 / 视频链接与内容单元的位置和尺寸，用于放置按钮与解析本条内容；<strong>不读取 Cookie、账号凭据、浏览历史或其它标签页，不新增权限、主机权限、网络请求或数据接收方，也不向任何第三方发送页面内容</strong>。视频本身的读取与处理仍全程在本机离屏文档内完成。</p>
   <p><strong>1.5.3 AI 回复新增 DeepSeek API 模式（第三方 AI 服务，如实披露）：</strong>运行模式新增第五种「DeepSeek API」。用户显式选择并填入自己的 Key 后，两个手动触发的 AI 功能（X 一键评论、链接真伪查询）与「测试当前模式」会由扩展后台向 <code>api.deepseek.com/chat/completions</code>（或用户自填的兼容网关）发送用户点选的推文正文（≤1200 字符）或待核验链接、本地比对结论、少量相关清单条目与设定提示词，用用户自己的 DeepSeek Key 认证，接收方是 DeepSeek（或该自填网关），<strong>开发者不接收、不留存</strong>。Key、模型 ID、接口地址与「强制 JSON 输出」开关共四项只存本机 <code>chrome.storage.local</code>，与 xAI 的配置完全隔离；同一时刻只向用户选定的一家发请求，不读取 / 不发送 X 登录凭据与图片视频文件。为此<strong>新增且仅新增一条主机权限 <code>https://api.deepseek.com/*</code></strong>（合计 30 条），仅在该模式被主动选中并发起 AI 请求时使用；默认站内直连、既有 xAI 设置与图片 / 视频 / 行情链路均不变。发送给 DeepSeek 的内容受其隐私政策与服务条款约束，调用费用由用户承担。商店上架资料的第三方 AI 服务申报、数据使用披露与主机访问理由已同步列出 X/Grok、xAI 与 DeepSeek。</p>
   <p><strong>1.5.2 视频剪接与逐帧去水印（仍为纯本机）：</strong>含视频的内容现在会在页面上弹出「视频工作台」，可设置 1~4 段起止时间（顺序拼接）、选择是否逐帧去水印与输出画质，再导出片段用于转发。视频只由扩展在自己已获授权的<strong>离屏文档</strong>里读取为同源 <code>blob:</code> 并用本机 <code>&lt;video&gt;</code> / Canvas / MediaRecorder 逐帧重建与重新编码：首帧在本机检测水印条带，后续帧只对本机像素做条带纹理重建；成品只写入本机剪贴板、本机下载目录或本机临时目录，并由用户自己拖入 / 粘贴到 X。<strong>视频字节不上传、不调用任何云端 AI / 视频修复服务、不发送给任何第三方，也不新增权限、主机权限、网络请求或数据接收方</strong>；除用户主动在已授权来源站读取那条视频本身外，不额外读取页面文字、账号或其它页面内容。音频在本机尽力保留，离屏环境无用户手势时可能无声；输出优先 MP4，旧版 Chrome 回退 WebM。</p>
   <p><strong>1.5.2 视频内容的按钮注入（仍为纯本机）：</strong>为了让微博首页视频微博、/tv 视频频道与 video.weibo.com 播放页上的视频内容也能看到「一键转发」与「视频剪辑」，扩展会在<strong>当前已授权页面的 DOM 里</strong>识别视频播放器 / 播放按钮 / 视频链接，并把一个本机生成的按钮条挂到该内容单元上。这一步只读取页面上已经显示给用户的元素与文字，用于定位按钮与解析本条内容；<strong>不读取 Cookie、账号凭据、浏览历史或其它标签页，不新增权限、主机权限、网络请求或数据接收方，也不向任何第三方发送页面内容</strong>。视频本身的读取与处理仍按上一段所述全程在本机离屏文档内完成。</p>
@@ -149,7 +150,7 @@
   <h2>8. 变更与联系</h2>
   <p>如政策有实质变更，我们会更新本页并同步提升扩展版本号。本项目源码公开，可自行审计数据处理逻辑：<a href="https://github.com/kenter1643/TapePost">github.com/kenter1643/TapePost</a>。如需咨询或反馈，请在 <a href="https://github.com/kenter1643/TapePost/issues">GitHub Issues</a> 提交，或通过 Chrome 网上应用店该扩展页面的「支持 / 开发者联系方式」渠道联系开发者。</p>
 
-  <footer><a href="./">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · AI 默认免 Key 走 X 站内模式，可选 xAI / DeepSeek API · 行情仅取公开只读接口　｜　Last updated: 2026-11-13</footer>
+  <footer><a href="./">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · AI 默认免 Key 走 X 站内模式，可选 xAI / DeepSeek API · 行情仅取公开只读接口　｜　Last updated: 2026-11-14</footer>
 </div>
 </body>
 </html>

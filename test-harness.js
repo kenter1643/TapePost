@@ -2315,19 +2315,39 @@ async function runScenario(name, cfg, expect) {
   const hasRepostBtn = (node) => !!(node && node._all && node._all().some((n) => n.className === 'wbx-repost-btn'));
   const inContent = hasRepostBtn(expectedHost);
   const inNoise = hasRepostBtn(built.reco) || hasRepostBtn(built.header);
-  const anchorOk = inContent && !inNoise;
-  note('anchor', `内容容器(${cfg.textEmpty ? '图片墙' : '正文'})有按钮=${inContent} 作者区有按钮=${inNoise}`);
+  /* 1.5.4：微博视频卡片的入口改挂在 document.body 的根层固定条（不进卡片 DOM），
+   * 卡片内「没有按钮」才是正确行为。根层条的创建 / 定位 / 自愈由
+   * test-video-entry.js 专项覆盖，这里只校验卡片侧不再写入按钮且指纹已记录。 */
+  const isVideoCard = !!(post && post.hasVideo) &&
+    vm.runInContext('SITE && SITE.id', contentCtx) === 'weibo';
+  const anchorOk = isVideoCard
+    ? (!inContent && !inNoise && !!built.card.dataset.wbxFp)
+    : (inContent && !inNoise);
+  note('anchor', (isVideoCard ? '视频卡（根层入口）' : `内容容器(${cfg.textEmpty ? '图片墙' : '正文'})`) +
+    `有按钮=${inContent} 作者区有按钮=${inNoise}`);
 
   // ---- 按钮稳定性：内容不变时连续扫描不得重建按钮 ----
   // 曾经校验用 quickFingerprint、保存用 postFingerprint，两者口径不同 →
   // 每轮扫描都删按钮重建 → MutationObserver 自触发死循环 → 用户点击丢失。
-  const stableBtn = built.card._all().find((n) => n.className === 'wbx-repost-btn');
-  let rebuildOk = !!stableBtn;
-  for (let i = 0; i < 3 && rebuildOk; i++) {
-    try { vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 }); }
-    catch (e) { rebuildOk = false; note('ERROR', '稳定性扫描抛错: ' + (e && e.message)); }
-    const now = built.card._all().find((n) => n.className === 'wbx-repost-btn');
-    if (now !== stableBtn) rebuildOk = false;
+  let rebuildOk;
+  if (isVideoCard) {
+    // 视频卡：连续扫描不得往卡片里写按钮，也不得让内容指纹抖动
+    const fp0 = built.card.dataset.wbxFp;
+    rebuildOk = !!fp0;
+    for (let i = 0; i < 3 && rebuildOk; i++) {
+      try { vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 }); }
+      catch (e) { rebuildOk = false; note('ERROR', '稳定性扫描抛错: ' + (e && e.message)); }
+      if (built.card.dataset.wbxFp !== fp0 || hasRepostBtn(built.card)) rebuildOk = false;
+    }
+  } else {
+    const stableBtn = built.card._all().find((n) => n.className === 'wbx-repost-btn');
+    rebuildOk = !!stableBtn;
+    for (let i = 0; i < 3 && rebuildOk; i++) {
+      try { vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 }); }
+      catch (e) { rebuildOk = false; note('ERROR', '稳定性扫描抛错: ' + (e && e.message)); }
+      const now = built.card._all().find((n) => n.className === 'wbx-repost-btn');
+      if (now !== stableBtn) rebuildOk = false;
+    }
   }
   note('stable', `内容不变连续扫描 3 次，按钮节点未被重建=${rebuildOk}`);
 

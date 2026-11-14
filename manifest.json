@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "author": "TapeOut 社区 · 昆哥",
   "minimum_chrome_version": "116",
   "description": "7 站点一键转发到 X：图片逐张去水印 + 4K、视频本机剪接与逐帧去水印、多图放大浏览；免 Key 用 X 自带 Grok 生成评论，也可自备 Key 走 xAI / DeepSeek API；内置生态导航核验与行情提醒。",

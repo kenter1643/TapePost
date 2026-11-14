@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.3';
+  return 'v1.5.4';
 })();
 
 // 内置账号信息由 account.js 提供；独立运行/单元测试时保留同样的兜底值
@@ -379,12 +379,13 @@ function injectStyle() {
   #wbx-lightbox.wbx-lb-actual .wbx-lb-img{
     max-width:none !important;max-height:none !important;cursor:zoom-out !important;
   }
-  /* 1.5.2：视频内容专属的悬浮转发条。
-   * 微博首页视频播放器 / /tv 视频频道没有正文节点、图层还自带高层级，
-   * 普通卡片按钮会被裁掉或压在封面下。这里独立一套入口，挂在视频单元
-   * 右上角，层级拉到最高，保证「一键转发」在视频上看得见、点得到。 */
+  /* 1.5.4：视频内容专属的「根层」悬浮转发条。
+   * 真机确认把按钮挂进微博视频卡片内部不可靠：播放器图层层级高、
+   * 无障碍文本（加载百分比 / 当前时间）不断变化、微博前端框架还会
+   * 重渲染并抹掉外来节点。现在入口挂在 document.body，用 fixed 定位
+   * 跟随卡片右上角，不进卡片 DOM，不受 overflow / stacking context 影响。 */
   .wbx-video-entry{
-    position:absolute;top:6px;right:8px;z-index:2147483000;
+    position:fixed;left:0;top:0;z-index:2147483000;pointer-events:auto;
     display:inline-flex;align-items:center;gap:4px;
     padding:3px 5px;border-radius:10px;background:rgba(18,18,22,.78);
     box-shadow:0 2px 10px rgba(0,0,0,.30);
@@ -1231,6 +1232,17 @@ function injectIntoCard(card) {
   const post = resolvePost(card);
   if (!post.text && !post.imageUrls.length && !post.hasVideo) return;
 
+  /* 1.5.4：微博视频卡片不再往卡片内部挂按钮组。真机（1.5.3，2026-11-14）
+   * 确认首页视频帖的按钮会被播放器图层 / 微博框架重渲染抹掉，且播放器无障碍
+   * 文本不断变化会让 quickFingerprint 抖动、每轮扫描删了重建。视频入口统一
+   * 交给 injectVideoEntries() 挂在 document.body 的根层固定条；这里清掉旧版
+   * 可能留下的按钮组、记下指纹后早退，不再对卡片做任何 DOM 写入。 */
+  if (post.hasVideo && SITE && SITE.id === 'weibo') {
+    if (existing) { try { existing.remove(); } catch (e) {} }
+    card.dataset.wbxFp = qfp;
+    return;
+  }
+
   // 内容变了 / 按钮被框架删掉 → 移除旧按钮重建
   if (existing) { try { existing.remove(); } catch (e) {} }
   // 1.3.1 迁移：老版本把「AI 评论」挂在卡片正文里，全部清掉，改由回复区注入
@@ -2063,60 +2075,124 @@ function videoEntryHost(node) {
   return (node.parentElement && node.parentElement.appendChild) ? node.parentElement : null;
 }
 
-function injectVideoEntries() {
-  // 视频 HD 接口是微博专属；X / 知乎等站的卡片走原有路径，不叠新入口
-  if (!SITE || SITE.id !== 'weibo') return;
-  let nodes = [];
-  try { nodes = Array.from(document.querySelectorAll(VIDEO_SIGNAL_SEL)); }
-  catch (e) { return; }
-  const hosts = new Set();
-  for (const n of nodes) {
-    try {
-      if (!n || !n.getBoundingClientRect) continue;
-      if (n.closest && n.closest('#wbx-video-studio, [id^="wbx-"], .wbx-video-entry')) continue;
+/* ---------- 1.5.4：视频内容的「根层固定入口」 ----------
+ * 真机结论（2026-11-14，1.5.3，微博首页视频帖）：把按钮挂进视频卡片内部
+ * 不可靠 —— 播放器图层自带高层级与 overflow 裁剪、无障碍文本（加载百分比 /
+ * 当前时间）不断变化让内容指纹抖动、微博前端框架还会重渲染并抹掉外来节点。
+ * 现在入口挂在 document.body，用 fixed 定位跟随卡片右上角；卡片离开视口自动
+ * 隐藏，被页面删掉也能在下一轮扫描自愈重建。bar 不在卡片内，因此不会触发
+ * 「删按钮 → MutationObserver → 再删」的自激循环。 */
+const VIDEO_BARS = new Map();   // 内容单元 -> 固定条
+
+function videoContentUnits() {
+  const units = new Set();
+  let cards = [];
+  try { cards = getCards(); } catch (e) {}
+  // ① 已知卡片里含视频信号的（首页 <article> 视频帖走这条）
+  const known = cards.filter((c) => {
+    try { return !!(c.querySelector && c.querySelector(VIDEO_SIGNAL_SEL)); } catch (e) { return false; }
+  });
+  known.forEach((c) => units.add(c));
+  // ② 卡片选择器覆盖不到的视频单元（/tv 网格、播放器浮层）从信号反查宿主
+  try {
+    document.querySelectorAll(VIDEO_SIGNAL_SEL).forEach((n) => {
+      if (!n || !n.getBoundingClientRect) return;
+      if (n.closest && n.closest('#wbx-video-studio, [id^="wbx-"], .wbx-video-entry')) return;
+      if (known.some((c) => c === n || (c.contains && c.contains(n)))) return;
       const r = n.getBoundingClientRect();
-      if (!r || r.width < 60 || r.height < 20) continue;   // 排除导航栏小图标
+      if (!r || r.width < 60 || r.height < 20) return;
       const host = videoEntryHost(n);
-      if (host && host.appendChild) hosts.add(host);
-    } catch (e) {}
-  }
-  for (const host of hosts) {
+      if (host && host.appendChild && host !== document.body && host !== document.documentElement) units.add(host);
+    });
+  } catch (e) {}
+  const arr = Array.from(units);
+  // 同一条视频帖可能被多条路径命中，只保留最外层内容单元，避免重复入口
+  return arr.filter((u) => !arr.some((o) => o !== u && o.contains && o.contains(u)));
+}
+
+function makeVideoBar(card) {
+  const bar = document.createElement('div');
+  bar.className = 'wbx-video-entry';
+  bar.setAttribute('data-wbx-video-entry', '1');
+
+  const fwd = document.createElement('button');
+  fwd.type = 'button';
+  fwd.className = 'wbx-fwd-btn';
+  fwd.textContent = '一键转发';
+  fwd.title = 'TapePost · 视频一键转发（剪接 + 逐帧去水印后发到 X）· ' + WBX_VERSION;
+  fwd.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    // 固定条挂在 body 下，按钮 closest() 找不到卡片，必须直接用关联的 card
+    return onRepost(card, fwd);
+  });
+
+  const clip = document.createElement('button');
+  clip.type = 'button';
+  clip.className = 'wbx-clip-btn';
+  clip.textContent = '视频剪辑';
+  clip.title = '剪接片段 + 逐帧去水印 + 导出 · ' + WBX_VERSION;
+  clip.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    return onVideoStudio(card);
+  });
+
+  bar.appendChild(fwd);
+  bar.appendChild(clip);
+  (document.body || document.documentElement).appendChild(bar);
+  VIDEO_BARS.set(card, bar);
+  return bar;
+}
+
+function updateVideoBars() {
+  const vh = window.innerHeight || 800;
+  const vw = window.innerWidth || 1200;
+  VIDEO_BARS.forEach((bar, card) => {
     try {
-      // 已有标准按钮组或已挂过悬浮条就跳过，避免 MutationObserver 自触发重复注入
-      if (host.querySelector && host.querySelector('.wbx-btn-group, .wbx-video-entry')) continue;
-      const fp = [host.tagName, cleanText(host.innerText || '').slice(0, 40)].join('|');
-      if (host.dataset && host.dataset.wbxVideoFp === fp) continue;
-      ensureRelative(host);
-      const bar = document.createElement('div');
-      bar.className = 'wbx-video-entry';
-      bar.setAttribute('data-wbx-video-entry', '1');
-
-      const fwd = document.createElement('button');
-      fwd.type = 'button';
-      fwd.className = 'wbx-fwd-btn';
-      fwd.textContent = '一键转发';
-      fwd.title = 'TapePost · 视频一键转发（剪接 + 逐帧去水印后发到 X）· ' + WBX_VERSION;
-      fwd.addEventListener('click', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        return onRepost(host, fwd);
-      });
-
-      const clip = document.createElement('button');
-      clip.type = 'button';
-      clip.className = 'wbx-clip-btn';
-      clip.textContent = '视频剪辑';
-      clip.title = '剪接片段 + 逐帧去水印 + 导出 · ' + WBX_VERSION;
-      clip.addEventListener('click', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        return onVideoStudio(host);
-      });
-
-      bar.appendChild(fwd);
-      bar.appendChild(clip);
-      host.appendChild(bar);
-      if (host.dataset) host.dataset.wbxVideoFp = fp;
+      if (!bar || bar.isConnected === false || !card || card.isConnected === false) {
+        try { if (bar && bar.remove) bar.remove(); } catch (e) {}
+        VIDEO_BARS.delete(card);
+        return;
+      }
+      const r = card.getBoundingClientRect && card.getBoundingClientRect();
+      // 卡片不在视口内时收起入口，避免悬浮条孤零零停在页面角落
+      if (!r || r.width < 120 || r.height < 60 ||
+          r.bottom < 40 || r.top > vh - 24 || r.right < 40 || r.left > vw - 40) {
+        bar.style.display = 'none';
+        return;
+      }
+      bar.style.display = 'inline-flex';
+      const w = bar.offsetWidth || 156;
+      bar.style.left = Math.max(6, Math.min(vw - w - 6, r.right - w - 10)) + 'px';
+      bar.style.top = Math.max(6, Math.min(vh - 34, r.top + 6)) + 'px';
     } catch (e) {}
+  });
+}
+
+function injectVideoEntries() {
+  // 视频 HD 接口是微博专属；X / 知乎等站的卡片仍走原有标准按钮组
+  if (!SITE || SITE.id !== 'weibo') return;
+  /* 兼容 1.5.2 / 1.5.3：旧版把悬浮条挂在卡片内部。重载扩展但没刷新页面时
+   * 这些残留会和新入口并存，这里统一清掉（新条的父节点是 document.body）。 */
+  try {
+    Array.from(document.querySelectorAll('.wbx-video-entry')).forEach((old) => {
+      if (old.parentElement && old.parentElement !== document.body) {
+        try { old.remove(); } catch (e) {}
+      }
+    });
+  } catch (e) {}
+  const units = videoContentUnits();
+  const live = new Set(units);
+  // 卡片被框架换掉 / 滚出虚拟列表时清掉失效入口
+  VIDEO_BARS.forEach((bar, card) => {
+    if (!live.has(card) || card.isConnected === false) {
+      try { bar.remove(); } catch (e) {}
+      VIDEO_BARS.delete(card);
+    }
+  });
+  for (const unit of units) {
+    try { if (!VIDEO_BARS.has(unit)) makeVideoBar(unit); } catch (e) {}
   }
+  updateVideoBars();
 }
 
 function scanAndInject() {
@@ -3604,6 +3680,11 @@ function init() {
     try { window.addEventListener('scroll', onScroll, { passive: true }); } catch (e) {}
     // 微博首页常是内部 div 滚动（window 收不到 scroll），capture 才能捕获
     try { document.addEventListener('scroll', onScroll, { passive: true, capture: true }); } catch (e) {}
+    /* 1.5.4：根层固定条用视口坐标定位，滚动 / 缩放时立即跟随（不进 debounce，
+     * 否则 150ms 内会看到入口漂在旧位置）。只改 style，不写入卡片 DOM。 */
+    try { window.addEventListener('scroll', updateVideoBars, { passive: true, capture: true }); } catch (e) {}
+    try { document.addEventListener('scroll', updateVideoBars, { passive: true, capture: true }); } catch (e) {}
+    try { window.addEventListener('resize', updateVideoBars, { passive: true }); } catch (e) {}
     setInterval(scanAndInject, 2500);
   });
 }
