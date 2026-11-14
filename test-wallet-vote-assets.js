@@ -3,7 +3,9 @@
  *       node test-wallet-vote-assets.js --live     （额外对线上只读接口做连通性冒烟，不投票）
  * 覆盖：地址校验 / AES-GCM 加密往返 / 每日匿名 voterId / 北京时间切天 /
  *       按天累计 / 连续打卡 / 账本 URL 保留 sharecode / 各接口解析与版本协商 /
- *       混合成功失败的资产汇总 / 本机账本降级合并 / 钱包地址脱敏。
+ *       混合成功失败的资产汇总 / 本机账本降级合并 / 钱包地址脱敏；
+ *       1.5.6：钱包地址哈希跨设备去重 / 10000 条话语文库 / 32 款头像 / 名片清洗 /
+ *       发 X 文案与预填 URL / 后台钱包门槛静态校验。
  */
 'use strict';
 const fs = require('fs');
@@ -23,14 +25,16 @@ function eq(name, got, want) { ok(name, got === want, 'got=' + JSON.stringify(go
 const ctx = {
   console, URL, TextEncoder, TextDecoder, AbortController, setTimeout, clearTimeout,
   Promise, Date, Math, JSON, Number, String, Array, Object, RegExp, Error, Intl,
+  Uint32Array, Uint8Array,
   crypto: webcrypto, atob: (s) => Buffer.from(s, 'base64').toString('binary'),
   btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
   module: undefined, globalThis: null
 };
 ctx.globalThis = ctx;
 vm.createContext(ctx);
-['wallet.js', 'tapeout-api.js', 'vote.js'].forEach((f) => vm.runInContext(read(f), ctx, { filename: f }));
+['wallet.js', 'tapeout-api.js', 'vote.js', 'bem-quotes.js'].forEach((f) => vm.runInContext(read(f), ctx, { filename: f }));
 const Wallet = ctx.Wallet, TapeOutAPI = ctx.TapeOutAPI, Vote = ctx.Vote;
+const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
 
 (async function () {
   console.log('\n== 1. 地址与本机加密 ==');
@@ -167,7 +171,70 @@ const Wallet = ctx.Wallet, TapeOutAPI = ctx.TapeOutAPI, Vote = ctx.Vote;
   eq('拒绝非法地址', (await TapeOutAPI.fetchAssets(mockFetch, 'not-an-address')).ok, false);
   eq('compact 大数', TapeOutAPI.compact(12345678), '12.35M');
 
-  console.log('\n== 6. 钱包地址不出缓存 / 不出 popup 消息 ==');
+  console.log('\n== 6. 1.5.6 钱包门槛 / 名片 / 10000 条话语 / 发 X ==');
+  const A2 = '0x0C16F7536AD60FD7CBF925F6334AC7C6B7A93FD6';
+  const h1 = await Wallet.walletVoterId(webcrypto, A2, '2026-11-14');
+  const h2 = await Wallet.walletVoterId(webcrypto, A2.toLowerCase(), '2026-11-14');
+  const h3 = await Wallet.walletVoterId(webcrypto, A2, '2026-11-15');
+  const h4 = await Wallet.walletVoterId(webcrypto, '0x1111111111111111111111111111111111111111', '2026-11-14');
+  eq('地址哈希 64 位十六进制', /^[0-9a-f]{64}$/.test(h1), true);
+  eq('大小写地址归一后哈希一致', h1, h2);
+  ok('同地址同日重算一致（跨设备去重）', h1 === await Wallet.walletVoterId(webcrypto, A2, '2026-11-14'));
+  ok('跨天哈希不同', h1 !== h3);
+  ok('不同地址哈希不同', h1 !== h4);
+  ok('哈希不含明文地址', !h1.includes(A2.slice(2).toLowerCase()));
+  eq('非法地址返回 null', await Wallet.walletVoterId(webcrypto, 'bad', '2026-11-14'), null);
+
+  eq('话语文库恰好 10000 条', BemQuotes.COUNT, 10000);
+  eq('话语数组长度', BemQuotes.LINES.length, 10000);
+  eq('话语库自检通过', BemQuotes.validate().ok, true);
+  eq('话语库唯一数', BemQuotes.validate().unique, 10000);
+  ok('随机抽句来自库内', BemQuotes.LINES.indexOf(BemQuotes.pick()) >= 0);
+  eq('按种子抽句稳定', BemQuotes.pickBySeed('abc'), BemQuotes.pickBySeed('abc'));
+  ok('按种子抽句来自库内', BemQuotes.LINES.indexOf(BemQuotes.pickBySeed('abc')) >= 0);
+  eq('内置头像 32 款', BemAvatars.COUNT, 32);
+  eq('非法头像回落 a01', BemAvatars.normalize('a99'), 'a01');
+  ok('合法头像有 emoji 与背景色', !!BemAvatars.get('a07').e && /^#/.test(BemAvatars.get('a07').c));
+
+  ok('昵称去掉标签符号', !/[<>&]/.test(Vote.cleanName('<script>昆哥</script>')));
+  eq('昵称截断 16 码点', Array.from(Vote.cleanName('一二三四五六七八九十甲乙丙丁戊己庚辛')).length, 16);
+  eq('名片头像回落', Vote.normalizeProfile({ name: '昆哥', avatar: 'zzz' }).avatar, 'a01');
+  eq('名片头像合法保留', Vote.normalizeProfile({ name: '昆哥', avatar: 'a07' }).avatar, 'a07');
+  ok('默认名不含完整地址', Vote.defaultName('0x0c16…3fd6').indexOf('0x0c16f753') < 0);
+  eq('北京时间 HH:MM', Vote.beijingClock(Date.parse('2026-11-14T06:30:00Z')), '14:30');
+  const tw = Vote.tweetText('稳住，等下一次升级。', '昆哥', '2026-11-14', '14:30', 'https://example.com/vote');
+  ok('X 文案含话语', tw.includes('稳住'));
+  ok('X 文案含昵称与时间', tw.includes('昆哥') && tw.includes('14:30'));
+  ok('X 文案含话题标签', tw.includes('#BEM'));
+  ok('X 预填 URL 正确', Vote.postUrl(tw).startsWith('https://x.com/intent/tweet?text='));
+  ok('X 预填 URL 已编码', Vote.postUrl(tw).includes('%23BEM'));
+  const st156 = Vote.parseState({ ok: true, days: { '2026-11-14': { support: 1, watch: 0 } },
+    totalVotes: 1, version: 2, supporters: { '2026-11-14': [
+      { voterId: 'd'.repeat(64), name: '<b>昆哥</b>', avatar: 'a07', quote: '稳住',
+        at: '2026-11-14T06:30:00Z', clock: '14:30' }
+    ] } });
+  ok('parseState 解析 supporters', !!st156 && st156.supporters['2026-11-14'].length === 1);
+  ok('supporters 昵称已清洗', !/[<>]/.test(st156.supporters['2026-11-14'][0].name));
+  const sum156 = Vote.summary({ days: {}, localAdd: {}, history: { '2026-11-14': 'support' }, pending: [],
+    config: Vote.normalizeConfig(null), ledgerAvailable: true,
+    walletBound: true, profile: { name: '昆哥', avatar: 'a07' },
+    lastQuote: '稳住，等下一次升级。', lastQuoteAt: '2026-11-14T06:30:00.000Z',
+    supporters: st156.supporters }, Date.parse('2026-11-14T07:00:00Z'));
+  eq('summary 钱包门槛已绑定', sum156.walletBound, true);
+  eq('summary 带上话语', sum156.quote, '稳住，等下一次升级。');
+  ok('summary 生成发 X URL', sum156.postUrl.startsWith('https://x.com/intent/tweet?text='));
+  eq('summary 当日上墙人数', sum156.supporters.length, 1);
+  const bg156 = read('background.js');
+  ok('后台加载 bem-quotes.js', /importScripts\('bem-quotes\.js'\)/.test(bg156));
+  ok('VOTE_CAST 后台校验钱包绑定', /VOTE_CAST[\s\S]{0,400}readBinding\(\)/.test(bg156));
+  ok('VOTE_CAST 用地址哈希', /walletVoterId\(CRYPTO, binding\.address, day\)/.test(bg156));
+  ok('voteBody 带名片与话语', /name: p\.name[\s\S]{0,200}quote: p\.quote/.test(bg156));
+  ok('未绑定时拒绝打卡', /请先连接钱包，才能为 \$BEM 打卡/.test(bg156));
+  const pop156 = read('popup.js');
+  ok('popup 未绑定时禁用按钮', /disabled = !sum\.walletBound/.test(pop156));
+  ok('popup 有发 X 按钮逻辑', /votePostX/.test(pop156) && /x\.com\/intent\/tweet/.test(read('vote.js')));
+
+  console.log('\n== 7. 钱包地址不出缓存 / 不出 popup 消息 ==');
   const bgSrc = read('background.js');
   const fnMatch = bgSrc.match(/function publicAssets\(a\) \{[\s\S]*?\n  \}/);
   ok('后台定义了 publicAssets 脱敏函数', !!fnMatch && /delete out\.address/.test(fnMatch[0]));
@@ -182,7 +249,7 @@ const Wallet = ctx.Wallet, TapeOutAPI = ctx.TapeOutAPI, Vote = ctx.Vote;
   ok('资产缓存写入前已脱敏', /sset\(\{ \[K_ASSETS\]: clean \}\)/.test(bgSrc));
   ok('首屏缓存读出时也脱敏', /const cached = publicAssets\(/.test(bgSrc));
 
-  console.log('\n== 7. 线上只读冒烟（--live） ==');
+  console.log('\n== 8. 线上只读冒烟（--live） ==');
   if (process.argv.indexOf('--live') >= 0) {
     try {
       const health = await (await fetch(Vote.ledgerUrl(base, '/api/health'))).json();

@@ -1360,6 +1360,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
 
 /* =====================================================================
  * 1.5.5：钱包（只读 + 本机加密） / TapeOut API 资产 / BEM 信仰者全网账本
+ * 1.5.6：钱包绑定成为打卡前置条件；支持票随附昵称 / 头像 / 时间 / 激励话语
  * 独立 IIFE + 独立 listener，不与 CROSSPOST / GROK_* / PRICE_* 三条路由耦合。
  * ===================================================================== */
 (function walletVoteModule() {
@@ -1368,14 +1369,17 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       if (typeof Wallet === 'undefined') importScripts('wallet.js');
       if (typeof TapeOutAPI === 'undefined') importScripts('tapeout-api.js');
       if (typeof Vote === 'undefined') importScripts('vote.js');
+      if (typeof BemQuotes === 'undefined') importScripts('bem-quotes.js');
     }
-  } catch (e) { console.warn('[bg][1.5.5] 模块加载失败: ' + String(e && e.message || e)); }
-  if (typeof Wallet === 'undefined' || typeof TapeOutAPI === 'undefined' || typeof Vote === 'undefined') return;
+  } catch (e) { console.warn('[bg][1.5.6] 模块加载失败: ' + String(e && e.message || e)); }
+  if (typeof Wallet === 'undefined' || typeof TapeOutAPI === 'undefined' ||
+      typeof Vote === 'undefined' || typeof BemQuotes === 'undefined') return;
 
   const K_KEY = 'wbxWalletKeyV1';       // 本机 AES-GCM 密钥（base64，随机生成，不同步）
-  const K_SALT = 'wbxVoteSaltV1';        // 本机投票匿名盐
+  const K_SALT = 'wbxVoteSaltV1';        // 本机投票匿名盐（兼容旧逻辑/测试）
   const K_BIND = 'wbxWalletBindV1';      // 加密后的地址信封
   const K_ASSETS = 'wbxAssetsCacheV1';  // 最近一次资产快照
+  const K_PROFILE = 'wbxBelieverProfileV1'; // 1.5.6 信仰者名片（昵称 + 内置头像编号）
   const K_VOTE = 'wbxVoteStateV1';       // 账本缓存 / 本机打卡历史 / 待补投
   const VOTE_ALARM = 'bemVoteDailyCheck';
   const CRYPTO = (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
@@ -1526,9 +1530,11 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     }
   }
 
-  /* ---------- 全网账本 ---------- */
+  /* ---------- 全网账本（1.5.6：账本同时返回信仰者墙明细） ---------- */
   function blankVote() {
     return { days: {}, localAdd: {}, history: {}, pending: [], totalVotes: 0,
+      supporters: {}, profile: { name: '', avatar: 'a01' },
+      lastQuote: '', lastQuoteAt: '', walletBound: false,
       config: Vote.normalizeConfig(null), ledgerAvailable: false, lastSyncAt: 0, lastError: '' };
   }
   async function voteState() {
@@ -1538,8 +1544,34 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     if (!Vote.isObj(s.days)) s.days = {};
     if (!Vote.isObj(s.localAdd)) s.localAdd = {};
     if (!Vote.isObj(s.history)) s.history = {};
+    if (!Vote.isObj(s.supporters)) s.supporters = {};
     if (!Array.isArray(s.pending)) s.pending = [];
+    const p = (await sget([K_PROFILE]))[K_PROFILE];
+    s.profile = Vote.normalizeProfile(p);
+    // 钱包门槛由后台判定，不信任 popup 传来的布尔值
+    s.walletBound = !!(await readBinding());
     return s;
+  }
+  /* 账本返回的 {days,totalVotes,supporters} 统一落盘，避免三处复制粘贴 */
+  function applyLedgerJson(st, j) {
+    if (!j || !j.ok || !Vote.isObj(j.days)) return false;
+    st.days = {};
+    Object.keys(j.days).forEach(function (d) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+      st.days[d] = { support: Math.max(0, Number(j.days[d].support) || 0),
+        watch: Math.max(0, Number(j.days[d].watch) || 0) };
+    });
+    if (Number(j.totalVotes)) st.totalVotes = Number(j.totalVotes);
+    if (j.supporters !== undefined) st.supporters = Vote.parseSupporters(j.supporters);
+    st.ledgerAvailable = true;
+    st.lastSyncAt = Date.now();
+    st.lastError = '';
+    return true;
+  }
+  function voteBody(p) {
+    return JSON.stringify({ day: p.day, stance: p.stance, voterId: p.voterId,
+      name: p.name || '', avatar: p.avatar || 'a01', quote: p.quote || '',
+      at: p.at || new Date().toISOString(), clock: p.clock || Vote.beijingClock() });
   }
   async function syncLedger(s) {
     const url = Vote.ledgerUrl(s.config.ledgerBase, '/api/state');
@@ -1549,6 +1581,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       if (!parsed) throw new Error('账本返回格式不对');
       s.days = parsed.days;
       s.totalVotes = parsed.totalVotes;
+      s.supporters = parsed.supporters;
       s.ledgerAvailable = true;
       s.lastSyncAt = Date.now();
       s.lastError = '';
@@ -1557,7 +1590,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       s.lastError = String(e && e.message || e);
     }
   }
-  async function flushPending(s, salt) {
+  async function flushPending(s) {
     if (!s.ledgerAvailable || !s.pending.length) return;
     const keep = [], synced = {};
     // 一次同步最多补投 5 票，剩下留到下次，避免长时间断网后打开弹窗被拖住
@@ -1567,27 +1600,18 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       try {
         const j = await fetchJson(Vote.ledgerUrl(s.config.ledgerBase, '/api/vote'), {
           method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ day: p.day, stance: p.stance, voterId: p.voterId })
+          body: voteBody(p)
         }, 6000);
-        if (j && j.ok && Vote.isObj(j.days)) {
-          s.days = {};
-          Object.keys(j.days).forEach(function (d) {
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
-            s.days[d] = { support: Math.max(0, Number(j.days[d].support) || 0),
-              watch: Math.max(0, Number(j.days[d].watch) || 0) };
-          });
-          if (Number(j.totalVotes)) s.totalVotes = Number(j.totalVotes);
-          synced[p.day] = 1;
-        } else keep.push(p);
+        if (applyLedgerJson(s, j)) synced[p.day] = 1;
+        else keep.push(p);
       } catch (e) { keep.push(p); }
     }
     s.pending = keep.concat(rest);
     Object.keys(synced).forEach(function (d) { delete s.localAdd[d]; });
-    void salt;
   }
-  async function syncAll(s, salt) {
+  async function syncAll(s) {
     await syncLedger(s);
-    await flushPending(s, salt);
+    await flushPending(s);
     await sset({ [K_VOTE]: s });
     return Vote.summary(s);
   }
@@ -1617,7 +1641,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       chrome.notifications.create('bemvote-' + day, {
         type: 'basic', iconUrl: 'icons/icon128.png',
         title: 'TapePost · $BEM 信仰者今天还没打卡',
-        message: '今天还没为 $BEM 投支持票，点插件图标打卡，全网按天累计记一笔。',
+        message: '连接钱包后为 $BEM 打卡：昵称、头像与一句随机激励话语会记入全网账本，按天累计。',
         contextMessage: '点击查看全网账本 · TapePost', priority: 1
       }, function () { void (chrome.runtime && chrome.runtime.lastError); });
     } catch (e) {}
@@ -1681,10 +1705,10 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
         sendResponse({ ok: true, assets: a.assets, error: a.error });
       } else if (msg.type === 'VOTE_STATE') {
         const st = await voteState();
-        sendResponse({ ok: true, summary: await syncAll(st, s.salt) });
+        sendResponse({ ok: true, summary: await syncAll(st) });
       } else if (msg.type === 'VOTE_SYNC') {
         const st = await voteState();
-        sendResponse({ ok: true, summary: await syncAll(st, s.salt) });
+        sendResponse({ ok: true, summary: await syncAll(st) });
       } else if (msg.type === 'VOTE_CONFIG') {
         const st = await voteState();
         const next = Vote.normalizeConfig(Object.assign({}, st.config, msg.config || {}));
@@ -1695,31 +1719,49 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
         st.config = next;
         await sset({ [K_VOTE]: st });
         sendResponse({ ok: true, summary: Vote.summary(st) });
+      } else if (msg.type === 'VOTE_PROFILE') {
+        const profile = Vote.normalizeProfile({ name: msg.name, avatar: msg.avatar });
+        const st = await voteState();
+        st.profile = profile;
+        await sset({ [K_PROFILE]: profile, [K_VOTE]: st });
+        sendResponse({ ok: true, summary: Vote.summary(st) });
       } else if (msg.type === 'VOTE_CAST') {
         const stance = String(msg.stance || '');
         if (Vote.STANCES.indexOf(stance) < 0) { sendResponse({ ok: false, error: '无效的立场' }); return; }
+        // 1.5.6：钱包是打卡前置条件，后台自己判定，不信任 popup 传来的状态
+        const binding = await readBinding();
+        if (!binding) { sendResponse({ ok: false, error: '请先连接钱包，才能为 $BEM 打卡' }); return; }
         const st = await voteState();
         const day = Vote.dayKey();
         const prev = st.history[day] || '';
-        const voter = await Wallet.voterId(CRYPTO, s.salt, day);
+        const voter = await Wallet.walletVoterId(CRYPTO, binding.address, day);
+        if (!voter) { sendResponse({ ok: false, error: '钱包地址无效，请重新连接' }); return; }
+        const profile = Vote.normalizeProfile({
+          name: msg.name != null ? msg.name : st.profile.name,
+          avatar: msg.avatar != null ? msg.avatar : st.profile.avatar
+        });
+        // 没填昵称时给一个不含完整地址的默认名，避免公开账本出现空名片
+        if (!profile.name) profile.name = Vote.defaultName(Wallet.checksumHint(binding.address));
+        st.profile = profile;
+        await sset({ [K_PROFILE]: profile });
+        // 每次打卡从本机 10000 条库随机抽一句；popup「换一句」可指定同一库里的一句；
+        // 联网失败补投时复用同一句，避免账本与弹窗显示不一致
+        const quote = (typeof msg.quote === 'string' && msg.quote.length)
+          ? msg.quote.replace(/[<>]/g, '').slice(0, 80)
+          : BemQuotes.pick();
+        const at = new Date().toISOString();
+        st.lastQuote = quote;
+        st.lastQuoteAt = at;
         st.history[day] = stance;
+        const payload = { day: day, stance: stance, voterId: voter, name: profile.name,
+          avatar: profile.avatar, quote: quote, at: at, clock: Vote.beijingClock() };
         let posted = false;
         try {
           const j = await fetchJson(Vote.ledgerUrl(st.config.ledgerBase, '/api/vote'), {
             method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ day: day, stance: stance, voterId: voter })
+            body: voteBody(payload)
           }, 6500);
-          if (j && j.ok && Vote.isObj(j.days)) {
-            st.days = {};
-            Object.keys(j.days).forEach(function (d) {
-              if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
-              st.days[d] = { support: Math.max(0, Number(j.days[d].support) || 0),
-                watch: Math.max(0, Number(j.days[d].watch) || 0) };
-            });
-            if (Number(j.totalVotes)) st.totalVotes = Number(j.totalVotes);
-            st.ledgerAvailable = true;
-            st.lastSyncAt = Date.now();
-            st.lastError = '';
+          if (applyLedgerJson(st, j)) {
             delete st.localAdd[day];
             st.pending = st.pending.filter(function (p) { return p.day !== day; });
             posted = true;
@@ -1729,7 +1771,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
           st.ledgerAvailable = false;
           localAddOne(st, day, stance, prev);
           st.pending = st.pending.filter(function (p) { return p.day !== day; });
-          st.pending.push({ day: day, stance: stance, voterId: voter });
+          st.pending.push(payload);
         }
         await sset({ [K_VOTE]: st });
         sendResponse({ ok: true, summary: Vote.summary(st), posted: posted });

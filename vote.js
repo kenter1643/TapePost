@@ -1,15 +1,18 @@
 /*
- * vote.js — $BEM 信仰者每日打卡 / 全网账本（1.5.5）
+ * vote.js — $BEM 信仰者每日打卡 / 全网账本（1.5.5）→ 信仰者墙（1.5.6）
  *
  * 「全网记账」实现口径：
  *   · 共享账本是一个公开 REST 服务（默认见 DEFAULT_LEDGER，自托管协议见 vote-ledger/server.js）。
- *     GET  /api/state             → { days: { 'YYYY-MM-DD': { support, watch } }, totalVotes }
- *     POST /api/vote              → { day, stance, voterId } → 返回更新后的 days
- *   · 服务端只收「日期 + 立场 + 当日匿名去重哈希」。voterId 由 wallet.js 用本机随机盐
- *     与日期做 SHA-256 得到，每天轮换，账本无法跨天关联同一个人，更拿不到钱包地址。
+ *     GET  /api/state             → { days, totalVotes, supporters: { day: [名片明细] } }
+ *     POST /api/vote              → { day, stance, voterId, name, avatar, quote, at }
+ *   · 1.5.6 起必须先连接钱包才能投「支持」；上传的身份 voterId 是「钱包地址 + 日期」
+ *     的一次 SHA-256（wallet.js 的 walletVoterId），每天轮换、不可逆。
+ *     **明文钱包地址永远不出本机**，账本只拿到哈希。
+ *   · 支持票会同时提交一张「信仰者名片」：昵称、内置头像编号、北京时间、随机抽中的
+ *     激励话语。这些内容会写进公开账本并在 /vote 页展示；隐私政策已明确说明。
  *   · 同一天同一 voterId 只算一票；改立场是替换而不是累加（服务端实现）。
  *   · 断网 / 未配置账本时自动降级「本机账本」：照常按天累计、算连续打卡，界面明确标注
- *     「本机」，待联网后把待同步票补投上去，绝不假装是全网数据。
+ *     「本机」，待联网后连同名片一起补投，绝不假装是全网数据。
  *
  * 所有日期按北京时间（UTC+8）切天，保证不同时区的用户看到同一张日账。
  * 纯逻辑：不引用 chrome.*，可在 Node vm 里跑。
@@ -41,6 +44,38 @@ var Vote = (function () {
   }
   function beijingHour(nowMs) {
     return new Date(Number(nowMs == null ? Date.now() : nowMs) + DAY_TZ_OFFSET_MIN * 60000).getUTCHours();
+  }
+  function beijingClock(nowMs) {
+    var d = new Date(Number(nowMs == null ? Date.now() : nowMs) + DAY_TZ_OFFSET_MIN * 60000);
+    return ('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2);
+  }
+  /* ---------- 1.5.6：信仰者名片 / 激励话语 / 发 X 文案 ---------- */
+  var AVATAR_RE = /^a(0[1-9]|[12][0-9]|3[0-2])$/;   // 对应 BemAvatars 的 a01~a32
+  function cleanName(raw) {
+    var s = String(raw == null ? '' : raw)
+      .replace(/[\u0000-\u001f\u007f]/g, '')   // 控制字符一律不留
+      .replace(/[<>&]/g, '')                    // 账本页与 X 文案都不需要标签
+      .trim();
+    var chars = Array.from ? Array.from(s) : s.split('');
+    return chars.slice(0, 16).join('');
+  }
+  function normalizeProfile(raw) {
+    var r = isObj(raw) ? raw : {};
+    var avatar = String(r.avatar || '').trim();
+    if (!AVATAR_RE.test(avatar)) avatar = 'a01';
+    return { name: cleanName(r.name), avatar: avatar };
+  }
+  function defaultName(mask) {
+    return cleanName('信仰者 ' + String(mask || '').trim()) || 'BEM 信仰者';
+  }
+  function tweetText(quote, name, day, clock, pageUrl) {
+    var q = String(quote || '').slice(0, 80);
+    var n = cleanName(name) || 'BEM 信仰者';
+    return q + '\n\n— ' + n + ' · 北京时间 ' + String(day) + ' ' + String(clock) +
+      ' 为 $BEM 打卡\n\n#BEM #TapeOut #TapePost\n' + String(pageUrl || '');
+  }
+  function postUrl(text) {
+    return 'https://x.com/intent/tweet?text=' + encodeURIComponent(String(text || '').slice(0, 260));
   }
   function shiftDay(day, delta) {
     var p = String(day).split('-');
@@ -124,6 +159,22 @@ var Vote = (function () {
   }
   function publicPage(base) { return ledgerUrl(base, '/vote'); }
 
+  /* 账本返回的信仰者墙明细；只保留渲染需要的字段，长度一律收敛 */
+  function parseSupporters(raw) {
+    var out = {};
+    Object.keys(isObj(raw) ? raw : {}).forEach(function (d) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !Array.isArray(raw[d])) return;
+      out[d] = raw[d].slice(0, 200).map(function (r) {
+        var x = isObj(r) ? r : {};
+        return { voterId: String(x.voterId || '').slice(0, 128),
+          name: cleanName(x.name), avatar: AVATAR_RE.test(String(x.avatar || '')) ? x.avatar : 'a01',
+          quote: String(x.quote || '').slice(0, 80), at: String(x.at || '').slice(0, 32),
+          clock: String(x.clock || '').slice(0, 8), stance: x.stance === 'support' ? 'support' : 'watch',
+          day: d };
+      }).filter(function (x) { return x.voterId; });
+    });
+    return out;
+  }
   function parseState(json) {
     if (!isObj(json) || json.ok !== true || !isObj(json.days)) return null;
     var days = {};
@@ -133,7 +184,8 @@ var Vote = (function () {
         watch: Math.max(0, int(json.days[d].watch, 0)) };
     });
     return { days: days, totalVotes: Math.max(0, int(json.totalVotes, 0)),
-      version: int(json.version, 1), updatedAt: json.updatedAt || null };
+      version: int(json.version, 1), updatedAt: json.updatedAt || null,
+      supporters: parseSupporters(json.supporters) };
   }
 
   /* 本机票叠加到最后一次全网快照上；只在离线 / 待同步时用到 */
@@ -151,10 +203,16 @@ var Vote = (function () {
   function summary(state, nowMs) {
     var s = isObj(state) ? state : {};
     var cfg = normalizeConfig(s.config);
-    var today = dayKey(nowMs == null ? Date.now() : nowMs);
+    var now = nowMs == null ? Date.now() : nowMs;
+    var today = dayKey(now);
     var days = mergeDays(s.days, s.localAdd);
     var history = isObj(s.history) ? s.history : {};
     var cfgOn = !!s.ledgerAvailable;
+    var profile = normalizeProfile(s.profile);
+    var quote = String(s.lastQuote || '').slice(0, 80);
+    var page = publicPage(cfg.ledgerBase);
+    var clock = s.lastQuoteAt ? beijingClock(Date.parse(s.lastQuoteAt) || now) : beijingClock(now);
+    var wall = (isObj(s.supporters) && Array.isArray(s.supporters[today])) ? s.supporters[today] : [];
     return {
       today: today,
       days: days,
@@ -170,7 +228,13 @@ var Vote = (function () {
       pending: Array.isArray(s.pending) ? s.pending.length : 0,
       totalVotes: Math.max(0, int(s.totalVotes, 0)),
       config: cfg,
-      publicPage: publicPage(cfg.ledgerBase)
+      publicPage: page,
+      walletBound: !!s.walletBound,
+      profile: profile,
+      quote: quote,
+      quoteAt: String(s.lastQuoteAt || ''),
+      postUrl: quote ? postUrl(tweetText(quote, profile.name, today, clock, page)) : '',
+      supporters: wall
     };
   }
 
@@ -182,6 +246,14 @@ var Vote = (function () {
     isObj: isObj,
     dayKey: dayKey,
     beijingHour: beijingHour,
+    beijingClock: beijingClock,
+    AVATAR_RE: AVATAR_RE,
+    cleanName: cleanName,
+    normalizeProfile: normalizeProfile,
+    defaultName: defaultName,
+    tweetText: tweetText,
+    postUrl: postUrl,
+    parseSupporters: parseSupporters,
     shiftDay: shiftDay,
     recentDays: recentDays,
     dayCount: dayCount,

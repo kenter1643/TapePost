@@ -1,5 +1,5 @@
 /*
- * wallet.js — 只读钱包绑定（1.5.5）
+ * wallet.js — 只读钱包绑定（1.5.5）+ 钱包身份哈希（1.5.6）
  *
  * 设计红线：
  *   · 扩展只拿「公开地址」，绝不接触私钥 / 助记词，不 eth_sign、不发交易、不请求授权额度。
@@ -9,6 +9,8 @@
  *     执行一次；不常驻、不监听页面、不读取页面内容。
  *   · 支持 EIP-6963 多钱包发现 + EIP-1193 传统注入：OKX 欧意 / 币安 Web3 /
  *     TokenPocket / MetaMask / 任何兼容钱包；没有注入式钱包时可手动填地址。
+ *   · 1.5.6 起钱包还是打卡的前置条件：未绑定地址不能投「支持」。上传账本的身份
+ *     只是一次 SHA-256（地址 + 日期），每天轮换、不可逆，明文地址永远不出本机。
  *
  * 本模块刻意不引用 chrome.*（除存档函数在调用方传入），可用 Node vm 直接测纯逻辑。
  */
@@ -131,6 +133,18 @@ var Wallet = (function () {
     var data = new TextEncoder().encode(String(salt) + '|' + String(day) + '|tapepost-bem');
     return c.subtle.digest('SHA-256', data).then(hexOf);
   }
+  /*
+   * 1.5.6：以钱包地址为种子算当日身份哈希。与旧的「本机随机盐」方案相比，
+   * 同一个地址在不同设备 / 重装扩展后当天仍是同一票，账本能跨设备去重；
+   * 但账本收到的是不可逆哈希，既看不到明文地址，也跨不了天关联同一个人。
+   */
+  function walletVoterId(cryptoImpl, address, day) {
+    var c = cryptoOf(cryptoImpl);
+    var addr = normalizeAddress(address);
+    if (!addr) return Promise.resolve(null);
+    var data = new TextEncoder().encode('tapepost-bem-v2|' + addr + '|' + String(day));
+    return c.subtle.digest('SHA-256', data).then(hexOf);
+  }
 
   /* ---------- 页面 MAIN world 注入桥（函数体必须完全自包含） ---------- */
   /*
@@ -238,6 +252,7 @@ var Wallet = (function () {
     encryptText: encryptText,
     decryptText: decryptText,
     voterId: voterId,
+    walletVoterId: walletVoterId,
     pageBridge: pageBridge
   };
 })();

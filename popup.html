@@ -164,6 +164,31 @@
     details.vote-set .btnrow button { flex:1;padding:5px 3px;font-size:9px;border:1px solid #ffd0bd;
       border-radius:6px;background:#fff;color:#b4442c;cursor:pointer;font-weight:600; }
     details.vote-set .tiny { font-size:8px;color:#9aa3ae;line-height:1.5;margin:6px 0 0; }
+    /* 1.5.6：信仰者名片 / 钱包门槛 / 激励话语 */
+    .vote-gate { font-size:9px;line-height:1.4;color:#9a5b45;background:#fff0e9;
+      border:1px dashed #ffb99c;border-radius:6px;padding:4px 6px;margin:4px 0 5px; }
+    .vote-gate[hidden] { display:none; }
+    .vote-id { display:flex;align-items:center;gap:5px;margin:5px 0; }
+    .vote-ava { flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:flex;
+      align-items:center;justify-content:center;font-size:14px;border:1px solid #ffd0bd; }
+    .vote-id input { flex:1;min-width:0;font-size:9px;padding:4px 6px;border:1px solid #ffd0bd;
+      border-radius:6px;outline:none; }
+    .vote-id input:focus { border-color:#b4442c; }
+    .vote-id .pick { flex:0 0 auto;font-size:10px;padding:4px 6px;border:1px solid #ffd0bd;
+      border-radius:6px;background:#fff;color:#b4442c;cursor:pointer; }
+    .vote-avatar-grid { display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin:4px 0 2px; }
+    .vote-avatar-grid button { font-size:14px;line-height:1;padding:3px 0;border:1px solid #ffe0d5;
+      border-radius:6px;background:#fff;cursor:pointer; }
+    .vote-avatar-grid button.on { border-color:#b4442c;background:#fff0e9;box-shadow:0 0 0 1px #b4442c inset; }
+    .vote-actions button:disabled { opacity:.45;cursor:not-allowed;background:#f6f6f6; }
+    .vote-quote { margin:5px 0 2px;padding:5px 6px;border:1px solid #ffd0c4;border-radius:7px;
+      background:#fffaf7; }
+    .vote-quote[hidden] { display:none; }
+    .vote-quote p { margin:0 0 4px;font-size:10px;line-height:1.45;color:#7c3a25;font-weight:600; }
+    .vote-quote .qa { display:flex;gap:5px; }
+    .vote-quote .qa button { flex:1;font-size:9px;padding:4px 3px;border:1px solid #ffc7b5;
+      border-radius:6px;background:#fff;color:#b4442c;cursor:pointer;font-weight:600; }
+    .vote-quote .qa button.x { background:#141b26;color:#fff;border-color:#141b26; }
 
     /* ---------- 1.5.5：钱包 + TapeOut API 资产（数字大、描述小） ---------- */
     .wallet-box { margin:0 0 8px;padding:6px 7px;border:1px solid #cfe0f5;border-radius:8px;
@@ -221,7 +246,7 @@
   </style>
 </head>
 <body>
-  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.5</span></h1>
+  <h1>TapePost · 一键转发到 X <span class="appver" id="appVersion">v1.5.6</span></h1>
   <p class="sub">7 站转发 · 免 Key AI 评论 · 发送由你手动完成。</p>
 
   <!-- 1.5.5：BEM 置顶为主卡（最大字号），TapeUP / 矿机日产并排第二行；描述一律 8px -->
@@ -261,17 +286,30 @@
     </div>
   </section>
 
-  <!-- 1.5.5：针对 BEM 价格的信仰者投票，全网账本按天累计 + 每日打卡提醒 -->
+  <!-- 1.5.6：钱包登录后才能打卡；支持票附昵称/头像/时间/激励话语，公开上墙 -->
   <section class="vote-box" id="votePanel">
     <div class="vote-head">
       <strong>🔥 $BEM 信仰者打卡</strong>
       <span id="voteSource" class="local">本机</span>
     </div>
+    <div class="vote-gate" id="voteGate" hidden>🔒 先在下方「我的 TapeOut 钱包」连接钱包才能打卡；昵称、头像与激励话语会公开记入全网账本。</div>
     <div class="vote-remind" id="voteRemind">今天还没打卡 · 点一下为 BEM 站台</div>
+    <div class="vote-id">
+      <span class="vote-ava" id="voteAvatarChip">🦊</span>
+      <input type="text" id="voteName" maxlength="16" spellcheck="false" placeholder="信仰者昵称（会公开）" />
+      <button type="button" class="pick" id="voteAvatarToggle" title="选择内置头像">🎨</button>
+    </div>
     <div class="vote-actions">
       <button id="voteSupport" type="button">💪 支持</button>
       <button id="voteWatch" type="button">🤔 观望</button>
       <button id="voteOpen" type="button" class="mini" title="打开全网账本网页">🌐</button>
+    </div>
+    <div class="vote-quote" id="voteQuoteBox" hidden>
+      <p id="voteQuoteText"></p>
+      <div class="qa">
+        <button type="button" id="voteQuoteReroll">🎲 换一句</button>
+        <button type="button" id="votePostX" class="x">𝕏 发布到 X</button>
+      </div>
     </div>
     <div class="vote-tally">
       <div><b id="voteTodaySupport">0</b><span>今日支持</span></div>
@@ -280,8 +318,10 @@
     </div>
     <div class="vote-trend" id="voteTrend"></div>
     <div class="vote-status" id="voteStatus"></div>
-    <details class="vote-set">
-      <summary>⚙️ 账本与打卡提醒</summary>
+    <details class="vote-set" id="voteSettings">
+      <summary>⚙️ 我的名片 / 账本与打卡提醒</summary>
+      <label>内置头像（32 款 · 账本只存编号）</label>
+      <div class="vote-avatar-grid" id="voteAvatarGrid"></div>
       <label for="voteLedgerBase">全网账本地址</label>
       <input type="text" id="voteLedgerBase" spellcheck="false" />
       <div class="row" style="margin:7px 0 4px">
@@ -298,7 +338,7 @@
         <button type="button" id="voteSaveCfg">💾 保存设置</button>
         <button type="button" id="voteSync">↻ 立即同步</button>
       </div>
-      <p class="tiny">账本只收「日期 + 立场 + 当日匿名哈希」；钱包地址用 AES-GCM 加密存本机，不上传。断网时自动降级本机账本，标签会显示「本机」，联网后补投。</p>
+      <p class="tiny">1.5.6：必须先连接钱包。支持票会公开记录昵称、内置头像编号、北京时间、随机一句激励话语（本机 10000 条库），以及「钱包地址 + 日期」的 SHA-256 身份哈希用于当日去重；<b>明文钱包地址不出本机</b>。断网降级本机账本，联网后连同名片补投。</p>
     </details>
   </section>
 
@@ -683,6 +723,7 @@
   <script src="wallet.js"></script>
   <script src="tapeout-api.js"></script>
   <script src="vote.js"></script>
+  <script src="bem-quotes.js"></script>
   <script src="grok.js"></script>
   <script src="popup.js"></script>
 </body>

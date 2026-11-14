@@ -853,7 +853,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.5 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.6 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
@@ -882,7 +882,44 @@ function wbxStatus(id, msg, bad) {
   e.className = (id === 'walletStatus' ? 'wallet-status' : 'vote-status') + (bad ? ' err' : '');
 }
 
-/* ---------- 投票 ---------- */
+/* ---------- 投票（1.5.6：钱包门槛 + 信仰者名片 + 激励话语） ---------- */
+let currentAvatarId = 'a01';
+let currentPostUrl = '';
+
+function renderAvatarChip(id) {
+  const a = (typeof BemAvatars !== 'undefined')
+    ? BemAvatars.get(id) : { id: 'a01', e: '🦊', c: '#ffe3d2' };
+  currentAvatarId = a.id;
+  const chip = wbxEl('voteAvatarChip');
+  if (chip) { chip.textContent = a.e; chip.style.background = a.c; }
+  const grid = wbxEl('voteAvatarGrid');
+  if (grid) Array.prototype.forEach.call(grid.children, (c) => {
+    c.className = (c.dataset && c.dataset.avatar === a.id) ? 'on' : '';
+  });
+}
+function buildAvatarGrid() {
+  const grid = wbxEl('voteAvatarGrid');
+  if (!grid || typeof BemAvatars === 'undefined') return;
+  grid.textContent = '';
+  BemAvatars.all().forEach((a) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = a.e;
+    b.title = '头像 ' + a.id;
+    b.dataset.avatar = a.id;
+    b.style.background = a.c;
+    b.addEventListener('click', () => { renderAvatarChip(a.id); saveProfile(); });
+    grid.appendChild(b);
+  });
+}
+function renderQuote(sum) {
+  const box = wbxEl('voteQuoteBox');
+  if (!box) return;
+  const show = !!(sum.quote && sum.myStance === 'support');
+  box.hidden = !show;
+  currentPostUrl = show ? (sum.postUrl || '') : '';
+  if (show) wbxText('voteQuoteText', '「' + sum.quote + '」');
+}
 function renderVote(sum) {
   if (!voteApi || !sum) return;
   voteSummary = sum;
@@ -895,9 +932,18 @@ function renderVote(sum) {
       ? '今日已打卡 ✓ 明天记得再来为 BEM 站台'
       : '今天还没打卡 · 点一下为 BEM 站台';
   }
+  // 钱包是打卡前置条件，由后台判定；未连接时按钮禁用并给出引导
+  const gate = wbxEl('voteGate');
+  if (gate) gate.hidden = !!sum.walletBound;
   const sBtn = wbxEl('voteSupport'), wBtn = wbxEl('voteWatch');
-  if (sBtn) sBtn.className = sum.myStance === 'support' ? 'active' : '';
-  if (wBtn) wBtn.className = sum.myStance === 'watch' ? 'active' : '';
+  if (sBtn) { sBtn.className = sum.myStance === 'support' ? 'active' : ''; sBtn.disabled = !sum.walletBound; }
+  if (wBtn) { wBtn.className = sum.myStance === 'watch' ? 'active' : ''; wBtn.disabled = !sum.walletBound; }
+  // 名片
+  const prof = sum.profile || { name: '', avatar: 'a01' };
+  const nameEl = wbxEl('voteName');
+  if (nameEl && document.activeElement !== nameEl) nameEl.value = prof.name || '';
+  renderAvatarChip(prof.avatar);
+  renderQuote(sum);
   wbxText('voteTodaySupport', sum.todayCount.support);
   wbxText('voteTotalVotes', sum.total.total);
   wbxText('voteStreak', sum.streak);
@@ -915,9 +961,11 @@ function renderVote(sum) {
       trend.appendChild(bar);
     });
   }
+  const wallN = Array.isArray(sum.supporters) ? sum.supporters.length : 0;
   wbxStatus('voteStatus',
     (sum.source === 'network' ? '全网账本已同步' : '当前为本机账本（未联到全网账本）') +
     (sum.pending ? ' · 待补投 ' + sum.pending + ' 票' : '') +
+    (wallN ? ' · 今日 ' + wallN + ' 位信仰者上墙' : '') +
     ' · 北京时间按天累计');
   const foot = wbxEl('bemFoot');
   if (foot) foot.textContent = '🔥 今日 ' + sum.todayCount.support + ' 票支持 · 连续 ' + sum.streak +
@@ -929,6 +977,11 @@ function renderVote(sum) {
   const hr = wbxEl('voteReminderHour'); if (hr) hr.value = String(cfg.reminderHour);
 }
 
+function saveProfile() {
+  sendBg({ type: 'VOTE_PROFILE', name: wbxVal('voteName'), avatar: currentAvatarId }, (r) => {
+    if (r && r.ok) { voteSummary = r.summary; wbxStatus('voteStatus', '名片已保存 ✓ 下次打卡生效'); }
+  });
+}
 function loadVote() {
   sendBg({ type: 'VOTE_STATE' }, (r, err) => {
     if (err || !r || !r.ok) { wbxStatus('voteStatus', '账本读取失败，请重新加载扩展。', true); return; }
@@ -936,14 +989,17 @@ function loadVote() {
   });
 }
 
-function castVote(stance) {
+function castVote(stance, quote) {
+  const payload = { type: 'VOTE_CAST', stance: stance,
+    name: wbxVal('voteName'), avatar: currentAvatarId };
+  if (quote) payload.quote = quote;
   wbxStatus('voteStatus', '正在记票…');
-  sendBg({ type: 'VOTE_CAST', stance: stance }, (r, err) => {
+  sendBg(payload, (r, err) => {
     if (err || !r || !r.ok) { wbxStatus('voteStatus', '记票失败：' + String((r && r.error) || (err && err.message) || '后台无响应'), true); return; }
     renderVote(r.summary);
     wbxStatus('voteStatus', r.summary.source === 'network'
-      ? '已记入全网账本 ✓ 今日一票，明天记得回来打卡'
-      : '已记入本机账本 ✓ 联网后会自动补投到全网');
+      ? '已记入全网账本 ✓ 名片与激励话语已上墙，明天记得回来打卡'
+      : '已记入本机账本 ✓ 联网后会自动连同名片补投到全网');
   });
 }
 
@@ -1049,6 +1105,7 @@ function connectWith(providerId) {
     }
     renderWallet(r);
     wbxStatus('walletStatus', '已连接 ✓ 地址加密存本机，只读资产');
+    loadVote();   // 钱包门槛状态变化，刷新「支持 / 观望」按钮
   });
 }
 
@@ -1065,6 +1122,7 @@ function connectWallet() {
 }
 
 if (voteApi) {
+  buildAvatarGrid();
   bind('voteSupport', () => castVote('support'));
   bind('voteWatch', () => castVote('watch'));
   bind('voteSaveCfg', saveVoteConfig);
@@ -1079,6 +1137,28 @@ if (voteApi) {
     const url = (voteSummary && voteSummary.publicPage) || voteApi.publicPage(voteApi.DEFAULT_LEDGER);
     try { chrome.tabs.create({ url: url, active: true }); } catch (e) {}
   });
+  bind('voteAvatarToggle', () => {
+    const d = wbxEl('voteSettings');
+    if (d) { d.open = true; try { d.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
+  });
+  const nameEl = wbxEl('voteName');
+  if (nameEl) nameEl.addEventListener('change', saveProfile);
+  bind('voteQuoteReroll', () => {
+    if (typeof BemQuotes === 'undefined') return;
+    const q = BemQuotes.pick();
+    const sum = voteSummary || {};
+    const page = sum.publicPage || voteApi.publicPage(voteApi.DEFAULT_LEDGER);
+    const name = wbxVal('voteName') || (sum.profile && sum.profile.name) || 'BEM 信仰者';
+    const text = voteApi.tweetText(q, name, sum.today || voteApi.dayKey(), voteApi.beijingClock(), page);
+    currentPostUrl = voteApi.postUrl(text);
+    wbxText('voteQuoteText', '「' + q + '」');
+    // 重新投一次同一立场：服务端按当日身份哈希去重，只会更新名片与话语
+    castVote(sum.myStance || 'support', q);
+  });
+  bind('votePostX', () => {
+    if (!currentPostUrl) { wbxStatus('voteStatus', '先打卡支持，才会生成可发布的话语。', true); return; }
+    try { chrome.tabs.create({ url: currentPostUrl, active: true }); } catch (e) {}
+  });
   loadVote();
 }
 
@@ -1091,6 +1171,7 @@ if (assetsApi) {
         renderWallet({ ok: true, bound: false });
         showProviders([]);
         wbxStatus('walletStatus', '已断开并删除本机加密地址 ✓');
+        loadVote();
       }
     });
   });
@@ -1102,6 +1183,7 @@ if (assetsApi) {
       if (err || !r || !r.ok) { wbxStatus('walletStatus', '保存失败：' + String((r && r.error) || '后台无响应'), true); return; }
       renderWallet(r);
       wbxStatus('walletStatus', '已加密保存 ✓ 正在读取资产…');
+      loadVote();
     });
   });
   loadWallet(false);

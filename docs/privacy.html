@@ -39,10 +39,10 @@
 <div class="wrap">
   <div class="brand"><span class="mark">T</span> TapePost · 一键转发到 X</div>
   <h1>隐私政策</h1>
-  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 14 日（1.5.5：行情改为 BEM 置顶大数字、描述文字缩小；新增只读钱包连接（OKX 欧意 / 币安 Web3 / TokenPocket / MetaMask 等注入式钱包，地址 AES-GCM 加密仅存本机）、基于 TapeOut API v1 与 TapeAPI 3.0.0 的钱包资产读取、$BEM 信仰者每日打卡与全网共享账本。新增 scripting / activeTab 两项权限与 api.tapeapi.fun、tapeout.firsto.ai、账本服务三条主机权限，数据流向见第 3 节。此前 1.5.4 修复微博视频帖入口、1.5.3 新增 DeepSeek API 模式）　｜　适用版本：1.5.5（历史版本 1.4.2 及以上同样适用）　｜　开发者：TapeOut 社区 · 昆哥</div>
+  <div class="date">生效日期：2026 年 11 月 8 日　｜　最近修订：2026 年 11 月 14 日（1.5.6：$BEM 打卡改为「连接钱包后才能投支持」，支持票会公开发布昵称、内置头像编号、北京时间与随机激励话语；身份哈希改为「钱包地址 + 日期」的 SHA-256；新增 10000 条本机激励话语文库与一键发到 X。数据流向见第 3 节。此前 1.5.5：行情改为 BEM 置顶大数字、描述文字缩小；新增只读钱包连接（OKX 欧意 / 币安 Web3 / TokenPocket / MetaMask 等注入式钱包，地址 AES-GCM 加密仅存本机）、基于 TapeOut API v1 与 TapeAPI 3.0.0 的钱包资产读取、$BEM 信仰者每日打卡与全网共享账本。新增 scripting / activeTab 两项权限与 api.tapeapi.fun、tapeout.firsto.ai、账本服务三条主机权限，数据流向见第 3 节。此前 1.5.4 修复微博视频帖入口、1.5.3 新增 DeepSeek API 模式）　｜　适用版本：1.5.6（历史版本 1.4.2 及以上同样适用）　｜　开发者：TapeOut 社区 · 昆哥</div>
 
   <div class="box hi">
-    <strong>一句话总结：</strong> 扩展本身<strong>没有账号体系、没有统计或遥测</strong>，除 1.5.5 新增的 $BEM 投票共享账本外<strong>没有其它服务器</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」或「DeepSeek API」模式并填写自己的 Key 时，接收方才改为对应服务商（xAI 或 DeepSeek）；两家的 Key 与配置分开保存，同一时刻只会向你选定的那一家发请求。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。<strong>1.5.5 起</strong>：只读钱包绑定会把一个公开地址用 AES-GCM 加密存在本机，加密密钥同样只在本机；扩展不接触私钥 / 助记词、不签名、不发交易。读取资产时会把这个公开地址发给 Firsto 的 TapeOut API 与 TapeAPI 公共签名读取服务（只读，不含身份信息）。$BEM 信仰者打卡会向一个公开的共享账本提交「日期 + 立场 + 当日匿名去重哈希」，<strong>绝不上传钱包地址</strong>；该账本由开发者运营，除此以外扩展仍无账号体系、无统计或遥测。
+    <strong>一句话总结：</strong> 扩展本身<strong>没有账号体系、没有统计或遥测</strong>，除 1.5.5 新增的 $BEM 投票共享账本外<strong>没有其它服务器</strong>。「一键转发」的提取、去水印、剪贴板与下载全部在本机完成，不上传任何数据。<strong>AI 功能默认走「X 站内直连」</strong>（免 API Key）：由你已打开的 X 页面，以你已登录的会话直接向 X 自有的 Grok 接口发送「设定提示词 + 你选中的推文正文或待核验链接」，接收方仅 X/Grok，扩展后台只接收生成的 3 条文本候选；只有你主动切换到「xAI API」或「DeepSeek API」模式并填写自己的 Key 时，接收方才改为对应服务商（xAI 或 DeepSeek）；两家的 Key 与配置分开保存，同一时刻只会向你选定的那一家发请求。为让 X 认可是自己网页客户端发出的请求，页面内脚本会在本机读取 <code>ct0</code> 认证 Cookie 与 <code>authorization</code> bearer，这些值仅留在该页面内存，不存储、不导出、不回传给开发者。不使用 AI 功能时不会发起任何相关请求。<strong>1.5.5 起</strong>：只读钱包绑定会把一个公开地址用 AES-GCM 加密存在本机，加密密钥同样只在本机；扩展不接触私钥 / 助记词、不签名、不发交易。读取资产时会把这个公开地址发给 Firsto 的 TapeOut API 与 TapeAPI 公共签名读取服务（只读，不含身份信息）。$BEM 信仰者打卡<strong>必须先连接钱包</strong>，会向一个公开的共享账本提交「日期 + 立场 + 钱包地址哈希 + 你主动填写/抽取的昵称、内置头像编号、打卡时间与一句激励话语」，这些内容会在账本公开页展示；<strong>明文钱包地址绝不上传</strong>；该账本由开发者运营，除此以外扩展仍无账号体系、无统计或遥测。
   </div>
 
   <h2>1. 我们会处理哪些数据</h2>
@@ -54,7 +54,9 @@
     <li>你在生态面板输入框里粘贴的待核验链接；</li>
     <li>页面 DOM 结构（用于定位正文、内容图与插入按钮）。</li>
     <li><strong>1.5.5：</strong>你主动点「连接钱包」时由已安装钱包返回的一个<strong>公开钱包地址</strong>（或你手动填入的地址）与其链 ID；不读取私钥、助记词、签名内容、交易记录或钱包里的其它账号；</li>
-    <li><strong>1.5.5：</strong>你主动点「支持 / 观望」时生成的当日打卡立场（support / watch），以及本机按「随机盐 + 日期」算出的匿名去重哈希；不读取身份、钱包地址或设备标识。</li>
+    <li><strong>1.5.6：</strong>你主动点「支持 / 观望」时的当日打卡立场（support / watch），以及由「钱包地址 + 日期」经 SHA-256 得到的当日身份哈希（不可逆、每天轮换、不含明文地址）；不读取设备标识或其它账号；</li>
+    <li><strong>1.5.6：</strong>你主动填写的信仰者昵称（≤16 字）、从 32 款内置头像里选的编号、打卡时间（北京时间），以及从本机 10000 条话语文库里随机抽中的一句激励话语——<strong>这四项会随支持票写入公开账本并在 /vote 页展示</strong>；观望票不上墙；</li>
+    <li><strong>1.5.6：</strong>你主动点「𝕏 发布到 X」时，上述话语与昵称、时间、账本链接会被预填到 X 发推框；发送由你手动完成，扩展不读取你的 X 账号信息。</li>
   </ul>
   <p>扩展不会读取与你正在操作的内容无关的标签页，不会读取密码、表单输入，不建立浏览历史（访问列表 / 页面标题 / 访问时间）记录，也不会上传图片或视频文件。</p>
   <p><strong>认证凭证（如实披露）：</strong>仅在「X 站内直连」模式下，页面内脚本会读取 X 的 <code>ct0</code> 认证 Cookie（用作 <code>x-csrf-token</code>），并通过轻量包装 <code>window.fetch</code> 观察 X 自身请求头中的 <code>authorization</code> bearer 与 <code>x-client-transaction-id</code>，用于把 Grok 请求发回 X 自己。这些值只存在于该 X 页面的内存变量中，<strong>不写入 <code>chrome.storage</code> / <code>localStorage</code>、不导出、不上传给开发者或任何第三方</strong>，接收方始终只有 X/Grok；扩展不读取你的密码、PIN 或安全问题。因官方把 authentication cookies 归入「Authentication information」，且本地处理同样需要披露，商店 Privacy practices 中已勾选该项，并同时勾选「User activity」（fetch 请求头观察）与「Website content」。</p>
@@ -68,9 +70,9 @@
     <li><strong>生态收录清单</strong>（295 条）是内置在扩展代码里的静态数据，来源为 <a href="https://tapeout.link/">TapeOut.link</a> 公开的站点数据与 <a href="https://web.tapeout.link/">web.tapeout.link</a> 的 DeWeb 索引（核验日期 2026-11-08），不会联网拉取，也不包含你的任何信息。</li>
     <li><strong>1.4.13 行情数据（仅存本机）：</strong>价格上下限、提醒开关、检查间隔等偏好保存在 <code>chrome.storage.sync</code>；最近一次行情快照、提醒状态机、系统通知 id 与交易所链接的对应关系保存在 <code>chrome.storage.local</code>。这些值只含公开行情数字与你自己填写的阈值，<strong>不含任何账号、身份、页面内容或浏览历史</strong>，也不会上传给开发者或第三方。可在面板「价格提醒设置」里关闭提醒或清空阈值。</li>
     <li><strong>1.5.5 钱包地址（加密、仅本机）：</strong>公开地址与所用钱包名称、链 ID 一起用 Web Crypto AES-GCM 加密后存 <code>chrome.storage.local</code>；32 字节密钥在安装时由本机随机生成，也只存本机、不同步、不随扩展分发。点「断开」即删除密文与资产缓存。扩展<strong>不保存明文地址、不接触私钥 / 助记词，也不请求签名或交易授权</strong>。</li>
-    <li><strong>1.5.5 投票与资产缓存（仅本机）：</strong>打卡历史（哪天投了什么立场）、待补投票、最近一次全网账本快照、资产快照、账本地址与提醒时间都存 <code>chrome.storage.local</code>；不含身份信息，也不含钱包地址。账本地址可在设置里改成你自己的兼容服务。</li>
+    <li><strong>1.5.5 投票与资产缓存（仅本机）：</strong>打卡历史（哪天投了什么立场）、待补投票、最近一次全网账本快照、资产快照、账本地址与提醒时间都存 <code>chrome.storage.local</code>；不含身份信息，也不含钱包地址。账本地址可在设置里改成你自己的兼容服务。<strong>1.5.6 起</strong>另在 <code>chrome.storage.local</code> 保存你的信仰者名片（昵称 + 内置头像编号）与最近抽中的一句激励话语，仅存本机、不同步，可在弹窗里随时修改。</li>
   </ul>
-  <p>除第 3 节披露的「$BEM 信仰者投票共享账本」外，开发者不运营任何其它后端服务，也不设账号体系、统计或遥测；该账本只接收日期、立场与每日匿名去重哈希，<strong>不接收钱包地址、API Key、页面内容、推文正文或任何身份信息</strong>。因此开发者无法访问、收集或分析上述本机数据。</p>
+  <p>除第 3 节披露的「$BEM 信仰者投票共享账本」外，开发者不运营任何其它后端服务，也不设账号体系、统计或遥测；该账本 1.5.6 起还会接收并公开展示你主动填写的昵称、内置头像编号、打卡时间与随机激励话语，以及不可逆的地址哈希；<strong>不接收明文钱包地址、API Key、页面内容、推文正文或设备标识</strong>。因此开发者无法访问、收集或分析上述本机数据。</p>
 
   <h2>3. 网络请求</h2>
   <p><strong>转发链路：</strong>扩展会向内容所在的图片/视频 CDN 发起请求以下载媒体（例如 sinaimg.cn、zhimg.com、qpic.cn、hdslb.com、doubanio.com、xhscdn.com、twimg.com）。为通过图床防盗链校验，扩展会用 <code>declarativeNetRequest</code> 为这些请求设置对应站点的 <code>Referer</code> 请求头。微博视频会优先查询公开的 <code>m.weibo.cn/statuses/show</code> 接口获取高清地址（请求中仅包含该条内容的公开 ID）。</p>
@@ -82,7 +84,7 @@
     <li><code>https://api.tapeapi.fun/tapeapi/v1/{balance|tokenBalance|bnbUsd}</code>（TapeAPI 3.0.0 公共签名读取，POST 的 <code>params</code> 里只有地址与 $BEM 合约地址；响应带签名回执，扩展只取其中的公开余额数字，<strong>未在本机验签</strong>，也不把它当作交易决策依据）。</li>
   </ul>
   <p>资产快照只缓存到本机 <code>chrome.storage.local</code>（2 分钟），点「↻ 读资产」才强制刷新；不上传给开发者、不写入账本、不与打卡数据关联。接收方为 Firsto 与 TapeAPI 公共服务的运营方，各自按其服务条款处理这一个公开地址。</p>
-  <p><strong>1.5.5 $BEM 信仰者打卡与全网账本（唯一会写入外部服务的功能）：</strong>点「支持 / 观望」时，扩展后台会向公开的共享账本 <code>https://tapepost-privacy.app.workbuddy.host/api/vote</code> 提交 <code>{ day, stance, voterId }</code>：<code>day</code> 是按北京时间切分的日期，<code>stance</code> 是 support / watch，<code>voterId</code> 是本机随机盐与日期经 SHA-256 得到的<strong>每日轮换匿名哈希</strong>（每天不同，无法跨天关联同一个人）。打开弹窗时会 GET <code>/api/state</code> 拉取按天累计的全网票数。<strong>钱包地址、API Key、页面内容、推文正文、设备标识与任何身份信息一律不发送</strong>；账本也只保存日期、立场与该匿名哈希用于同日去重。开发者运营这个账本服务，除此之外不接收也不留存任何用户数据；账本地址可在设置里改成你自建的兼容服务，断网时自动降级为纯本机账本并在界面标注「本机」。<code>notifications</code> 权限还用于你开启的每日打卡提醒（默认北京时间 20:00，可关闭），通知文字不含任何个人数据。</p>
+  <p><strong>1.5.6 $BEM 信仰者打卡与全网账本（唯一会写入外部服务的功能）：</strong>必须先连接钱包才能点「支持 / 观望」。点打卡时，扩展后台向公开共享账本 <code>https://tapepost-privacy.app.workbuddy.host/api/vote</code> 提交 <code>{ day, stance, voterId, name, avatar, quote, at, clock }</code>：<code>day</code> 是北京时间日期，<code>stance</code> 是 support / watch；<code>voterId</code> 是「小写钱包地址 + 日期」经 SHA-256 得到的不可逆哈希，每天轮换、用于同一地址跨设备当日去重，账本与开发者都拿不到明文钱包地址；<code>name</code> 是你自己填写的昵称（≤16 字）、<code>avatar</code> 是你从 32 款内置头像里选的编号（不含图片文件）、<code>quote</code> 是从扩展本机 10000 条话语文库里随机抽出的一句、<code>at</code> 与 <code>clock</code> 是打卡时间（ISO 与北京时间 HH:MM）。<strong>支持票的这四项内容会写入账本并在 /vote 公开页的「信仰者墙」上展示</strong>，请只填你愿意公开的内容；观望票只计数、不上墙，撤回会同时删掉墙上明细。打开弹窗时 GET <code>/api/state</code> 拉取按天票数与近 14 日信仰者墙。<strong>钱包地址、私钥、API Key、页面内容、推文正文、设备标识一律不发送</strong>。账本由开发者运营，除此之外不接收也不留存任何用户数据；账本地址可在设置里改成自建兼容服务，断网时降级为纯本机账本并在界面标注「本机」，联网后连同名片补投。点「𝕏 发布到 X」只是用 <code>x.com/intent/tweet</code> 预填话语 + 昵称 + 时间 + 账本链接打开新标签页，<strong>发送仍由你手动完成，扩展不调用任何发布接口</strong>。<code>notifications</code> 权限用于你开启的每日打卡提醒（默认北京时间 20:00，可关闭），通知文字不含个人数据。1.5.5 的旧口径（本机随机盐哈希、只提交日期 / 立场）已停用；1.5.5 及更早的历史票只有计数、没有名片，不会补造。</p>
   <p><strong>1.4.13 行情链路（后台定时，纯只读）：</strong>为在面板顶端显示三项公开行情，扩展后台默认每 5 分钟（可设 1 / 5 / 15 / 30 分钟，也可手动点 ↻ 立即刷新）向以下两个<strong>公开只读接口</strong>发起 GET 请求。<strong>其中 $BEM 与矿机日产能价这两项数据都来自 Firsto</strong>（接口域名 <code>api-tapeout.firsto.ai</code>，数据页 <code>tapeout.firsto.ai</code>）；第三项 TapeUP 内盘价来自 tapeup.io，见下一段，与 Firsto 无关：</p>
   <ul>
     <li><code>https://api-tapeout.firsto.ai/v1/analytics/bem?range=24h</code> 与 <code>/v1/circuit-holders?page=1</code>：$BEM 现价与 TapeOut 矿机日产能价（后台 GET）。后者是 <code>https://tapeout.firsto.ai/circuits/other</code> 页顶「日产能价参考价」所用的同源公开接口；<strong>1.4.20 起</strong>替换原来的 <code>/v1/analytics/circuits?range=24h</code>（24h 成交序列，会滞后）。接口路径变了，但域名、请求方式与只读性质不变；</li>
@@ -151,14 +153,14 @@
     <tr><td>scripting / activeTab（1.5.5 新增）</td><td>仅在你主动点「连接钱包」时，在<strong>当前活动标签页</strong>探测注入式钱包并读取其返回的公开地址；不常驻、不监听页面、不读取页面内容，也不作用于其它标签页</td></tr>
     <tr><td><code>api.tapeapi.fun</code> 主机权限（1.5.5 新增）</td><td>仅在绑定地址后读取 BNB / $BEM 余额与 BNB 现价这三个公开只读签名方法；免密钥、不携带任何身份或页面数据</td></tr>
     <tr><td><code>tapeout.firsto.ai</code> 主机权限（1.5.5 新增）</td><td>仅作两件事：当前页无法探测钱包时打开该站再探测一次；以及点卡片跳转该站资产 / 电路市场页面。不读取该站页面内容、不注入常驻脚本</td></tr>
-    <tr><td><code>tapepost-privacy.app.workbuddy.host</code> 主机权限（1.5.5 新增）</td><td>$BEM 信仰者投票共享账本：GET 按天票数、POST 每日一票（日期 / 立场 / 当日匿名哈希）；该域名同时托管隐私政策独立副本。不发送钱包地址或其它个人数据</td></tr>
+    <tr><td><code>tapepost-privacy.app.workbuddy.host</code> 主机权限（1.5.5 新增，1.5.6 扩展）</td><td>$BEM 信仰者投票共享账本：GET 按天票数与信仰者墙、POST 每日一票（日期 / 立场 / 地址哈希 / 昵称 / 头像编号 / 时间 / 激励话语）；该域名同时托管隐私政策独立副本。不发送明文钱包地址、API Key、页面内容或设备标识</td></tr>
     <tr><td>可选主机权限（默认未授予）</td><td>仅当你在设置里填写自定义网关并主动点「允许网关域名」时，才申请该域名的访问权</td></tr>
   </table>
   </div>
   <p>你可以在扩展设置面板里逐个关闭站点；关闭某个站点后，扩展不会在该站点注入任何界面。</p>
 
   <h2>6. 第三方内容与你的责任</h2>
-  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）、xAI 与 DeepSeek 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。1.4.13 起面板顶端的行情与价格提醒：<strong>BEM 与矿机日产价这两项都来自 Firsto</strong>（BEM 来自 Firsto 官方 analytics，矿机日产价自 1.4.20 起来自 tapeout.firsto.ai/circuits/other 页顶实时挂单参考价的同源只读接口）；<strong>TapeUP $UP 内盘价来自 tapeup.io 交易页</strong>（1.4.21 起按页面 BEM/UP 锚点由内容脚本采集，与 Firsto 无关），<strong>仅供参考、可能延迟或缺失，不构成投资建议</strong>；扩展不替你下单；1.5.5 起的钱包连接是<strong>只读</strong>的（只取公开地址并读取公开链上 / 索引数据），不签名、不授权、不转账，也不能动用你的资产。资产数字来自第三方公开接口，可能延迟或缺失，<strong>仅供参考，不构成投资建议</strong>；$BEM 信仰者投票只是社区表态，与价格、收益及官方立场无关。</p>
+  <p>扩展帮助你搬运公开页面的文字与图片、生成回复草稿、核验链接。原内容的权利属于原作者，转载、二创或转发前请自行确认授权，并建议开启设置里的「附原推链接」标注来源。Grok 生成的评论与核验结论仅供参考，请自行判断后再发布或访问；链上平台务必再次核对地址、谨慎授权钱包。X（x.com / twitter.com）、xAI 与 DeepSeek 的服务与可达性由其自行负责，本扩展与其无关联，也不代表其官方。生态面板的「官方认定」清单来自公开的 TapeOut.link 标记，不构成任何背书或投资建议。1.4.13 起面板顶端的行情与价格提醒：<strong>BEM 与矿机日产价这两项都来自 Firsto</strong>（BEM 来自 Firsto 官方 analytics，矿机日产价自 1.4.20 起来自 tapeout.firsto.ai/circuits/other 页顶实时挂单参考价的同源只读接口）；<strong>TapeUP $UP 内盘价来自 tapeup.io 交易页</strong>（1.4.21 起按页面 BEM/UP 锚点由内容脚本采集，与 Firsto 无关），<strong>仅供参考、可能延迟或缺失，不构成投资建议</strong>；扩展不替你下单；1.5.5 起的钱包连接是<strong>只读</strong>的（只取公开地址并读取公开链上 / 索引数据），不签名、不授权、不转账，也不能动用你的资产。资产数字来自第三方公开接口，可能延迟或缺失，<strong>仅供参考，不构成投资建议</strong>；$BEM 信仰者投票只是社区表态，与价格、收益及官方立场无关；1.5.6 起支持票上的昵称、头像、时间与激励话语会在公开账本页展示，属你自愿公开的内容，请勿填写真实姓名、联系方式等个人信息，也不要把它当作投资依据。</p>
 
   <h2>7. 儿童隐私</h2>
   <p>本扩展不面向 13 岁以下儿童，也不会有意收集任何年龄信息。</p>
@@ -166,7 +168,7 @@
   <h2>8. 变更与联系</h2>
   <p>如政策有实质变更，我们会更新本页并同步提升扩展版本号。本项目源码公开，可自行审计数据处理逻辑：<a href="https://github.com/kenter1643/TapePost">github.com/kenter1643/TapePost</a>。如需咨询或反馈，请在 <a href="https://github.com/kenter1643/TapePost/issues">GitHub Issues</a> 提交，或通过 Chrome 网上应用店该扩展页面的「支持 / 开发者联系方式」渠道联系开发者。</p>
 
-  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · AI 默认免 Key 走 X 站内模式，可选 xAI / DeepSeek API · 行情与钱包资产仅取公开只读接口 · 打卡只提交匿名日期立场　｜　Last updated: 2026-11-14</footer>
+  <footer><a href="index.html">产品介绍</a>　｜　<a href="https://github.com/kenter1643/TapePost">源码与许可（MIT）</a>　｜　TapePost · 一键转发到 X　｜　转发本地处理 · AI 默认免 Key 走 X 站内模式，可选 xAI / DeepSeek API · 行情与钱包资产仅取公开只读接口 · 打卡需连接钱包 · 支持票公开昵称/头像/时间/话语　｜　Last updated: 2026-11-14</footer>
 </div>
 </body>
 </html>

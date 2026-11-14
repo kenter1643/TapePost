@@ -2,10 +2,10 @@
   "manifest_version": 3,
   "name": "TapePost · 一键转发到 X",
   "short_name": "TapePost",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "author": "TapeOut 社区 · 昆哥",
   "minimum_chrome_version": "116",
-  "description": "7 站点一键转发到 X：图片逐张去水印 + 4K、视频本机剪接与逐帧去水印、多图放大浏览；免 Key 用 X 自带 Grok 生成评论，也可自备 Key 走 xAI / DeepSeek API；内置 TapeOut 行情、只读钱包资产（OKX / 币安 / TP 等）、$BEM 信仰者每日打卡全网账本与生态导航核验。",
+  "description": "7 站点一键转发到 X：图片逐张去水印 + 4K、视频本机剪接与逐帧去水印、多图放大浏览；免 Key 用 X 自带 Grok 生成评论，也可自备 Key 走 xAI / DeepSeek API；内置 TapeOut 行情、只读钱包资产（OKX / 币安 / TP 等）；连接钱包后可为 $BEM 打卡，昵称 / 头像 / 时间与随机激励话语记入公开全网账本，并可一键发到 X；生态导航核验。",
   "action": {
     "default_popup": "popup.html",
     "default_title": "TapePost · 转发 / AI 评论 / 生态面板",
