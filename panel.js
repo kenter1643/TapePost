@@ -423,7 +423,7 @@ function initPanel() {
   try {
     var panelVer = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
     var panelVerEl = document.getElementById('appVersion');
-    if (panelVer && panelVerEl) panelVerEl.textContent = '信仰者工具 v' + panelVer;
+    if (panelVer && panelVerEl) panelVerEl.textContent = 'v' + panelVer;
   } catch (e) {}
 
   showMode();
