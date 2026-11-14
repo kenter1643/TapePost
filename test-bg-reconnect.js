@@ -181,9 +181,9 @@ const TRANSIENT = () => Promise.reject(new Error('Could not establish connection
     const html = fs.readFileSync(path.join(__dirname, 'popup.html'), 'utf8');
     const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
     const listing = JSON.parse(fs.readFileSync(path.join(__dirname, 'store', 'listing.json'), 'utf8'));
-    ok('版本号统一 1.5.11', manifest.version === '1.5.11' && listing.version === '1.5.11' &&
-      /appVersion">v1\.5\.11</.test(html) && /return 'v1\.5\.11';/.test(SRC));
-    ok('描述首条为 1.5.11', String(listing.detailed_description[0]).startsWith('【1.5.11'));
+    ok('版本号统一 1.5.12', manifest.version === '1.5.12' && listing.version === '1.5.12' &&
+      /appVersion">v1\.5\.12</.test(html) && /return 'v1\.5\.12';/.test(SRC));
+    ok('描述首条为 1.5.12', String(listing.detailed_description[0]).startsWith('【1.5.12'));
   }
 
   console.log('\n结果：' + passed + '/' + (passed + failed) + ' 通过，' + failed + ' 条失败');

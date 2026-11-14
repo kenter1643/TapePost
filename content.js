@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.11';
+  return 'v1.5.12';
 })();
 
 /* ==================== 1.5.11：后台连接自愈 ====================
@@ -606,6 +606,27 @@ function injectStyle() {
   .wbx-vs-bar > i{display:block;height:100%;width:0;background:#1da1f2;transition:width .2s;}
   .wbx-vs-status{color:#d96000;font-weight:600;min-height:16px;line-height:1.4;}
   .wbx-vs-hint{color:#777;line-height:1.5;font-size:11px;margin-top:8px;}
+  .wbx-vs-preview{position:relative;}
+  .wbx-vs-wm{border:1px solid #dfe7ef;border-radius:9px;padding:8px;margin:9px 0;background:#f7fbff;}
+  .wbx-vs-wm-title{font-size:11px;color:#3a4756;font-weight:700;margin-bottom:6px;line-height:1.4;}
+  .wbx-vs-wm-presets{display:flex;flex-wrap:wrap;gap:5px;}
+  .wbx-vs-wm-presets button{
+    border:1px solid #d9e2ec;background:#fff;color:#41556b;border-radius:6px;
+    padding:4px 7px;font-size:11px;cursor:pointer;line-height:1.3;
+  }
+  .wbx-vs-wm-presets button:hover{border-color:#ff7800;color:#d96000;}
+  .wbx-vs-wm-presets button.on{background:#ff7800;border-color:#ff7800;color:#fff;font-weight:700;}
+  .wbx-vs-wm-pick{margin-top:7px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .wbx-vs-wm-pick button{
+    border:1px solid #1da1f2;background:#f3faff;color:#1589d1;border-radius:6px;
+    padding:4px 8px;font-size:11px;cursor:pointer;font-weight:600;
+  }
+  .wbx-vs-wm-pick button.on{background:#1da1f2;color:#fff;}
+  .wbx-vs-wm-coord{font-size:10px;color:#6b7887;line-height:1.5;}
+  .wbx-vs-wm-overlay{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;}
+  .wbx-vs-wm-overlay.picking{pointer-events:auto;cursor:crosshair;background:rgba(0,0,0,.14);}
+  .wbx-vs-wm-rect{position:absolute;border:2px dashed #ff7800;background:rgba(255,120,0,.2);box-sizing:border-box;}
+  .wbx-vs-wm-warn{color:#c0392b;font-weight:700;}
   #wbx-gallery.wbx-vs-shift{right:396px !important;}
   `;
   const style = document.createElement('style');
@@ -3465,13 +3486,21 @@ function showVideoStudio(opts) {
   body.className = 'wbx-vs-body';
   panel.appendChild(body);
 
+  const previewWrap = document.createElement('div');
+  previewWrap.className = 'wbx-vs-preview';
   const preview = document.createElement('video');
   preview.className = 'wbx-vs-video';
   preview.controls = true;
   preview.preload = 'metadata';
   preview.muted = true;
   preview.playsInline = true;
-  body.appendChild(preview);
+  previewWrap.appendChild(preview);
+  // 1.5.12：水印框可视化层。平时 pointer-events:none，不挡播放器控件；
+  // 点「在预览上拖框」才临时接管鼠标。
+  const wmOverlay = document.createElement('div');
+  wmOverlay.className = 'wbx-vs-wm-overlay';
+  previewWrap.appendChild(wmOverlay);
+  body.appendChild(previewWrap);
 
   const durLine = document.createElement('div');
   durLine.className = 'wbx-vs-hint';
@@ -3558,6 +3587,163 @@ function showVideoStudio(opts) {
   optRow.appendChild(sizeLabel);
   body.appendChild(optRow);
 
+  /* ---------- 1.5.12：水印位置（自动检测 + 手动兜底） ----------
+   * 真机反馈「逐帧去水印勾了，水印依然存在」：自动检测复用了为静态高清图
+   * 调的高阈值，对缩放 + H.264 压缩 + 半透明水印命中率几乎为 0，导出等于
+   * 原画面。这里给一组角落预设 + 预览拖框：手动框每帧无条件重建，保证
+   * 「用户指出位置 → 一定生效」；自动检不出时结果栏会明确提示改手动。 */
+  const WM_PRESETS = [
+    { key: 'auto', label: '自动检测', box: null },
+    { key: 'rt', label: '右上', box: { x0: 0.58, y0: 0.01, x1: 0.99, y1: 0.14 } },
+    { key: 'rb', label: '右下', box: { x0: 0.58, y0: 0.85, x1: 0.99, y1: 0.99 } },
+    { key: 'lt', label: '左上', box: { x0: 0.01, y0: 0.01, x1: 0.42, y1: 0.14 } },
+    { key: 'lb', label: '左下', box: { x0: 0.01, y0: 0.85, x1: 0.42, y1: 0.99 } },
+    { key: 'bottom', label: '底部整条', box: { x0: 0.01, y0: 0.88, x1: 0.99, y1: 0.99 } },
+    { key: 'top', label: '顶部整条', box: { x0: 0.01, y0: 0.01, x1: 0.99, y1: 0.13 } },
+    { key: 'center', label: '中间', box: { x0: 0.22, y0: 0.43, x1: 0.78, y1: 0.57 } }
+  ];
+  const presetByKey = {};
+  WM_PRESETS.forEach((x) => { if (x.box) presetByKey[x.key] = x.box; });
+  let customBox = null;
+  let wmSelected = ['auto'];
+  let picking = false;
+  let dragStart = null;
+  let dragRect = null;
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+  const wmPanel = document.createElement('div');
+  wmPanel.className = 'wbx-vs-wm';
+  const wmTitle = document.createElement('div');
+  wmTitle.className = 'wbx-vs-wm-title';
+  wmTitle.textContent = '水印位置：自动检不出时点水印所在角落（可多选）';
+  wmPanel.appendChild(wmTitle);
+  const presetRow = document.createElement('div');
+  presetRow.className = 'wbx-vs-wm-presets';
+  const wmBtns = {};
+  WM_PRESETS.forEach((it) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = it.label;
+    b.addEventListener('click', () => {
+      if (it.key === 'auto') {
+        wmSelected = ['auto'];
+      } else {
+        const base = wmSelected.filter((k) => k !== 'auto');
+        const i = base.indexOf(it.key);
+        if (i >= 0) base.splice(i, 1); else base.push(it.key);
+        wmSelected = base.length ? base : ['auto'];
+      }
+      if (wmSelected[0] !== 'auto') wmChk.checked = true;
+      refreshWm();
+    });
+    wmBtns[it.key] = b;
+    presetRow.appendChild(b);
+  });
+  wmPanel.appendChild(presetRow);
+
+  const pickRow = document.createElement('div');
+  pickRow.className = 'wbx-vs-wm-pick';
+  const pickBtn = document.createElement('button');
+  pickBtn.type = 'button';
+  pickBtn.textContent = '在预览上拖框';
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.textContent = '清除框';
+  pickRow.appendChild(pickBtn);
+  pickRow.appendChild(clearBtn);
+  wmPanel.appendChild(pickRow);
+  const wmCoord = document.createElement('div');
+  wmCoord.className = 'wbx-vs-wm-coord';
+  wmPanel.appendChild(wmCoord);
+  body.appendChild(wmPanel);
+
+  function wmBoxesNow() {
+    if (wmSelected.indexOf('auto') >= 0) return [];
+    return wmSelected.map((k) => (k === 'custom' ? customBox : presetByKey[k])).filter(Boolean);
+  }
+  function wmModeNow() {
+    if (!wmChk.checked) return 'off';
+    return wmBoxesNow().length ? 'manual' : 'auto';
+  }
+  function renderWmRects() {
+    try { wmOverlay.textContent = ''; } catch (e) {}
+    for (const b of wmBoxesNow()) {
+      const el = document.createElement('div');
+      el.className = 'wbx-vs-wm-rect';
+      el.style.left = (b.x0 * 100) + '%';
+      el.style.top = (b.y0 * 100) + '%';
+      el.style.width = ((b.x1 - b.x0) * 100) + '%';
+      el.style.height = ((b.y1 - b.y0) * 100) + '%';
+      wmOverlay.appendChild(el);
+    }
+  }
+  function refreshWm() {
+    Object.keys(wmBtns).forEach((k) => {
+      try { wmBtns[k].className = wmSelected.indexOf(k) >= 0 ? 'on' : ''; } catch (e) {}
+    });
+    const list = wmBoxesNow();
+    wmCoord.textContent = list.length
+      ? (wmSelected.indexOf('custom') >= 0 ? '自定义框：' : '当前 ' + list.length + ' 个框：') +
+        list.map((b) => '(' + Math.round(b.x0 * 100) + ',' + Math.round(b.y0 * 100) + ')→(' +
+          Math.round(b.x1 * 100) + ',' + Math.round(b.y1 * 100) + ')').join('  ')
+      : '自动检测（逐帧扫描亮色水印条带）';
+    renderWmRects();
+  }
+  function setPicking(on) {
+    picking = !!on;
+    try { wmOverlay.className = picking ? 'wbx-vs-wm-overlay picking' : 'wbx-vs-wm-overlay'; } catch (e) {}
+    try { pickBtn.className = picking ? 'on' : ''; } catch (e) {}
+    if (!picking) { dragStart = null; dragRect = null; }
+  }
+  function wmPointOf(ev) {
+    const r = wmOverlay.getBoundingClientRect();
+    return {
+      x: clamp01((ev.clientX - r.left) / Math.max(1, r.width)),
+      y: clamp01((ev.clientY - r.top) / Math.max(1, r.height))
+    };
+  }
+  pickBtn.addEventListener('click', () => setPicking(!picking));
+  clearBtn.addEventListener('click', () => {
+    wmSelected = ['auto']; customBox = null; setPicking(false); refreshWm();
+  });
+  wmOverlay.addEventListener('mousedown', (ev) => {
+    if (!picking) return;
+    dragStart = wmPointOf(ev);
+    dragRect = document.createElement('div');
+    dragRect.className = 'wbx-vs-wm-rect';
+    wmOverlay.appendChild(dragRect);
+    if (ev.preventDefault) ev.preventDefault();
+  });
+  wmOverlay.addEventListener('mousemove', (ev) => {
+    if (!picking || !dragStart || !dragRect) return;
+    const q = wmPointOf(ev);
+    const b = {
+      x0: Math.min(q.x, dragStart.x), y0: Math.min(q.y, dragStart.y),
+      x1: Math.max(q.x, dragStart.x), y1: Math.max(q.y, dragStart.y)
+    };
+    dragRect.style.left = (b.x0 * 100) + '%';
+    dragRect.style.top = (b.y0 * 100) + '%';
+    dragRect.style.width = ((b.x1 - b.x0) * 100) + '%';
+    dragRect.style.height = ((b.y1 - b.y0) * 100) + '%';
+  });
+  wmOverlay.addEventListener('mouseup', (ev) => {
+    if (!picking || !dragStart) return;
+    const q = wmPointOf(ev);
+    const b = {
+      x0: Math.min(q.x, dragStart.x), y0: Math.min(q.y, dragStart.y),
+      x1: Math.max(q.x, dragStart.x), y1: Math.max(q.y, dragStart.y)
+    };
+    if (b.x1 - b.x0 > 0.02 && b.y1 - b.y0 > 0.01) {
+      customBox = b;
+      wmSelected = ['custom'];
+      wmChk.checked = true;
+    }
+    setPicking(false);
+    refreshWm();
+  });
+  wmChk.addEventListener('change', refreshWm);
+  refreshWm();
+
   const mainBtn = document.createElement('button');
   mainBtn.className = 'wbx-vs-main';
   mainBtn.type = 'button';
@@ -3613,7 +3799,7 @@ function showVideoStudio(opts) {
 
   const hint = document.createElement('div');
   hint.className = 'wbx-vs-hint';
-  hint.textContent = '纯本机剪接与重建，不上传视频。按原片速度实时录制，去水印命中条带后才改动像素；音频尽力保留（离屏无手势时可能无声）。优先 MP4，旧版 Chrome 回退 WebM；片段合计上限 90 秒。';
+  hint.textContent = '纯本机剪接与重建，不上传视频。按原片速度实时录制；自动检测对半透明 / 烧录水印可能检不出，这时点上面的「水印位置」选角落或拖框，手动框会逐帧重建。音频尽力保留（离屏无手势时可能无声）。优先 MP4，旧版 Chrome 回退 WebM；片段合计上限 90 秒。';
   body.appendChild(hint);
 
   let duration = 0;
@@ -3670,7 +3856,8 @@ function showVideoStudio(opts) {
           url: o.url || '', source: o.source || '',
           videoUrls: o.videoUrls || [], bid: o.bid || '',
           preferHD: !!o.preferHD, requestId: requestId,
-          segments: segments, wm: wmChk.checked, mute: muteChk.checked,
+          segments: segments, wm: wmChk.checked, wmMode: wmModeNow(),
+          wmBoxes: wmBoxesNow(), mute: muteChk.checked,
           maxEdge: Number(sizeSel.value) || 720
         }
       });
@@ -3687,6 +3874,9 @@ function showVideoStudio(opts) {
         resultBox.style.display = 'none';
       }
       const wm = resp.wm || {};
+      const wmNote = resp.wmNote || (resp.wmEnabled ? '去水印已启用' : '未启用去水印');
+      // 自动模式一个框都没命中 = 水印原样留在成品里，必须显式报警而不是报「完成」
+      const wmWarn = !!(resp.wmEnabled && !wm.detected && !wm.frames);
       const bits = [
         resp.duration + 's',
         (resp.size || []).join('x'),
@@ -3694,14 +3884,16 @@ function showVideoStudio(opts) {
         (resp.bytes / 1024 / 1024).toFixed(1) + 'MB',
         resp.audio ? '含音频' : '无音轨'
       ];
-      resultInfo.textContent = bits.join(' · ') +
-        (resp.wmEnabled ? ('；去水印命中 ' + (wm.regions || 0) + ' 处，处理 ' + (wm.frames || 0) + ' 帧') : '；未启用去水印') +
+      resultInfo.textContent = bits.join(' · ') + '；' + wmNote +
         (resp.oversize ? '；成品较大，已直接存入临时目录，请到那里拖入 X。' : '') +
         (resp.file && resp.file.filename ? ('　临时副本：' + resp.file.filename) : '');
+      resultInfo.className = wmWarn ? 'wbx-vs-hint wbx-vs-wm-warn' : 'wbx-vs-hint';
       barFill.style.width = '100%';
-      status.textContent = resp.oversize
-        ? '生成完成：文件较大，已存入临时目录，请拖入 X。'
-        : '生成完成：可预览 / 复制 / 存到下载目录，再打开 X。';
+      status.textContent = wmWarn
+        ? wmNote
+        : (resp.oversize
+          ? '生成完成：文件较大，已存入临时目录，请拖入 X。'
+          : '生成完成：可预览 / 复制 / 存到下载目录，再打开 X。');
     } catch (e) {
       status.textContent = '生成失败：' + String(e && e.message || e);
       barFill.style.width = '0%';
