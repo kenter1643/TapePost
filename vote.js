@@ -68,11 +68,18 @@ var Vote = (function () {
   function defaultName(mask) {
     return cleanName('信仰者 ' + String(mask || '').trim()) || 'BEM 信仰者';
   }
-  function tweetText(quote, name, day, clock, pageUrl) {
-    var q = String(quote || '').slice(0, 80);
-    var n = cleanName(name) || 'BEM 信仰者';
-    return q + '\n\n— ' + n + ' · 北京时间 ' + String(day) + ' ' + String(clock) +
-      ' 为 $BEM 打卡\n\n#BEM #TapeOut #TapePost\n' + String(pageUrl || '');
+  /* 1.5.18：发到 X 的名片文案末尾不再放账本页链接。账本地址带 sharecode 分享参数，
+   * 公开广播既无必要也不合适；改成 Chrome 网上应用店的搜索页，方便别人找到插件。
+   * 正式条目链接（/detail/<id>）拿到后只需替换下面这一个常量，调用方不用改。 */
+  var STORE_URL = 'https://chromewebstore.google.com/search/TapePost';
+  function tweetText(quote, name, day, clock) {
+    var head = '\n\n— ' + (cleanName(name) || 'BEM 信仰者') +
+      ' · 北京时间 ' + String(day) + ' ' + String(clock) + ' 为 $BEM 打卡';
+    var tail = '\n\n#BEM #TapeOut #TapePost\nTapePost信仰者工具 → ' + STORE_URL;
+    // postUrl() 会把整段截到 260 字符；先算好话语预算，保证末尾商店链接永不被截断
+    var budget = 260 - head.length - tail.length;
+    var q = String(quote || '').slice(0, Math.max(0, Math.min(80, budget)));
+    return q + head + tail;
   }
   function postUrl(text) {
     return 'https://x.com/intent/tweet?text=' + encodeURIComponent(String(text || '').slice(0, 260));
@@ -233,7 +240,8 @@ var Vote = (function () {
       profile: profile,
       quote: quote,
       quoteAt: String(s.lastQuoteAt || ''),
-      postUrl: quote ? postUrl(tweetText(quote, profile.name, today, clock, page)) : '',
+      // 1.5.18：发 X 文案不再带账本链接；page 仍用于「🌐 打开全网账本」按钮
+      postUrl: quote ? postUrl(tweetText(quote, profile.name, today, clock)) : '',
       supporters: wall
     };
   }
@@ -251,6 +259,7 @@ var Vote = (function () {
     cleanName: cleanName,
     normalizeProfile: normalizeProfile,
     defaultName: defaultName,
+    STORE_URL: STORE_URL,
     tweetText: tweetText,
     postUrl: postUrl,
     parseSupporters: parseSupporters,

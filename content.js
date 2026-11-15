@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.17';
+  return 'v1.5.18';
 })();
 
 /* ==================== 1.5.11：后台连接自愈 ====================
@@ -653,6 +653,14 @@ function injectStyle() {
   .wbx-vs-bar > i{display:block;height:100%;width:0;background:#1da1f2;transition:width .2s;}
   .wbx-vs-status{color:#d96000;font-weight:600;min-height:16px;line-height:1.4;}
   .wbx-vs-hint{color:#777;line-height:1.5;font-size:11px;margin-top:8px;}
+  /* 1.5.18：发推正文可编辑，避免把播放器乱码直接预填到 X */
+  .wbx-vs-caption{margin:10px 0 2px;}
+  .wbx-vs-cap-label{font-size:11px;font-weight:700;color:#3a4756;margin-bottom:4px;line-height:1.4;}
+  .wbx-vs-cap-input{display:block;width:100%;box-sizing:border-box;min-height:54px;resize:vertical;
+    border:1px solid #dfe7ef;border-radius:8px;padding:7px 8px;font-size:12px;line-height:1.5;
+    color:#22303c;background:#fff;font-family:inherit;}
+  .wbx-vs-cap-input:focus{outline:2px solid #ffb35c;border-color:#ff8c1a;}
+  .wbx-vs-cap-miss{border-color:#e5a3a3;background:#fff8f6;}
   .wbx-vs-preview{position:relative;}
   .wbx-vs-wm{border:1px solid #dfe7ef;border-radius:9px;padding:8px;margin:9px 0;background:#f7fbff;}
   .wbx-vs-wm-title{font-size:11px;color:#3a4756;font-weight:700;margin-bottom:6px;line-height:1.4;}
@@ -2528,6 +2536,16 @@ async function onRepost(card, btn) {
   if (isStaleContext()) { return; }  // 1.5.11：自动恢复条接管，不再要求手动 Cmd+R
   // 每次点击都重新解析：解决「滚动后 DOM 复用导致转到旧内容」和「图片懒加载」
   const post = resolvePost(card);
+  /* 1.5.18：含视频的卡片（尤其悬浮条传进来的播放器单元）正文常是乱码或空，
+   * 用与视频工作台同一套解析器纠正；图文帖保持原路径一字不动。 */
+  if (post.hasVideo && (!SITE || SITE.id === 'weibo')) {
+    try {
+      const cap = resolveVideoCaption(card);
+      if (cap.ok && (!post.text || captionLooksGarbled(normalizeCaption(post.text)))) {
+        post.text = cap.text;
+      }
+    } catch (e) { /* 解析器异常时保留原正文，不让转发失败 */ }
+  }
   const { imageUrls: urls, videoUrls, hasVideo, bid } = post;
   // 「删 # 后内容」是微博话题规则；其他站一律保留原文，避免误删正文
   const hashMode = (!SITE || SITE.id === 'weibo') ? settings.hashMode : 'keep';
@@ -3199,6 +3217,8 @@ async function handleResult(msg) {
     showVideoStudio({
       url: video.url, source: video.source || '已解析',
       text, xUrl, videoUrls: [], bid: '',
+      captionOk: !!text && !captionLooksGarbled(normalizeCaption(text)),
+      captionSource: '页面正文',
       preferHD: !!settings.inpaintVideo
     });
   }
@@ -3643,16 +3663,190 @@ function wbxCloseVideoStudio() {
   if (g && g.classList) { try { g.classList.remove('wbx-vs-shift'); } catch (e) {} }
 }
 
+/* ---------- 1.5.18：视频帖正文提取（找对容器 + 去乱码 + 可人工修正） ----------
+ * 真机问题：视频剪辑工作台拿到的「微博视频内容文字」是乱码。悬浮视频条传进来的
+ * card 是播放器单元（videoContentUnits() 反查的宿主），不是整条 <article>；
+ * findTextNode() 只能在播放器里挑节点，于是把图标字体私有区字符（\ue6xx）、
+ * 时间码「00:00 / 02:35」、加载百分比、内联 JSON / React props 当成正文。
+ * 这里做三件事：① 从视频单元向上找真正的博文卡片并广收候选（含 data-text /
+ * title / aria-label / og:title）；② 统一解码并剔除乱码；③ 用质量门槛拒绝残留。
+ * 工作台还补一个可编辑文本框：任何提取失败都能由用户手动补正，绝不预填乱码。
+ */
+function decodeCaptionEscapes(raw) {
+  let s = String(raw || '');
+  // JSON / React props 里的 \uXXXX、\xXX
+  s = s.replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+  s = s.replace(/\\x([0-9a-fA-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+  // HTML 数字实体；&#xe60a; 这类图标字体先变成 PUA，再在下面统一剔除
+  s = s.replace(/&#(x[0-9a-fA-F]+|\d+);/g, (m, v) => {
+    const n = /^x/i.test(v) ? parseInt(v.slice(1), 16) : parseInt(v, 10);
+    if (!isFinite(n) || n < 0 || n > 0x10ffff) return ' ';
+    try { return String.fromCodePoint(n); } catch (e) { return ' '; }
+  });
+  const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+    hellip: '…', ldquo: '“', rdquo: '”', mdash: '—', ndash: '–' };
+  s = s.replace(/&([a-zA-Z]+);/g,
+    (m, k) => (Object.prototype.hasOwnProperty.call(NAMED, k) ? NAMED[k] : m));
+  // 整串百分号编码（%E4%BD%A0%E5%A5%BD）还原成中文；单个数如 100% 不动
+  if (/%[0-9A-Fa-f]{2}/.test(s)) {
+    s = s.replace(/(?:%[0-9A-Fa-f]{2}){3,}/g, (m) => {
+      try { return decodeURIComponent(m); } catch (e) { return ' '; }
+    });
+  }
+  return s;
+}
+
+function repairCaptionMojibake(s) {
+  // UTF-8 被按 Latin-1 解码：「测试」→「æµ‹è¯•」；只有还原出中文才采用
+  try {
+    if (!/[\u00c2-\u00f4][\u0080-\u00bf\u00a0-\u00ff]/.test(s)) return s;
+    const bytes = [];
+    for (const ch of s) {
+      const c = ch.codePointAt(0);
+      if (c > 255) return s;
+      bytes.push(c);
+    }
+    const out = new TextDecoder('utf-8').decode(new Uint8Array(bytes));
+    return (out && out.indexOf('\ufffd') < 0 && /[\u4e00-\u9fff]/.test(out)) ? out : s;
+  } catch (e) { return s; }
+}
+
+function normalizeCaption(raw) {
+  let s = decodeCaptionEscapes(raw);
+  s = repairCaptionMojibake(s);
+  s = s.replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/gi, ' ');
+  s = s.replace(/<[^>]{1,200}>/g, ' ');
+  // 先剥内联 JSON：URL 正则太宽会吃掉右花括号，导致 JSON 块再也配不完整
+  for (let k = 0; k < 3; k++) {
+    s = s.replace(/\{[^{}]*\}/g, (m) => (/["']\s*:/.test(m) ? ' ' : m));
+  }
+  s = s.replace(/https?:\/\/[^\s"'<>{}]{6,}|\bdata:[^\s"'<>{}]{8,}/gi, ' ');
+  s = s.replace(/[\ue000-\uf8ff\ufffd\u0000-\u0008\u000b\u000c\u000e-\u001f\u200b-\u200d\ufeff]/g, ' ');
+  s = s.replace(/\\[btnrfv"\\/]/g, ' ');
+  s = s.replace(/\[object Object\]|\bundefined\b|\bNaN\b|\bwindow\.\w+|\bfunction\s*\(/gi, ' ');
+  // 播放器无障碍文本只在整段明显是播放器信息时才剥，避免误删正文里的「明天 10:30」
+  const playerIsh = /(?:倍速|全屏|弹幕|音量|静音|次播放|万次播放|已加载|正在缓冲)/.test(s) ||
+    (s.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g) || []).length >= 2;
+  if (playerIsh) {
+    s = s.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b|\d{1,3}\s?%/g, ' ');
+    s = s.replace(/(?:倍速|全屏|弹幕|音量|静音|播放量|次播放|万次播放|已加载|正在缓冲)/g, ' ');
+  }
+  s = s.replace(/(?:展开全文|收起全文|网页链接|秒拍视频)/g, ' ');
+  return cleanText(stripInjectedUi(s)).slice(0, 1200);
+}
+
+function captionLooksGarbled(t) {
+  if (!t || t.length < 2) return true;
+  if (/[\ue000-\uf8ff\ufffd]/.test(t)) return true;
+  if (/\\u[0-9a-fA-F]{4}|&#[xX0-9a-fA-F]+;|%[0-9A-Fa-f]{2}/.test(t)) return true;
+  if (/\[object Object\]|\bundefined\b|\bNaN\b|\bwindow\.|\bfunction\s*\(|<script/i.test(t)) return true;
+  if (/^\s*[{[]/.test(t) && /["'][\w-]+["']\s*:/.test(t)) return true;
+  if (/[ÃÂåæð][\u0080-\u00ff]/.test(t)) return true;
+  if (/https?:\/\//i.test(t)) return true;
+  const letters = (t.match(/[\u4e00-\u9fffA-Za-z]/g) || []).length;
+  if (letters < 2) return true;
+  if (t.length >= 12 && letters / t.length < 0.3) return true;
+  if (/^(?:\d|[\s:./万次播放赞评论转发])+$/.test(t)) return true;
+  return false;
+}
+
+function captionScore(t) {
+  let s = Math.min(t.length, 400);
+  s += (t.match(/[\u4e00-\u9fff]/g) || []).length * 2;
+  if (/[。！？，、；：,.!?]/.test(t)) s += 20;
+  if (/[#＃]\S+[#＃]|@\S+/.test(t)) s += 8;
+  s -= Math.min(20, (t.match(/\d/g) || []).length * 2);
+  if (/(?:转发|评论|赞|收藏|分享)\s*\d*$/.test(t)) s -= 20;
+  return s;
+}
+
+// 视频单元 -> 外层博文卡片；由内向外，命中第一个可用正文就停，
+// 不去更外层的推荐流，避免把别人的推文当成这条视频的正文。
+function captionRoots(card) {
+  const roots = [], seen = new Set();
+  const add = (el) => { if (el && !seen.has(el)) { seen.add(el); roots.push(el); } };
+  add(card);
+  try {
+    const sel = CARD_SELECTORS.join(',');
+    let el = card;
+    for (let i = 0; i < 8 && el && el.parentElement; i++) {
+      el = el.parentElement;
+      if (!el || el === document.body || el === document.documentElement) break;
+      const hit = el.matches ? el.matches(sel)
+        : (el.closest && el.closest(sel) === el);
+      if (hit) add(el);
+    }
+  } catch (e) {}
+  return roots;
+}
+
+function captionCandidatesIn(root) {
+  const out = [];
+  const push = (raw, source) => {
+    const t = normalizeCaption(raw);
+    if (captionLooksGarbled(t) || out.some((x) => x.text === t)) return;
+    out.push({ text: t, source: source, score: captionScore(t) });
+  };
+  try {
+    const tn = findTextNode(root);
+    if (tn) push(bodyText(root, tn), '页面正文');
+  } catch (e) {}
+  try {
+    root.querySelectorAll('[data-text], [title], [aria-label]').forEach((n) => {
+      ['data-text', 'title', 'aria-label'].forEach((k) => {
+        const v = n.getAttribute && n.getAttribute(k);
+        if (v && String(v).length >= 4) push(v, k === 'data-text' ? 'data-text' : '页面标注');
+      });
+    });
+  } catch (e) {}
+  return out;
+}
+
+function resolveVideoCaption(card) {
+  for (const root of captionRoots(card)) {
+    const cands = captionCandidatesIn(root);
+    if (!cands.length) continue;
+    cands.sort((a, b) => b.score - a.score);
+    return { text: cands[0].text, source: cands[0].source, ok: true };
+  }
+  // 兜底：/tv 播放页把视频标题放在 og:title / meta description
+  try {
+    const metas = document.querySelectorAll(
+      'meta[property="og:title"], meta[property="og:description"], meta[name="description"]');
+    const all = [];
+    metas.forEach((m) => {
+      const t = normalizeCaption(m.getAttribute && m.getAttribute('content'));
+      if (captionLooksGarbled(t)) return;
+      // 信息流里 og:title 常是「微博-随时随地发现新鲜事」，绝不能当成本条正文
+      if (/微博[\s-]|随时随地发现新鲜事|Weibo|^首页|^登录|^注册|视频频道/.test(t)) return;
+      if (!/[\u4e00-\u9fffA-Za-z]/.test(t)) return;
+      const score = captionScore(t);
+      if (score >= 40) all.push({ text: t, source: '页面标题', score: score });
+    });
+    if (all.length) {
+      all.sort((a, b) => b.score - a.score);
+      return { text: all[0].text, source: all[0].source, ok: true };
+    }
+  } catch (e) {}
+  return { text: '', source: '未识别', ok: false };
+}
+
 /* 卡片上的「视频剪辑」快捷按钮：跳过图片流程，只解析视频地址后弹工作台 */
 async function onVideoStudio(card) {
   if (isStaleContext()) { return; }  // 1.5.11：自动恢复条接管
   const post = resolvePost(card);
+  /* 1.5.18：视频条传进来的常是播放器单元，post.text 会是图标字体 / 时间码 /
+   * 内联 JSON 混成的乱码。正文单独走 resolveVideoCaption()（向上找真正的
+   * 博文卡片 + 解码 + 质量门槛），post 仍只用来取 videoUrls / bid。 */
+  const caption = resolveVideoCaption(card);
   const hashMode = (!SITE || SITE.id === 'weibo') ? settings.hashMode : 'keep';
-  const cleaned = cleanRepostText(post.text, hashMode);
+  const cleaned = cleanRepostText(caption.text, hashMode);
   const text = withSource(withSignature(cleaned), card);
   const xUrl = 'https://' + (settings.xDomain || 'x.com') +
     '/intent/tweet?text=' + encodeURIComponent(text || '');
-  showToast('正在解析视频地址…', 4000);
+  showToast(caption.ok
+    ? '正在解析视频地址…（已读到本条正文，工作台里可修改）'
+    : '正在解析视频地址…（未读到可用正文，请在工作台手动填写，避免发出乱码）', 4500);
   try {
     const r = await bgSend({
       type: 'VIDEO_RESOLVE',
@@ -3667,6 +3861,7 @@ async function onVideoStudio(card) {
     }
     showVideoStudio({
       url: r.url, source: r.source || '已解析', text, xUrl,
+      captionOk: !!caption.ok, captionSource: caption.source || '未识别',
       videoUrls: post.videoUrls || [], bid: post.bid || '',
       preferHD: !!settings.inpaintVideo
     });
@@ -3726,6 +3921,37 @@ function showVideoStudio(opts) {
   durLine.className = 'wbx-vs-hint';
   durLine.textContent = '原片：' + (o.source || '已解析') + '　时长读取中…';
   body.appendChild(durLine);
+
+  /* 1.5.18：把将要预填到 X 的正文显式摆出来、允许直接改。
+   * 这样即使站点改版、正文提取失败，用户也能一眼看出并手动补正，
+   * 不会再出现「发出去一段乱码」或「不知道发出去的是什么」。 */
+  const capWrap = document.createElement('div');
+  capWrap.className = 'wbx-vs-caption';
+  const capLabel = document.createElement('div');
+  capLabel.className = 'wbx-vs-cap-label';
+  capLabel.textContent = '发推正文（可修改）';
+  /* 任何入口（含旧调用 / 一键转发）都可能没带 captionOk，
+   * 这里按真实文本再校验一次，乱码一律清空并提示手填，绝不预填到 X。 */
+  const capOk = o.captionOk === false ? false
+    : (o.captionOk === true ? true
+      : (!!String(o.text || '').trim() && !captionLooksGarbled(normalizeCaption(o.text))));
+  const capSource = o.captionSource || '页面正文';
+  const capInput = document.createElement('textarea');
+  capInput.className = 'wbx-vs-cap-input' + (capOk ? '' : ' wbx-vs-cap-miss');
+  if (capInput.setAttribute) capInput.setAttribute('aria-label', '发推正文，可手动修改');
+  capInput.rows = 3;
+  capInput.placeholder = '未自动读到本条微博正文，请手动填写要发到 X 的文字';
+  capInput.value = capOk ? String(o.text || '') : '';
+  const capHint = document.createElement('div');
+  capHint.className = 'wbx-vs-hint';
+  capHint.textContent = !capOk
+    ? '未读到可用正文：已过滤播放器 / 图标字体等乱码，请手动填写后再发推。'
+    : ('已读取本条微博正文（来源：' + capSource +
+       '）；如有偏差可直接改上面，再点「打开 X 发推」。');
+  capWrap.appendChild(capLabel);
+  capWrap.appendChild(capInput);
+  capWrap.appendChild(capHint);
+  body.appendChild(capWrap);
 
   const segBox = document.createElement('div');
   body.appendChild(segBox);
@@ -4166,9 +4392,15 @@ function showVideoStudio(opts) {
   });
 
   openX.addEventListener('click', () => {
-    const w = window.open(o.xUrl, '_blank');
-    if (!w && o.text && navigator.clipboard && navigator.clipboard.writeText) {
-      try { navigator.clipboard.writeText(o.text).catch(() => {}); } catch (e) {}
+    // 1.5.18：以用户当前看到的文本框内容为准，改完立刻生效
+    const cur = String((capInput && capInput.value) || '');
+    const url = capInput
+      ? 'https://' + (settings.xDomain || 'x.com') +
+        '/intent/tweet?text=' + encodeURIComponent(cur)
+      : o.xUrl;
+    const w = window.open(url, '_blank');
+    if (!w && cur && navigator.clipboard && navigator.clipboard.writeText) {
+      try { navigator.clipboard.writeText(cur).catch(() => {}); } catch (e) {}
       showToast('X 弹窗被拦截，正文已复制到剪贴板，请手动打开 X 粘贴。', 7000);
     } else {
       showToast('X 已打开，正文已预填；把成品拖入发布框或按 Ctrl+V。', 6000);

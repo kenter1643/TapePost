@@ -286,6 +286,22 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   ok('X 文案含话题标签', tw.includes('#BEM'));
   ok('X 预填 URL 正确', Vote.postUrl(tw).startsWith('https://x.com/intent/tweet?text='));
   ok('X 预填 URL 已编码', Vote.postUrl(tw).includes('%23BEM'));
+
+  console.log('\n== 6a-2. 1.5.18 发 X 文案：去账本链接、改带插件商店链接 ==');
+  ok('1.5.18 文案不再带旧调用塞进来的账本链接',
+    !tw.includes('example.com/vote') && !tw.includes('/vote') && !tw.includes('sharecode'));
+  ok('1.5.18 文案带 Chrome 网上应用店链接',
+    tw.includes('chromewebstore.google.com/search/TapePost') && tw.includes('TapePost信仰者工具'));
+  ok('1.5.18 旧五参调用也被忽略，不泄漏 sharecode',
+    !Vote.tweetText('稳住', '昆哥', '2026-11-14', '14:30', Vote.publicPage(Vote.DEFAULT_LEDGER))
+      .includes('sharecode'));
+  const longTw = Vote.tweetText('长'.repeat(200), '十六个字'.repeat(3), '2026-11-14', '14:30');
+  ok('1.5.18 超长话语也不会截断末尾商店链接',
+    longTw.endsWith(Vote.STORE_URL) &&
+    Vote.postUrl(longTw).endsWith(encodeURIComponent(Vote.STORE_URL)));
+  ok('1.5.18 文案仍保留话题标签与打卡时间',
+    tw.includes('#BEM #TapeOut #TapePost') && tw.includes('14:30'));
+
   const st156 = Vote.parseState({ ok: true, days: { '2026-11-14': { support: 1, watch: 0 } },
     totalVotes: 1, version: 2, supporters: { '2026-11-14': [
       { voterId: 'd'.repeat(64), name: '<b>昆哥</b>', avatar: 'a07', quote: '稳住',
@@ -301,6 +317,9 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   eq('summary 钱包门槛已绑定', sum156.walletBound, true);
   eq('summary 带上话语', sum156.quote, '稳住，等下一次升级。');
   ok('summary 生成发 X URL', sum156.postUrl.startsWith('https://x.com/intent/tweet?text='));
+  ok('1.5.18 summary 预填 URL 不含账本 sharecode、含商店链接',
+    !decodeURIComponent(sum156.postUrl).includes('sharecode') &&
+    decodeURIComponent(sum156.postUrl).includes('chromewebstore.google.com/search/TapePost'));
   eq('summary 当日上墙人数', sum156.supporters.length, 1);
   const bg156 = read('background.js');
   ok('后台加载 bem-quotes.js', /importScripts\('bem-quotes\.js'\)/.test(bg156));
@@ -360,8 +379,8 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   ok('popup 渲染 X Layer 数字', /wbxText\('xlFab', fmtAsset\(x\.balance\)\)/.test(pop158));
   ok('面板标注日产为估算', /仅供参考/.test(pop158));
   ok('后台对旧缓存自动补取双链', /cached && cached\.xlayer && cached\.fetchedAt/.test(bg158));
-  eq('manifest 版本', man158.version, '1.5.17');
-  eq('listing 版本', list158.version, '1.5.17');
+  eq('manifest 版本', man158.version, '1.5.18');
+  eq('listing 版本', list158.version, '1.5.18');
   eq('permissions 仍 9 项', man158.permissions.length, 9);
   eq('host_permissions 34 条（1.5.16 移除 tapeup.io 两条）', man158.host_permissions.length, 34);
   ['https://api.fabx.tech/*', 'https://rpc.xlayer.tech/*', 'https://xlayerrpc.okx.com/*'].forEach((h) => {
@@ -375,11 +394,11 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   ok('独立部署副本同步', privSite158.includes('api.fabx.tech') && privSite158.includes('34 条'));
   ok('上架资料列出三条新域名', ['api.fabx.tech', 'rpc.xlayer.tech', 'xlayerrpc.okx.com']
     .every((h) => JSON.stringify(list158).includes(h)));
-  ok('上架详细描述含 1.5.17 说明', list158.detailed_description[0].startsWith('【1.5.17'));
+  ok('上架详细描述含 1.5.18 说明', list158.detailed_description[0].startsWith('【1.5.18'));
   ok('上架详细描述保留 1.5.16 下线说明', list158.detailed_description.some((x) => String(x).startsWith('【1.5.16')));
   ok('商店描述不超 132 字', man158.description.length <= 132 && list158.summary_132.length <= 132);
-  ok('UI 版本兜底统一 1.5.17', /v1\.5\.17/.test(html158) && /v1\.5\.17/.test(read('panel.html')) &&
-    /v1\.5\.17/.test(read('content.js')) && /v1\.5\.17/.test(pop158));
+  ok('UI 版本兜底统一 1.5.18', /v1\.5\.18/.test(html158) && /v1\.5\.18/.test(read('panel.html')) &&
+    /v1\.5\.18/.test(read('content.js')) && /v1\.5\.18/.test(pop158));
 
   console.log('\n== 7. 钱包地址不出缓存 / 不出 popup 消息 ==');
   const bgSrc = read('background.js');

@@ -894,7 +894,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.17 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.18 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
@@ -1284,9 +1284,9 @@ if (voteApi) {
     if (typeof BemQuotes === 'undefined') return;
     const q = BemQuotes.pick();
     const sum = voteSummary || {};
-    const page = sum.publicPage || voteApi.publicPage(voteApi.DEFAULT_LEDGER);
     const name = wbxVal('voteName') || (sum.profile && sum.profile.name) || 'BEM 信仰者';
-    const text = voteApi.tweetText(q, name, sum.today || voteApi.dayKey(), voteApi.beijingClock(), page);
+    // 1.5.18：发 X 文案末尾只带插件商店链接，不再带账本页（sharecode）链接
+    const text = voteApi.tweetText(q, name, sum.today || voteApi.dayKey(), voteApi.beijingClock());
     currentPostUrl = voteApi.postUrl(text);
     wbxText('voteQuoteText', '「' + q + '」');
     // 重新投一次同一立场：服务端按当日身份哈希去重，只会更新名片与话语
