@@ -1,4 +1,4 @@
-/* TapePost 1.5.15 · AI 评论专项自检
+/* TapePost 1.5.16 · AI 评论专项自检
  * 运行：node test-ai-comments.js   （不进 Chrome Web Store 商店包）
  * 覆盖：候选条数 1~10（默认 5）、三条生成链路的条数透传、DeepSeek 供应商文案、
  *       候选面板两列紧凑布局、手动兜底在 API 模式隐藏、设置页与预览。
@@ -89,7 +89,7 @@ function makeChrome() {
   const base = {
     storage: { local: area('local'), sync: area('sync'), session: area('local') },
     runtime: {
-      getManifest: () => ({ version: '1.5.15' }), getURL: (p) => 'chrome-extension://fake/' + p,
+      getManifest: () => ({ version: '1.5.16' }), getURL: (p) => 'chrome-extension://fake/' + p,
       sendMessage: () => Promise.resolve({}), onMessage: { addListener: () => {} },
       onInstalled: { addListener: () => {} }, onStartup: { addListener: () => {} }, lastError: null
     },

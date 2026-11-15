@@ -360,10 +360,10 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   ok('popup 渲染 X Layer 数字', /wbxText\('xlFab', fmtAsset\(x\.balance\)\)/.test(pop158));
   ok('面板标注日产为估算', /仅供参考/.test(pop158));
   ok('后台对旧缓存自动补取双链', /cached && cached\.xlayer && cached\.fetchedAt/.test(bg158));
-  eq('manifest 版本', man158.version, '1.5.15');
-  eq('listing 版本', list158.version, '1.5.15');
+  eq('manifest 版本', man158.version, '1.5.16');
+  eq('listing 版本', list158.version, '1.5.16');
   eq('permissions 仍 9 项', man158.permissions.length, 9);
-  eq('host_permissions 36 条', man158.host_permissions.length, 36);
+  eq('host_permissions 34 条（1.5.16 移除 tapeup.io 两条）', man158.host_permissions.length, 34);
   ['https://api.fabx.tech/*', 'https://rpc.xlayer.tech/*', 'https://xlayerrpc.okx.com/*'].forEach((h) => {
     ok('新增主机权限 ' + h, man158.host_permissions.includes(h));
   });
@@ -371,14 +371,14 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   eq('电路 NFT 合约地址', TapeOutAPI.CIRCUITS_NFT, '0x87bfca3494aa228ff589ab9b642143a5e8c8f9a6');
   eq('FAB 8 位小数', TapeOutAPI.FAB_DECIMALS, 8);
   eq('X Layer chainId', TapeOutAPI.XLAYER_CHAIN_ID, 196);
-  ok('隐私政策列出 FabX 接口', priv158.includes('api.fabx.tech') && priv158.includes('36 条'));
-  ok('独立部署副本同步', privSite158.includes('api.fabx.tech') && privSite158.includes('36 条'));
+  ok('隐私政策列出 FabX 接口与 34 条口径', priv158.includes('api.fabx.tech') && priv158.includes('34 条'));
+  ok('独立部署副本同步', privSite158.includes('api.fabx.tech') && privSite158.includes('34 条'));
   ok('上架资料列出三条新域名', ['api.fabx.tech', 'rpc.xlayer.tech', 'xlayerrpc.okx.com']
     .every((h) => JSON.stringify(list158).includes(h)));
-  ok('上架详细描述含 1.5.15 说明', list158.detailed_description[0].startsWith('【1.5.15'));
+  ok('上架详细描述含 1.5.16 说明', list158.detailed_description[0].startsWith('【1.5.16'));
   ok('商店描述不超 132 字', man158.description.length <= 132 && list158.summary_132.length <= 132);
-  ok('UI 版本兜底统一 1.5.15', /v1\.5\.15/.test(html158) && /v1\.5\.15/.test(read('panel.html')) &&
-    /v1\.5\.15/.test(read('content.js')) && /v1\.5\.15/.test(pop158));
+  ok('UI 版本兜底统一 1.5.16', /v1\.5\.16/.test(html158) && /v1\.5\.16/.test(read('panel.html')) &&
+    /v1\.5\.16/.test(read('content.js')) && /v1\.5\.16/.test(pop158));
 
   console.log('\n== 7. 钱包地址不出缓存 / 不出 popup 消息 ==');
   const bgSrc = read('background.js');

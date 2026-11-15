@@ -3232,10 +3232,12 @@ async function runPrice1413Checks() {
     manifest1413.version === '1.4.23' &&
     perms.join(',') === ['alarms', 'clipboardWrite', 'declarativeNetRequest', 'downloads',
       'notifications', 'offscreen', 'storage'].join(','));
-  add('1.4.16 仅新增 Firsto 只读行情域名 + tapeup.io 采集权限，没有通配域名',
+  add('1.5.16 已移除 tapeup.io 采集权限与内容脚本注入，主机权限收敛为 34 条',
     hosts.indexOf('https://api-tapeout.firsto.ai/*') >= 0 &&
-    hosts.indexOf('https://tapeup.io/*') >= 0 &&
-    hosts.indexOf('https://*.tapeup.io/*') >= 0 &&
+    hosts.indexOf('https://tapeup.io/*') < 0 &&
+    hosts.indexOf('https://*.tapeup.io/*') < 0 &&
+    hosts.length === 34 &&
+    !manifest1413.content_scripts.some((c) => (c.matches || []).some((m) => /tapeup\.io/.test(m))) &&
     !hosts.includes('https://*/*'));
   add('1.4.13 price-alert.js 注入 ISOLATED world，不污染 MAIN world',
     (manifest1413.content_scripts[0].js || []).indexOf('price-alert.js') >= 0 &&

@@ -1202,7 +1202,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
  *
  *  · 定时（chrome.alarms）抓 BEM（analytics）与矿机日产价（1.4.20 起改 /v1/circuit-holders，
  *    即 /circuits/other 页顶实时挂单参考价）；TapeUP $UP 内盘价不走后台 fetch
- *    （tapeup.io 整站 Cloudflare 防护），由内容脚本采集后缓存；
+ *    （tapeup.io 整站 Cloudflare 防护）。1.5.16 起网页采集已全部下线，该项不再更新；
  *  · 价格越过设定的上/下限时，发系统通知 + 给所有标签页广播右下角浮层；
  *  · 通知点击直接打开 Firsto 交易所对应数据页；
  *  · 只有「从区间内跨到区间外」提醒一次，不会每分钟重复轰炸（见 price.js）。
@@ -1247,7 +1247,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     if (busy) return busy;   // 弹窗刷新 + alarm 同时到时只发一轮请求
     busy = (async function () {
       var prev = await localGet(SNAP_KEY, null);
-      // TapeUP 内盘价由内容脚本在 tapeup.io 页面里采集后缓存到这里
+      // 1.5.16：不再采集；仅兼容读取历史缓存键，新版本不会写入
       var upCache = await localGet('tapeupPriceCache', null);
       var snap = await TapePrice.fetchSnapshot(fetch, prev, upCache);
       var out = {}; out[SNAP_KEY] = snap;
@@ -1264,8 +1264,6 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       return null;
     }).then(function (v) {
       busy = null;
-      // 1.5.14：价格定时轮询顺带检查一次 TapeUP 资产（内部有 30 分钟节流）
-      try { tuCollect('price-poll').catch(function () {}); } catch (e) {}
       return v;
     });
     return busy;
@@ -1340,176 +1338,17 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     });
   }
 
-  /* === TAPEUP_AUTO_BEGIN ===
-   * 1.5.14：TapeUP「我的资产」不再要求用户先手动打开网页。
-   * tapeup.io 整站 Cloudflare，后台 fetch 必被 403；资产页又依赖站内钱包会话，
-   * 所以沿用 1.4.16 内盘价的办法：让浏览器标签自己去读页面已渲染的文本。
-   *   · 定时（30 分钟 alarm）/ 价格轮询 / 打开弹窗 / 点刷新资产 都会触发一次；
-   *   · 已有资产页标签 → 只发一条扫描消息，不开新标签、不干扰用户；
-   *   · 没有 → 静默创建 active:false 的后台标签，采集完成或 25 秒超时后自动关闭；
-   *   · 失败（没连站内钱包 / 验证页 / 超时）只记本机状态，不覆盖上次有效缓存，
-   *     连续失败自动降频，避免每半小时弹一个没有数据的标签。
-   * 只读写本机 storage，不新增权限、域名或数据接收方。
+  /* 1.5.16：TapeUP 网页采集已全部下线。
+   * tapeup.io 整站 Cloudflare（实测后台 fetch 403）；TapeAPI 公开服务只有链上只读方法，
+   * UP 又是 PoB 全链账本 Token ID、非 ERC-20 且无合约地址，「我的资产」没有接口可读。
+   * 而 1.5.13 / 1.5.14 的资产页注入 + 每 30 分钟静默开标签会干扰用户正常访问。
+   * 本版移除内容脚本注入、定时 alarm、自动标签与全部资产消息，插件不再触碰该站；
+   * 断钱包时仍清掉历史遗留的本机缓存键（见 WALLET_CLEAR）。
    */
-  const TU_CACHE = 'tapeupAssetsCache';
-  const TU_STATUS = 'tapeupAssetsStatusV1';
-  const TU_TAB = 'tapeupAutoTabV1';
-  const TU_BIND = 'wbxWalletBindV1';
-  const TU_URL = 'https://tapeup.io/zh/trade/assets?tpauto=1';
-  const TU_ALARM = 'tapeupAssetsPoll';
-  const TU_CLEAN_ALARM = 'tapeupAssetsCleanup';
-  const TU_FRESH_MS = 30 * 60000;
-
-  function localRemove(key) {
-    return new Promise(function (resolve) {
-      try { chrome.storage.local.remove(key, function () { resolve(true); }); }
-      catch (e) { resolve(false); }
-    });
-  }
-  async function tuStatus() {
-    const s = await localGet(TU_STATUS, null);
-    return (s && typeof s === 'object') ? s : null;
-  }
-  async function tuSetStatus(state, note, extra) {
-    const cur = await tuStatus();
-    // 同一状态 60 秒内不重复写，诊断消息每 3 秒一轮时不会把 fails 刷爆
-    if (cur && cur.state === state && Date.now() - (Number(cur.at) || 0) < 60000) return cur;
-    const next = Object.assign({}, cur || {}, {
-      state: state, note: String(note || '').slice(0, 120), at: Date.now()
-    }, extra || {});
-    const o = {}; o[TU_STATUS] = next;
-    await localSet(o);
-    return next;
-  }
-  async function tuCache() {
-    const c = await localGet(TU_CACHE, null);
-    return (c && typeof c === 'object') ? c : null;
-  }
-  async function tuPending() {
-    const p = await localGet(TU_TAB, null);
-    return (p && typeof p === 'object') ? p : null;
-  }
-  /** 收掉自动标签；reason=timeout/cleanup 时顺手把「采集中」改成明确的失败状态。 */
-  async function tuFinish(reason, onlyTabId) {
-    const p = await tuPending();
-    if (!p) return false;
-    if (onlyTabId != null && Number(p.id) !== Number(onlyTabId)) return false;
-    await localRemove(TU_TAB);
-    if (p.id != null && chrome.tabs && chrome.tabs.get) {
-      try {
-        const t = await chrome.tabs.get(Number(p.id));
-        // 用户中途切到这个标签就别关，避免抢走正在看的页面
-        if (t && !t.active && chrome.tabs.remove) await chrome.tabs.remove(Number(p.id));
-      } catch (e) { /* 标签已被用户关掉 */ }
-    }
-    if (reason === 'timeout' || reason === 'cleanup') {
-      const st = await tuStatus();
-      if (!st || st.state === 'collecting') {
-        await tuSetStatus('timeout', '自动采集超时：资产页没返回数值（可能没连站内钱包或遇到验证页）',
-          { fails: (Number(st && st.fails) || 0) + 1 });
-      }
-    }
-    return true;
-  }
-  /** 统一的采集入口：所有触发点都过这里的节流与「正在采集」检查。 */
-  async function tuCollect(reason, force) {
-    const bind = await localGet(TU_BIND, null);
-    if (!bind) {
-      await tuSetStatus('no-wallet', '先在插件里连接钱包，才会自动采集 TapeUP 资产');
-      return false;
-    }
-    const pending = await tuPending();
-    if (pending && Date.now() - (Number(pending.at) || 0) < 90000) return false;
-    if (pending) await tuFinish('cleanup');   // 上次残留的后台标签先收掉
-    const st = await tuStatus();
-    const cache = await tuCache();
-    const cacheAt = Number(cache && cache.at) || 0;
-    const fails = Number(st && st.fails) || 0;
-    const gapMin = fails ? Math.min(30 * Math.pow(2, Math.min(fails, 3)), 240) : 30;
-    const lastTry = Number(st && st.at) || 0;
-    if (!force && cacheAt && Date.now() - cacheAt < TU_FRESH_MS) return false;
-    if (!force && lastTry && Date.now() - lastTry < gapMin * 60000) return false;
-    if (!chrome.tabs || !chrome.tabs.query) return false;
-    let tabs = [];
-    try { tabs = (await chrome.tabs.query({ url: ['https://tapeup.io/*', 'https://*.tapeup.io/*'] })) || []; }
-    catch (e) { tabs = []; }
-    const opened = tabs.filter(function (t) {
-      return t && t.id != null && /\/trade\/assets/i.test(String(t.url || ''));
-    });
-    if (opened.length) {
-      // 用户已经开着资产页：只催内容脚本立刻重扫一次，绝不新开/导航标签
-      try {
-        const p = chrome.tabs.sendMessage(opened[0].id, { type: 'TAPUP_ASSETS_SCAN', reason: reason || '' });
-        if (p && typeof p.catch === 'function') p.catch(function () {});
-      } catch (e) {}
-      await tuSetStatus('collecting', '正在读取已打开的「我的资产」页');
-      return true;
-    }
-    await tuSetStatus('collecting', '正在静默打开「我的资产」页采集（采完自动关闭）');
-    try {
-      const tab = await chrome.tabs.create({ url: TU_URL, active: false });
-      const o = {}; o[TU_TAB] = { id: tab && tab.id != null ? tab.id : null, at: Date.now(), reason: reason || '' };
-      await localSet(o);
-      // service worker 可能被回收：除了 25 秒定时器，再用一次性 alarm 兜底收标签
-      try { if (chrome.alarms && chrome.alarms.create) chrome.alarms.create(TU_CLEAN_ALARM, { delayInMinutes: 1 }); }
-      catch (e) {}
-      setTimeout(function () { tuFinish('timeout').catch(function () {}); }, 25000);
-    } catch (e) {
-      await tuSetStatus('error', '打不开资产页：' + String(e && e.message || e).slice(0, 80), { fails: fails + 1 });
-    }
-    return true;
-  }
-  function tuEnsureAlarm() {
-    try { if (chrome.alarms && chrome.alarms.create) chrome.alarms.create(TU_ALARM, { delayInMinutes: 1, periodInMinutes: 30 }); }
-    catch (e) {}
-  }
-  if (chrome.runtime && chrome.runtime.onInstalled) chrome.runtime.onInstalled.addListener(tuEnsureAlarm);
-  if (chrome.runtime && chrome.runtime.onStartup) chrome.runtime.onStartup.addListener(tuEnsureAlarm);
-  tuEnsureAlarm();
-  if (chrome.alarms && chrome.alarms.onAlarm) {
-    chrome.alarms.onAlarm.addListener(function (a) {
-      if (!a) return;
-      if (a.name === TU_ALARM) tuCollect('alarm').catch(function () {});
-      else if (a.name === TU_CLEAN_ALARM) tuFinish('cleanup').catch(function () {});
-    });
-  }
-  /** 内容脚本回传统一处理：有效数值才写缓存；失败只记状态，绝不覆盖上次有效数据。 */
-  async function tuApplyPayload(payload, tabUrl) {
-    if (!/^https:\/\/(?:[a-z0-9-]+\.)*tapeup\.io\//i.test(String(tabUrl || ''))) return 'rejected';
-    if (typeof TapePrice === 'undefined' && typeof importScripts === 'function') {
-      try { importScripts('price.js'); } catch (e) { /* 下面按无清洗器处理 */ }
-    }
-    const p = (payload && typeof payload === 'object' && !Array.isArray(payload)) ? payload : {};
-    const cleaned = (typeof TapePrice !== 'undefined' && TapePrice.cleanAssets)
-      ? TapePrice.cleanAssets(p) : null;
-    if (cleaned && cleaned.connected && cleaned.ok) {
-      await localSet({ tapeupAssetsCache: cleaned });
-      await tuSetStatus('collected', '已采集 ' + Object.keys(cleaned.fields).length + '/5 列',
-        { fails: 0, collectedAt: Date.now() });
-      await tuFinish('done');   // 采到了就收掉自动标签（用户标签不受影响）
-      return 'collected';
-    }
-    const probe = (p.probe && typeof p.probe === 'object') ? p.probe : null;
-    if (probe) {
-      const needWallet = probe.connected === false;
-      const st0 = await tuStatus();
-      await tuSetStatus(needWallet ? 'need-wallet' : 'no-fields',
-        needWallet ? '资产页提示先连接站内钱包' : '资产页没有可识别的数值列（可能未登录或遇到验证页）',
-        { fails: (Number(st0 && st0.fails) || 0) + 1 });
-      // 先不关标签：异步渲染 / Cloudflare 验证页可能几秒后才出数据
-      return needWallet ? 'need-wallet' : 'no-fields';
-    }
-    return 'ignored';
-  }
-  // 暴露给下方钱包消息区（同一 service worker 全局），供弹窗打开/刷新/断开钱包时调用
-  globalThis.__tapeupAutoCollect = tuCollect;
-  globalThis.__tapeupAutoFinish = tuFinish;
-  globalThis.__tapeupAutoApply = tuApplyPayload;
-  /* === TAPEUP_AUTO_END === */
 
   // 独立 listener：不与原有 CROSSPOST / GROK_* 路由耦合，回归风险最低
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (!msg || !/^(PRICE_|OPEN_PRICE_LINK|TAPUP_PRICE|TAPUP_ASSETS)/.test(String(msg.type || ''))) return false;
+    if (!msg || !/^(PRICE_|OPEN_PRICE_LINK|TAPUP_PRICE)/.test(String(msg.type || ''))) return false;
     (async function () {
       if (msg.type === 'PRICE_GET') {
         var cached = await localGet(SNAP_KEY, null);
@@ -1544,13 +1383,6 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
           var ups = {}; ups['tapeupPriceCache'] = upItem;
           await localSet(ups);
         }
-        sendResponse({ ok: true });
-      } else if (msg.type === 'TAPUP_ASSETS') {
-        /* 1.5.13：内容脚本在 tapeup.io「我的资产」页读到的展示值，只收本站页面回传。
-         * 1.5.14：成功/失败都交给 tuApplyPayload 统一处理（白名单清洗、状态机、收标签），
-         * 失败时 probe 诊断让弹窗能说清是「要连站内钱包」还是「没认出数值列」。 */
-        await tuApplyPayload(msg && msg.payload,
-          (sender && sender.tab && sender.tab.url) ? String(sender.tab.url) : '');
         sendResponse({ ok: true });
       } else if (msg.type === 'PRICE_SETTINGS') {
         // 阈值改过就清空状态机：新阈值应立即生效，不能被旧状态压住
@@ -1602,7 +1434,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
   const K_SALT = 'wbxVoteSaltV1';        // 本机投票匿名盐（兼容旧逻辑/测试）
   const K_BIND = 'wbxWalletBindV1';      // 加密后的地址信封
   const K_ASSETS = 'wbxAssetsCacheV1';  // 最近一次资产快照
-  const K_TAPEUP_ASSETS = 'tapeupAssetsCache'; // 1.5.13：tapeup.io「我的资产」页采集快照
+  const K_TAPEUP_ASSETS = 'tapeupAssetsCache'; // 1.5.16：仅用于清理 1.5.13/1.5.14 遗留缓存
   const K_PROFILE = 'wbxBelieverProfileV1'; // 1.5.6 信仰者名片（昵称 + 内置头像编号）
   const K_VOTE = 'wbxVoteStateV1';       // 账本缓存 / 本机打卡历史 / 待补投
   const VOTE_ALARM = 'bemVoteDailyCheck';
@@ -1700,25 +1532,6 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       return { assets: cached || null, error: String(e && e.message || e) };
     }
   }
-  /*
-   * 1.5.13：TapeUP「我的资产」缓存。它不是按地址查的链上数据，而是用户在
-   * tapeup.io 资产页（已连接钱包）里看到的展示值，随页面回传写进本机。
-   * 30 分钟没刷新就标 stale，面板只提示不自动清，避免打开弹窗时闪成空。
-   */
-  async function tapeupAssets() {
-    // 1.5.14：把自动采集状态一起带给弹窗，别再让「未采集」一个词糊住所有原因
-    const o = await sget([K_TAPEUP_ASSETS, 'tapeupAssetsStatusV1', 'tapeupAutoTabV1']);
-    const a = o[K_TAPEUP_ASSETS];
-    const status = o['tapeupAssetsStatusV1'] || null;
-    const collecting = !!o['tapeupAutoTabV1'];
-    if (!a || typeof a !== 'object') return { fields: {}, status: status, collecting: collecting };
-    const at = Number(a.at) || 0;
-    const age = Date.now() - at;
-    return Object.assign({}, a, {
-      stale: age > 30 * 60000, ageMinutes: Math.round(age / 60000),
-      status: status, collecting: collecting
-    });
-  }
   async function walletStatus(binding, force) {
     const a = binding ? await assetsOf(binding, force) : { assets: null, error: null };
     return {
@@ -1726,8 +1539,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       mask: binding ? Wallet.checksumHint(binding.address) : '',
       providerName: binding ? (binding.providerName || '') : '',
       chainId: binding ? (binding.chainId || '') : '',
-      assets: a.assets, assetsError: a.error,
-      tapeup: await tapeupAssets()
+      assets: a.assets, assetsError: a.error
     };
   }
 
@@ -1921,8 +1733,6 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     (async function () {
       const s = await secrets();
       if (msg.type === 'WALLET_STATUS') {
-        // 打开弹窗就顺带发起一轮 TapeUP 采集（内部节流；已绑定钱包才会动手）
-        try { if (globalThis.__tapeupAutoCollect) await globalThis.__tapeupAutoCollect('popup'); } catch (e) {}
         sendResponse(await walletStatus(await readBinding(), 'cache'));
       } else if (msg.type === 'WALLET_PROVIDERS') {
         const out = await runInPage({ action: 'list' });
@@ -1947,20 +1757,14 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
         await saveBinding(addr, 'manual', '手动填写', '');
         sendResponse(await walletStatus(await readBinding(), true));
       } else if (msg.type === 'WALLET_CLEAR') {
-        // 断开钱包时连页面采集的 TapeUP 资产与自动采集状态一起清掉，避免展示上一个地址的数据
-        try { if (globalThis.__tapeupAutoFinish) await globalThis.__tapeupAutoFinish('done'); } catch (e) {}
+        // 1.5.16：顺手清掉网页采集时代遗留的本机缓存，避免旧数据残留
         await sremove([K_BIND, K_ASSETS, K_TAPEUP_ASSETS, 'tapeupAssetsStatusV1', 'tapeupAutoTabV1']);
         sendResponse({ ok: true });
       } else if (msg.type === 'ASSETS_GET') {
         const b = await readBinding();
         if (!b) { sendResponse({ ok: false, error: '还没有连接钱包' }); return; }
-        try { if (globalThis.__tapeupAutoCollect) await globalThis.__tapeupAutoCollect('refresh', true); } catch (e) {}
         const a = await assetsOf(b, true);
-        sendResponse({ ok: true, assets: a.assets, error: a.error, tapeup: await tapeupAssets() });
-      } else if (msg.type === 'ASSETS_TAPEUP_COLLECT') {
-        // 弹窗状态标签可点：用户主动要求立刻重采一次（跳过节流）
-        try { if (globalThis.__tapeupAutoCollect) await globalThis.__tapeupAutoCollect('manual', true); } catch (e) {}
-        sendResponse({ ok: true, tapeup: await tapeupAssets() });
+        sendResponse({ ok: true, assets: a.assets, error: a.error });
       } else if (msg.type === 'VOTE_STATE') {
         const st = await voteState();
         sendResponse({ ok: true, summary: await syncAll(st) });
