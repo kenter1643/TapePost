@@ -1,7 +1,7 @@
 {
   "product_name": "TapePost信仰者工具",
   "short_name": "TapePost信仰者工具",
-  "version": "1.5.16",
+  "version": "1.5.17",
   "manifest_description_132": "7 站一键转发到 X：逐张去水印 + 4K、视频剪接；免 Key 站内 Grok，可切 xAI / DeepSeek；BEM 行情 + 钱包双链资产（BSC BEM/矿机、X Layer FAB/矿机/OKB）；连钱包为 $BEM 打卡，名片可改可存；导航核验。",
   "summary_132": "7 站内容转 X 草稿（去水印 4K、视频剪接）；免 Key 站内 Grok / 可切 xAI、DeepSeek；BEM 行情 + 钱包双链资产（BSC BEM/矿机、X Layer FAB/矿机/OKB）；打卡全网账本；生态导航核验。",
   "category": "productivity",
@@ -10,6 +10,7 @@
     "en"
   ],
   "detailed_description": [
+    "【1.5.17：修复 AI 评论回写重复 2 条、不可编辑】修复用户反馈「评论回写会写进去评论区，是重复的 2 条，并且人工无法修改，但是发出去是正确的一条」。根因是 X 回复框为受控编辑器，execCommand('insertText') 会让浏览器原生写进 DOM、又被编辑器 state 记一次，DOM 出现两份而发送时读取的 state 只有一份；AI 候选写入路径 writeIntoReply() 只看 execCommand 返回值、从不核对最终文本，于是静默报成功并把重复文本与失步状态留在框里（T 按钮路径从 1.4.11 起已有写后严格校验）。本版把两条路径对齐：新增 replyPasteReplace() 优先派发一次合成 paste 事件，由 X 自己接管、只更新一次 state，DOM 天然只有一份且保持可编辑；新增 replyWriteVerified() 在写入后按去空白的完整字符序列严格校验，多一份 / 少半句一律判失败，只恢复原文一次、绝不重试；写入前做幂等判断，连点或编辑器重渲染都不会再追加第二遍；写入异常时明确提示「原文已恢复，请手动粘贴」并复制候选，不再静默成功、也不再另开 intent 预填页。仅修复本机写入通道与提示文案：不新增权限 / 主机权限 / 域名 / 数据接收方 / 运行时文件，permissions 仍 9 项、host_permissions 仍 34 条、商店包仍 28 文件；AI 请求仍只发送推文正文与提示词，接收方不变，三份隐私政策按惯例不改动、不重部署线上。新增 test-comment-write.js 用真实 content.js 函数验证 68 项。",
     "【1.5.16：TapeUP 网页采集全部下线】修复用户反馈「插件里网页读取的方式已经影响我正常访问 tapeUP」。实测 tapeup.io 整站 Cloudflare（后台 fetch 403），TapeAPI 公开服务只有 8 个 BNB Chain 只读方法（无 PoB 资产 / UP 余额 / 待释放预算接口），而 $UP 是 PoB 全链账本 Token ID #00001、非 ERC-20 且无合约地址，「我的资产」不存在可直连的公开接口。因此本版彻底移除 1.4.16 起的 $UP 内盘价采集、1.5.13 的资产页采集与 1.5.14 的定时自动采集：删除 tapeup.io / *.tapeup.io 两条主机权限与对应 content_scripts 注入，后台不再注册 30 分钟 alarm、不再静默创建或关闭标签、不再接收资产回传消息，弹窗移除「TapeUP · $UP 我的资产」整组与状态标签，断钱包时顺带清除历史遗留缓存。插件不再读取该站任何页面文本，也不在该站注入任何脚本；点行情卡片打开交易页仍是用户主动点击的普通跳转，不注入、不读取。host_permissions 由 36 条降为 34 条、permissions 仍 9 项、商店包由 29 文件降为 28 文件（移除 tapeup-price.js），不新增任何权限、域名或数据接收方。三份隐私政策新增 1.5.16 段如实披露。新增 test-tapeup-removed.js 下线验收专项，历史回归 489/532 零新增失败。",
     "【1.5.15：AI 评论按真实供应商显示，候选 1~10 条默认 5 条，结果面板紧凑两列】修复用户反馈「选了 DeepSeek，评论的提示和回复结果却还写 Grok」。本版把等待浮层、结果头部、供应商徽标、错误短句、提示词预览、测试当前模式与手动兜底文案全部按实际运行模式显示 DeepSeek API / xAI API / X 站内 Grok，API 模式不再出现「读取 Grok 回答」这类误导按钮；后台结果带 provider 字段，页面侧按真实值渲染。候选条数改为可配置：弹窗「AI 设置」新增「每次生成候选」下拉（1~10 条，默认 5，最多 10），结果面板内也有同款下拉，改完即写设置并重新生成；提示词、JSON 示例、输出 token 上限、站内直连桥接与解析都按 N 条联动，旧调用不传条数仍按 3 条兼容。结果面板重排为紧凑两列网格（4 条起自动双列、宽 440px、最高 82vh），10 条也能一屏浏览。仅改本机提示词构造、文案与布局：不新增权限 / 主机权限 / 域名 / 数据接收方 / 运行时文件，permissions 仍 9 项、host_permissions 仍 36 条、商店包仍 29 文件；AI 请求仍只发送推文正文与提示词，接收方不变。新增 test-ai-comments.js 用真实代码验证 46 项。",
     "【1.5.14：TapeUP 资产改为定时自动采集】修复用户反馈「弹窗里 TapeUP 我的资产六个格子都是横杠、状态写未采集」。1.5.13 只有在用户手动打开 tapeup.io「我的资产」页时才会采集，定时刷新资产与打开弹窗都不会触发。本版把采集挂进定时轮询（每 30 分钟）、价格轮询、打开弹窗、点刷新资产，以及面板状态标签的点击：已有资产页标签只发一条扫描消息、不干扰用户；没有时静默打开一个非激活的后台标签，读取完成后自动关闭，失败或超时也会收掉。弹窗状态细分为采集中 / 需连站内钱包 / 本次未读到 / 已采集，缓存变化自动回刷；连续失败自动降频，失败诊断不覆盖上次有效数据。数据仍只来自页面已显示的文本、经白名单清洗后只存本机，不读取地址或凭据、不调用站内接口、不上传；不新增权限 / 主机权限 / 域名 / 数据接收方 / 运行时文件，permissions 仍 9 项、host_permissions 仍 36 条、商店包仍 29 文件。新增 test-tapeup-auto.js 用真实后台代码验证定时、标签生命周期与状态机。",
@@ -107,8 +108,8 @@
     "activeTab": "activeTab 是让上述 scripting 调用得以成立的最小化主机访问方式。注入式钱包可能安装在任意网站，用户也可能在任意标签页点「连接钱包」；没有 activeTab，扩展就必须申请对所有网站的持久主机权限。activeTab 只在明确的用户手势（点击扩展图标 / 弹窗按钮）之后，临时授予当前活动标签一个标签页的访问权，标签页一导航或关闭即失效。扩展只读取当前标签的 URL 以确认是可注入的普通 http(s) 页面；不访问其它标签、不收集 URL / 标题 / 图标做分析、不监听导航或页面内容、不保留任何持久访问。兜底标签 https://tapeout.firsto.ai/ 由单独列出的主机权限覆盖，不依赖 activeTab。安装时不授予任何宽泛主机权限：optional_host_permissions 的 https://*/* 默认为未授予，仅在用户为自定义网关主动授权时才生效。 【1.5.10 上架表单的正式 justification 见 dashboard_permission_justifications】"
   },
   "dashboard_permission_justifications": {
-    "note": "Chrome Web Store Developer Dashboard 上传 1.5.16 包后，Privacy 页会出现两个标 * 的必填文本框：scripting justification 与 activeTab justification（即用户截图里的两项）。它们属于「权限理由」，不填或写得笼统会被判 Missing or insufficient metadata / excessive permissions，导致补件或拒审。下面 en 是可直接粘贴的正式答案（已按每框 1000 字符上限压缩）（审核通用语言，优先用），zh 为逐句对应的中文对照，便于自查。两段文案已按 1.5.16 源码逐条核对，与 manifest 的 9 项 permissions / 34 条 host_permissions、Remote code = No、data_use_disclosure 及 privacy_policy_url 口径一致。",
-    "verified_against": "manifest.json（permissions 9 项、host_permissions 34 条）、background.js runInPage()（1562–1591 行，WALLET_PROVIDERS / WALLET_CONNECT 两个消息入口；1.5.11 因文件顶部新增早期唤醒监听器后移 18 行，1.5.13 因新增 TAPUP_ASSETS 消息分支与资产缓存函数再后移 30 行，1.5.14 因新增定时自动采集区块再后移 170 行，1.5.15 因新增供应商标签与候选条数逻辑再后移 25 行，1.5.16 因整体删除 TAPEUP_AUTO 区块与资产消息链路前移 188 行）、wallet.js pageBridge()（155–239 行）；版本 1.5.16。1.5.16 起 tapeup.io 的 content_scripts 与两条主机权限已全部移除，不再有任何页面采集、内容脚本注入或自动标签；两段 justification 只描述用户点「连接钱包」时的一次性 MAIN world 只读探测与 activeTab 临时授权，口径不受影响。",
+    "note": "Chrome Web Store Developer Dashboard 上传 1.5.17 包后，Privacy 页会出现两个标 * 的必填文本框：scripting justification 与 activeTab justification（即用户截图里的两项）。它们属于「权限理由」，不填或写得笼统会被判 Missing or insufficient metadata / excessive permissions，导致补件或拒审。下面 en 是可直接粘贴的正式答案（已按每框 1000 字符上限压缩）（审核通用语言，优先用），zh 为逐句对应的中文对照，便于自查。两段文案已按 1.5.17 源码逐条核对，与 manifest 的 9 项 permissions / 34 条 host_permissions、Remote code = No、data_use_disclosure 及 privacy_policy_url 口径一致。",
+    "verified_against": "manifest.json（permissions 9 项、host_permissions 34 条）、background.js runInPage()（1562–1591 行，WALLET_PROVIDERS / WALLET_CONNECT 两个消息入口；1.5.11 因文件顶部新增早期唤醒监听器后移 18 行，1.5.13 因新增 TAPUP_ASSETS 消息分支与资产缓存函数再后移 30 行，1.5.14 因新增定时自动采集区块再后移 170 行，1.5.15 因新增供应商标签与候选条数逻辑再后移 25 行，1.5.16 因整体删除 TAPEUP_AUTO 区块与资产消息链路前移 188 行）、wallet.js pageBridge()（155–239 行）；版本 1.5.17。1.5.16 起 tapeup.io 的 content_scripts 与两条主机权限已全部移除，不再有任何页面采集、内容脚本注入或自动标签；两段 justification 只描述用户点「连接钱包」时的一次性 MAIN world 只读探测与 activeTab 临时授权，口径不受影响。",
     "fields": [
       {
         "field": "scripting justification",
@@ -176,7 +177,7 @@
   "pre_submit_checklist": [
     "用 Google 账号登录 Chrome Web Store Developer Dashboard，并完成一次性开发者注册（注册费 US$5）",
     "已为 Google 账号开启两步验证（2FA）并退出重登 Dashboard，否则上传会报 Enabling 2 step verification…",
-    "在 Dashboard 点「Add new item」上传 store/TapePost_1.5.16_store.zip（28 文件，与 1.5.15 相比移除 tapeup-price.js；已有条目则选「上传新版本」，不要新建第二个条目）",
+    "在 Dashboard 点「Add new item」上传 store/TapePost_1.5.17_store.zip（28 文件，与 1.5.15 相比移除 tapeup-price.js；已有条目则选「上传新版本」，不要新建第二个条目）",
     "把本文件里的名称、摘要、详细描述、分类、单一用途、逐项权限理由复制到商店表单",
     "【必填】在 Privacy 页把 dashboard_permission_justifications.fields[0].en 粘到 scripting justification *、fields[1].en 粘到 activeTab justification *（两个标 * 的框不填无法提交；中文对照见同字段 zh）",
     "【必填】核对两段 justification 与代码一致：scripting 只用于用户点「连接钱包」时的一次性 MAIN world 只读探测且无远程代码；activeTab 只在用户手势后临时授予当前标签、导航或关闭即失效；两者都不读取页面内容或其它标签页",
@@ -185,7 +186,7 @@
     "勾选数据使用声明：不收集个人数据、无远程代码、无第三方分析；但「是否将数据传出设备」必须选「是」—— 用户切到 API 模式时扩展会向 xAI / DeepSeek 发送文字/链接；默认站内直连由 X 页面向 X/Grok 发送请求，详见 data_use_disclosure",
     "保存草稿并预览，确认无误后点「Submit for review」",
     "首次上架因「新开发者 + 新扩展 + https://*/* 宽泛主机权限」会进入 in-depth review，通常数天到 3 周（不是 1–3 天）；超过 3 周再联系 developer support",
-    "在「数据使用」页如实披露 xAI Grok 与 DeepSeek 为第三方 AI 服务，并确认隐私政策链接指向最新版（数据流向自 1.5.8 起未变，1.5.9 / 1.5.10 仅改界面与产品名，1.5.11 仅改本机消息重连逻辑，1.5.12 仅改本机视频像素重建，1.5.13 仅在本机读取 tapeup.io 资产页已显示的资产数字并缓存，1.5.14 起改为定时 / 打开弹窗 / 刷新资产时自动静默采集同一页面（采完自动关闭标签、连续失败降频），1.5.15 仅改本机 AI 提示词条数（1~10，默认 5）与供应商名称显示，1.5.16 起彻底下线 tapeup.io 页面采集并移除两条主机权限，仍不新增任何接收方；含 AI 章节、站内直连数据流向、本机图片 / 视频处理 / 行情说明、TapeUP 网页采集已下线说明、回复框回写与连接自愈说明）",
+    "在「数据使用」页如实披露 xAI Grok 与 DeepSeek 为第三方 AI 服务，并确认隐私政策链接指向最新版（数据流向自 1.5.8 起未变，1.5.9 / 1.5.10 仅改界面与产品名，1.5.11 仅改本机消息重连逻辑，1.5.12 仅改本机视频像素重建，1.5.13 仅在本机读取 tapeup.io 资产页已显示的资产数字并缓存，1.5.14 起改为定时 / 打开弹窗 / 刷新资产时自动静默采集同一页面（采完自动关闭标签、连续失败降频），1.5.15 仅改本机 AI 提示词条数（1~10，默认 5）与供应商名称显示，1.5.16 起彻底下线 tapeup.io 页面采集并移除两条主机权限，仍不新增任何接收方；1.5.17 仅改本机 AI 候选回写通道与提示，数据流仍不变；含 AI 章节、站内直连数据流向、本机图片 / 视频处理 / 行情说明、TapeUP 网页采集已下线说明、回复框回写与连接自愈说明）",
     "把 broad_host_permission_justification 粘到 Privacy 页主机访问理由 / Reviewer notes，说明 https://*/* 默认不授予、仅按单一网关域名动态申请",
     "Settings 页填写 publisher contact email 并完成邮箱验证（点验证邮件链接，状态变为 Verified）",
     "Privacy practices 页勾选 Data usage 两组复选框 + Limited Use 认证，逐项按 data_usage_form_answers 填",

@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.16';
+  return 'v1.5.17';
 })();
 
 /* ==================== 1.5.11：后台连接自愈 ====================
@@ -1966,6 +1966,84 @@ function rewriteReplyOnce(input, finalText) {
   } catch (e) { return false; }
 }
 
+/* ==========================================================================
+ * 1.5.17：AI 评论回写「重复 2 条 / 人工无法修改 / 发出去却只有 1 条」的根因
+ *
+ * X 回复框是 Lexical 一类的受控编辑器：execCommand('insertText') 会被浏览器
+ * 原生写进 DOM、又被编辑器 state 记一次，DOM 里同一句就出现两遍；发送时 X
+ * 读自己的 state（1 份），于是「界面 2 条、发出去 1 条」，而 DOM 与 state
+ * 失步后用户打字会被 state 覆盖回来，看起来就是「人工无法修改」。
+ *
+ * T 按钮的 applyQuickPromo() 从 1.4.11 起就有「写后严格校验 + 恢复原文」，
+ * 但 AI 候选走的 writeIntoReply() 只看 execCommand 返回值，从不核对最终文本，
+ * 所以会静默报成功、把两份文本和不可编辑状态留在框里。本版把两条路径对齐，
+ * 并优先走「粘贴」通道：X 对 paste 一律自己接管、只更新一次 state，DOM 由它
+ * 渲染，天然不会出现两份，也不会让编辑器失步。
+ * ========================================================================== */
+
+/* 只派发一次合成 paste；是否生效由调用方读 DOM 校验，绝不与 execCommand 叠加。
+ * handled = X 接管了事件（preventDefault），此时再插一次文本就是双写源头。 */
+function replyPasteReplace(input, finalText) {
+  const none = { dispatched: false, handled: false };
+  try {
+    if (!input || typeof DataTransfer === 'undefined' ||
+        typeof ClipboardEvent === 'undefined' || !input.dispatchEvent) return none;
+    if (typeof document === 'undefined' || typeof document.createRange !== 'function' ||
+        typeof window === 'undefined' || typeof window.getSelection !== 'function') return none;
+    if (input.focus) input.focus();
+    const sel = window.getSelection();
+    if (!sel || !sel.removeAllRanges || !sel.addRange) return none;
+    const r = document.createRange();
+    if (!r.selectNodeContents) return none;
+    r.selectNodeContents(input);       // 先全选：粘贴才会替换整段，而不是插在光标处
+    sel.removeAllRanges();
+    sel.addRange(r);
+    const dt = new DataTransfer();
+    dt.setData('text/plain', String(finalText == null ? '' : finalText));
+    const ev = new ClipboardEvent('paste', {
+      clipboardData: dt, bubbles: true, cancelable: true
+    });
+    input.dispatchEvent(ev);
+    return { dispatched: true, handled: !!ev.defaultPrevented };
+  } catch (e) { return none; }
+}
+
+/* AI 候选回写的唯一写入口：写入 → 写后严格校验 → 异常只恢复一次，绝不重试。
+ * 校验用「去空白后的完整字符序列」，多一份 / 少半句 / 被追加都会判失败。 */
+function replyWriteVerified(input, finalText, original) {
+  const want = normReplyText(finalText);
+  const orig = normReplyText(original);
+  const read = () => normReplyText(nodeText(input).trim());
+  const restore = () => {
+    // 原文为空也要写一次空文本把框清空，否则双写留下的两份文本会一直挂在页面上
+    if (read() === orig) return;
+    rewriteReplyOnce(input, original);
+    input.__wbxWriteDirty = read() !== orig;   // 恢复也没成功：提示用户刷新回复框
+  };
+
+  // 通道 1：X 自己的粘贴处理（只更新一次 state，DOM 一份且保持可编辑）
+  const paste = replyPasteReplace(input, finalText);
+  if (paste.handled) {
+    if (read() === want) { collapseReplySelection(); return true; }
+    /* React 可能在微任务里才把 state 渲染进 DOM。此时绝不再叠一次
+     * execCommand（那正是双写来源）：给一帧时间只读校验，不对就恢复原文。 */
+    if (typeof setTimeout === 'function') {
+      setTimeout(() => {
+        if (read() !== want) restore();
+        collapseReplySelection();
+      }, 120);
+    }
+    return true;
+  }
+
+  // 通道 2：浏览器原生一次全量替换（旧版 X / 非受控编辑器 / 测试桩）
+  const ok = rewriteReplyOnce(input, finalText);
+  const good = !!(ok && read() === want);
+  if (!good) restore();
+  collapseReplySelection();
+  return good;
+}
+
 /* 富文本保护：正文里有 @ 提及、emoji 图片、链接卡片、配图时，全量纯文本重写
  * 会把它们丢掉。这种时候一律降级为「只复制推广句，用户自己粘贴」。 */
 function replyHasRichContent(input) {
@@ -2203,9 +2281,10 @@ function resolveReplyContext(btn, scope) {
   } catch (e) { return null; }
 }
 
-/* 把候选写进 X 的 contenteditable 回复框。execCommand('insertText') 会触发
- * 真实 input 事件，React 受控组件能识别（1.3.0 的 Grok 输入框已验证同一机制）。
- * 框里已有草稿时追加一行，绝不静默覆盖用户写的内容。 */
+/* 把候选写进 X 的 contenteditable 回复框。1.5.17 起统一走
+ * replyWriteVerified()：优先粘贴通道、写后严格校验、异常恢复原文，
+ * 绝不把「重复 2 条 / 不可编辑」当成写入成功。框里已有草稿时追加一段，
+ * 绝不静默覆盖用户写的内容。 */
 function writeIntoReply(input, text) {
   if (!input || !text) return false;
   try {
@@ -2214,28 +2293,48 @@ function writeIntoReply(input, text) {
      * 重复 / 之后不可编辑；含富文本时直接拒绝，交由候选面板的复制兜底。 */
     if (replyHasRichContent(input)) return false;
     const existing = nodeText(input).trim();
+    /* 1.5.17 幂等：这条候选已经在框里（连点 / X 重渲染 / 编辑器双写），
+     * 直接视为已写入，绝不再追加第二遍。 */
+    if (existing && normReplyText(existing).indexOf(normReplyText(text)) >= 0) {
+      collapseReplySelection();
+      return true;
+    }
     const finalText = existing ? existing + '\n\n' + text : text;
-    const ok = rewriteReplyOnce(input, finalText);
-    if (!ok) rewriteReplyOnce(input, existing);   // 失败时恢复原文
-    collapseReplySelection();
+    input.__wbxWriteDirty = false;
+    const ok = replyWriteVerified(input, finalText, existing);
+    // 恢复标志交给候选面板：这种情况不能另开 intent 窗口，只能复制后手动粘贴
+    input.__wbxWriteRecovered = ok ? false : true;
     return ok;
   } catch (e) { collapseReplySelection(); return false; }
 }
 
 function applyCommentToReply(text, btn) {
   if (!btn || !btn.__wbxReply) return false;
-  // 1.4.9：按钮注入时绑定的那个输入框优先；不再 fallback 到 list[0]
-  const bound = btn.__wbxInput;
-  if (bound && bound.parentElement) {
-    try {
-      if (typeof document !== 'undefined' && document.contains && !document.contains(bound)) return false;
-    } catch (e) { /* 测试桩没有 contains */ }
-    return writeIntoReply(bound, text);
-  }
-  const list = findReplyComposers();
-  const target = list.find((c) => c.input === bound) ||
-    list.find((c) => c.scope === btn.__wbxScope);
-  return target ? writeIntoReply(target.input, text) : false;
+  // 1.5.17：连点 / 一次点击被 X 重渲染重复派发时只处理一次
+  if (btn.__wbxBusy) return false;
+  btn.__wbxBusy = true;
+  btn.__wbxRecovered = false;
+  try {
+    // 1.4.9：按钮注入时绑定的那个输入框优先；不再 fallback 到 list[0]
+    const bound = btn.__wbxInput;
+    let input = null;
+    if (bound && bound.parentElement) {
+      try {
+        if (typeof document !== 'undefined' && document.contains && !document.contains(bound)) return false;
+      } catch (e) { /* 测试桩没有 contains */ }
+      input = bound;
+    } else {
+      const list = findReplyComposers();
+      const target = list.find((c) => c.input === bound) ||
+        list.find((c) => c.scope === btn.__wbxScope);
+      input = target ? target.input : null;
+    }
+    if (!input) return false;
+    const ok = writeIntoReply(input, text);
+    btn.__wbxRecovered = !ok && input.__wbxWriteRecovered === true;
+    btn.__wbxWriteDirty = !ok && input.__wbxWriteDirty === true;
+    return ok;
+  } finally { btn.__wbxBusy = false; }
 }
 
 /* 插件自己打开的 X 发布页不注入「一键转发」按钮：否则发推框里会再叠一个。
@@ -2813,14 +2912,28 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, 
     use.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // 1.5.17：连点只处理一次，避免同一条候选被写进去两遍
+      if (use.__wbxBusy) return;
+      use.__wbxBusy = true;
       // 1.3.1 主路径：直接写进按钮旁边那个回复框，不再另开 intent 页面
       const wrote = applyCommentToReply(c, btn);
       if (wrote) {
-        showToast('已写入回复框，手动点「回复」。', 3500);
+        showToast('已写入回复框，可继续手动修改，再点「回复」。', 3500);
         copyTextFallback(c);
         if (panel.remove) panel.remove();
         return;
       }
+      /* 1.5.17：X 编辑器写入异常时已经恢复原文，绝不另开 intent 窗口，
+       * 只复制候选并明确提示手动粘贴 —— 回复框始终可编辑、不留重复文本。 */
+      if (btn && btn.__wbxRecovered) {
+        copyTextFallback(c);
+        showToast(btn.__wbxWriteDirty
+          ? 'X 编辑器写入异常，请点一下回复框或刷新 X 页面；候选已复制，请手动粘贴。'
+          : 'X 编辑器拒绝了自动写入，原文已恢复；候选已复制，请手动粘贴后再发送。', 7000);
+        use.__wbxBusy = false;
+        return;
+      }
+      use.__wbxBusy = false;
       // 兜底：X 改版导致找不到回复框 / 写入被拒时，退回官方 intent 预填
       const domain = settings.xDomain === 'twitter.com' ? 'twitter.com' : 'x.com';
       const params = new URLSearchParams();

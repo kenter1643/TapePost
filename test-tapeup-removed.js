@@ -1,4 +1,4 @@
-/* TapePost 1.5.16 · TapeUP 网页采集「全部下线」专项自检
+/* TapePost 1.5.17 · TapeUP 网页采集「全部下线」专项自检
  *
  * 背景：1.5.13 / 1.5.14 为读「我的资产」在 tapeup.io 全站注入内容脚本、
  * 每 3 秒扫 DOM 并每 30 分钟静默开一个后台标签，用户反馈已影响正常访问该站。
@@ -37,8 +37,8 @@ const priv = read('docs/privacy.html');
 const privSite = read('store/privacy-site/index.html');
 
 console.log('== 1. 版本与权限基线 ==');
-eq('manifest 版本', manifest.version, '1.5.16');
-eq('listing 版本', listing.version, '1.5.16');
+eq('manifest 版本', manifest.version, '1.5.17');
+eq('listing 版本', listing.version, '1.5.17');
 eq('permissions 仍 9 项', manifest.permissions.length, 9);
 eq('host_permissions 收敛为 34 条', manifest.host_permissions.length, 34);
 ok('两条 tapeup.io 主机权限已移除',
@@ -48,8 +48,8 @@ ok('content_scripts 不再匹配 tapeup.io',
 ok('content_scripts 不再引用 tapeup-price.js',
   !manifest.content_scripts.some((c) => (c.js || []).includes('tapeup-price.js')));
 eq('content_scripts 只剩两段', manifest.content_scripts.length, 2);
-ok('UI 版本兜底统一 1.5.16', /v1\.5\.16/.test(popHtml) && /v1\.5\.16/.test(panelHtml) &&
-  /v1\.5\.16/.test(contentJs) && /v1\.5\.16/.test(popJs));
+ok('UI 版本兜底统一 1.5.17', /v1\.5\.17/.test(popHtml) && /v1\.5\.17/.test(panelHtml) &&
+  /v1\.5\.17/.test(contentJs) && /v1\.5\.17/.test(popJs));
 
 console.log('== 2. 后台不再采集 / 不再开标签 ==');
 ok('TAPEUP_AUTO 区块已整体删除',
@@ -100,7 +100,9 @@ ok('BSC / X Layer 两组资产格仍在',
   /id="xlFab"/.test(popHtml) || /xlayer-grid/.test(popHtml));
 
 console.log('== 5. 合规资料与文档同步 ==');
-eq('详细描述首条为 1.5.16', String(listing.detailed_description[0]).startsWith('【1.5.16'), true);
+ok('详细描述含 1.5.17 回写修复与 1.5.16 下线说明',
+  String(listing.detailed_description[0]).startsWith('【1.5.17') &&
+  listing.detailed_description.some((x) => String(x).startsWith('【1.5.16')));
 ok('主机访问理由含 1.5.16 下线补充', /1\.5\.16 补充：host_permissions 36 → 34 条/.test(listing.host_access_justification));
 ok('逐项权限理由已移除 tapeup.io 注入描述',
   !/tapeup\.io \/ \*\.tapeup\.io 仅用于注入内容脚本/.test(listing.permission_justifications.host_permissions) &&
@@ -109,15 +111,15 @@ ok('宽权限说明改为 34 条', /host_permissions 是 34 条具体域名/.tes
 ok('Dashboard verified_against 对齐新行号与 34 条',
   /1562–1591 行/.test(listing.dashboard_permission_justifications.verified_against) &&
   /host_permissions 34 条/.test(listing.dashboard_permission_justifications.verified_against) &&
-  /版本 1\.5\.16/.test(listing.dashboard_permission_justifications.verified_against));
+  /版本 1\.5\.17/.test(listing.dashboard_permission_justifications.verified_against));
 ok('两段必填 justification 文案未改且仍 ≤1000 字符',
   listing.dashboard_permission_justifications.fields.every((f) => f.en.length <= 1000));
 ok('数据使用披露不再声称读取 tapeup.io 页面',
   !/tapeup\.io 交易页的内盘价由内容脚本读取/.test(listing.data_use_disclosure.what_is_transmitted) &&
   /1\.5\.16 起已停止 tapeup\.io 页面采集/.test(listing.data_use_disclosure.what_is_transmitted));
 ok('数据使用表单答案补 1.5.16', /【1\.5\.16 补充】/.test(listing.data_usage_form_answers));
-ok('发布清单指向 1.5.16 包 / 28 文件',
-  listing.pre_submit_checklist.some((x) => /TapePost_1\.5\.16_store\.zip（28 文件/.test(x)));
+ok('发布清单指向 1.5.17 包 / 28 文件',
+  listing.pre_submit_checklist.some((x) => /TapePost_1\.5\.17_store\.zip（28 文件/.test(x)));
 ok('README 有 1.5.16 段', /### 1\.5\.16：TapeUP 网页采集全部下线/.test(readme));
 
 [['仓库隐私政策', priv], ['独立部署副本', privSite]].forEach(([name, html]) => {
@@ -133,7 +135,7 @@ if (fs.existsSync(ledgerPriv)) {
 }
 
 console.log('== 6. 商店包（打好后复跑本脚本会生效）==');
-const zip = path.join(DIR, 'store', 'TapePost_1.5.16_store.zip');
+const zip = path.join(DIR, 'store', 'TapePost_1.5.17_store.zip');
 if (fs.existsSync(zip)) {
   const zlib = require('zlib');
   const buf = fs.readFileSync(zip);
@@ -162,7 +164,7 @@ if (fs.existsSync(zip)) {
       ? zlib.inflateRawSync(manEntry.data).toString('utf8')
       : manEntry.data.toString('utf8');
     const man = JSON.parse(text);
-    eq('包内 manifest 版本', man.version, '1.5.16');
+    eq('包内 manifest 版本', man.version, '1.5.17');
     ok('包内 manifest 无 tapeup.io 主机权限',
       !man.host_permissions.some((h) => /tapeup\.io/.test(h)));
     eq('包内 manifest 主机权限 34 条', man.host_permissions.length, 34);

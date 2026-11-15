@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TapePost信仰者工具",
   "short_name": "TapePost信仰者工具",
-  "version": "1.5.16",
+  "version": "1.5.17",
   "author": "TapeOut 社区 · 昆哥",
   "minimum_chrome_version": "116",
   "description": "7 站一键转发到 X：逐张去水印 + 4K、视频剪接；免 Key 站内 Grok，可切 xAI / DeepSeek；BEM 行情 + 钱包双链资产（BSC BEM/矿机、X Layer FAB/矿机/OKB）；连钱包为 $BEM 打卡，名片可改可存；导航核验。",
