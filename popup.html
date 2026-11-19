@@ -104,12 +104,26 @@
     .ok { color:var(--success); font-size:var(--fs-caption); margin-top:var(--sp-2); display:none; }
 
     /* 主/次按钮：统一圆角、最小高度与状态 */
-    #save,#openPanel,#openFollow,#check { width:100%; min-height:38px; padding:var(--sp-2) var(--sp-3);
+    #save,#openPanel,#check { width:100%; min-height:38px; padding:var(--sp-2) var(--sp-3);
       border-radius:var(--r-sm); font-size:var(--fs-subhead); font-weight:700; cursor:pointer; }
-    #openFollow { margin:0 0 var(--sp-3); border:1px solid rgba(34,211,238,.48);
-      background:linear-gradient(92deg,rgba(34,211,238,.16),rgba(167,139,250,.16));
-      color:var(--cyan-soft); box-shadow:0 6px 18px rgba(34,211,238,.14); }
-    #openFollow:hover { background:linear-gradient(92deg,rgba(34,211,238,.26),rgba(167,139,250,.26)); }
+    /* 顶部主入口：互关管理（1.5.19 起固定在品牌头正下方，弹窗第一眼可见） */
+    #openFollow { display:flex; align-items:center; gap:var(--sp-3); width:100%; min-height:58px;
+      margin:0 0 var(--sp-3); padding:var(--sp-2) var(--sp-3); text-align:left; cursor:pointer;
+      border:1px solid rgba(34,211,238,.58); border-radius:var(--r-md);
+      background:linear-gradient(100deg,rgba(34,211,238,.24),rgba(167,139,250,.22) 54%,rgba(255,138,61,.20));
+      box-shadow:0 10px 26px rgba(34,211,238,.20),inset 0 0 0 1px rgba(255,255,255,.05);
+      color:var(--text-1); }
+    #openFollow:hover { border-color:rgba(34,211,238,.85);
+      background:linear-gradient(100deg,rgba(34,211,238,.36),rgba(167,139,250,.32) 54%,rgba(255,138,61,.30));
+      box-shadow:0 12px 30px rgba(34,211,238,.30); }
+    #openFollow .he-ico { flex:0 0 auto; font-size:24px; line-height:1; }
+    #openFollow .he-txt { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+    #openFollow .he-title { font-size:var(--fs-subhead); font-weight:800; color:#fff; letter-spacing:.3px; }
+    #openFollow .he-sub { font-size:var(--fs-caption); line-height:1.45; color:var(--cyan-soft); }
+    #openFollow .he-new { display:inline-block; margin-left:var(--sp-1); vertical-align:1px;
+      font-size:var(--fs-micro); font-weight:800; color:var(--text-onbrand);
+      background:var(--grad-brand); border-radius:var(--r-pill); padding:1px var(--sp-2); white-space:nowrap; }
+    #openFollow .he-arrow { flex:0 0 auto; font-size:var(--fs-title); color:var(--cyan-soft); line-height:1; }
     #save { margin-top:var(--sp-3); border:none; background:var(--grad-cta); color:#fff;
       box-shadow:0 6px 18px rgba(255,94,77,.32); }
     #save:hover { background:linear-gradient(92deg,#ffae57,#ff7355); }
@@ -363,6 +377,16 @@
   <!-- 1.5.10：标题补回 TapePost，插件全名为「TapePost信仰者工具」；品牌字标与中文名分层，靠 5px 视觉间距分隔 -->
   <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.19</span></h1>
 
+  <!-- 1.5.19：互关管理主入口固定在品牌头正下方，打开 X 关注关系分析独立面板 -->
+  <button id="openFollow" type="button" title="打开 X 关注关系分析面板（未回关统计 / 分类明细 / 批量取关）">
+    <span class="he-ico" aria-hidden="true">👥</span>
+    <span class="he-txt">
+      <span class="he-title">互关管理<span class="he-new">新增</span></span>
+      <span class="he-sub">X 关注关系分析 · 未回关统计 / 批量取关</span>
+    </span>
+    <span class="he-arrow" aria-hidden="true">›</span>
+  </button>
+
   <!-- 1.5.5：BEM 置顶为主卡（最大字号），TapeUP / 矿机日产并排第二行；描述一律 8px -->
   <section class="tape-prices" id="pricePanel">
     <div class="price-head">
@@ -551,7 +575,6 @@
   </details>
 
   <button id="openPanel" type="button">🛡 打开 TapeOut 生态面板（295 条绿标 + 链接核验）</button>
-  <button id="openFollow" type="button">👥 X 关注关系分析 · 未回关统计 / 批量取关</button>
 
   <label>已启用站点（关掉后该站不再出现「一键转发」）</label>
   <div class="sites" id="sites">

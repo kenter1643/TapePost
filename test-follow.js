@@ -84,6 +84,27 @@ ok('新增段以 follow-core.js 打头再注入 follow-bridge.js', (() => {
 NEW_FILES.forEach((f) => ok('新运行时文件存在 ' + f, exists(f)));
 ok('弹窗有关注分析入口按钮', /id="openFollow"/.test(popHtml) &&
   /X 关注关系分析/.test(popHtml));
+ok('互关管理主入口固定在品牌头正下方、行情面板之前', (() => {
+  const h1 = popHtml.indexOf('<h1>');
+  const btn = popHtml.indexOf('id="openFollow"');
+  const price = popHtml.indexOf('id="pricePanel"');
+  const panel = popHtml.indexOf('id="openPanel"');
+  return h1 >= 0 && btn > h1 && price > btn && panel > price;
+})());
+ok('互关管理入口只出现一次，不再重复出现在弹窗底部',
+  (popHtml.match(/id="openFollow"/g) || []).length === 1);
+ok('主入口是「互关管理」+ 中文副标题 + 新增徽标 + 图标/箭头',
+  /he-title">互关管理<span class="he-new">新增/.test(popHtml) &&
+  /he-sub">X 关注关系分析 · 未回关统计 \/ 批量取关/.test(popHtml) &&
+  /class="he-ico"/.test(popHtml) && /class="he-arrow"/.test(popHtml));
+ok('主入口有显眼的渐变卡样式（flex 布局 + 渐变 + hover）',
+  /#openFollow \{ display:flex/.test(popHtml) &&
+  /linear-gradient\(100deg,rgba\(34,211,238/.test(popHtml) &&
+  /#openFollow:hover/.test(popHtml));
+ok('README / 教程 / 上架资料 / 隐私政策口径同步为「互关管理」入口',
+  /互关管理/.test(readme) && /互关管理/.test(tutorial) &&
+  /互关管理/.test(listing.detailed_description[0]) &&
+  privs.every((p) => /互关管理/.test(p)));
 ok('popup.js 打开 follow.html', /getURL\('follow\.html'\)/.test(popJs));
 ok('follow.html 先引 core 再引面板脚本',
   followHtml.indexOf('<script src="follow-core.js"></script>') < followHtml.indexOf('<script src="follow.js"></script>'));
