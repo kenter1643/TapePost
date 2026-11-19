@@ -15,6 +15,11 @@
     whitelist: 'followWhitelist', settings: 'followSettings'
   };
   var PAGE_SIZE = 50;
+  // 内核里的区间 id 保持稳定（用于筛选与兼容历史数据），只在界面显示中文
+  var BAND_LABELS = {
+    '0-100': '100 人以下', '100-1k': '100～1000 人', '1k-1w': '1000～1 万人',
+    '1w-10w': '1 万～10 万人', '10w+': '10 万人以上'
+  };
   var state = {
     data: { me: '', following: {}, followers: {}, updatedAt: { following: 0, followers: 0 } },
     capture: {}, task: {}, whitelist: [], settings: Object.assign({}, Core.DEFAULTS),
@@ -227,10 +232,8 @@
   }
 
   function tagHtml(u) {
-    var names = { verified: '认证', big: '大 V', empty: '疑似空号', inactive: '长期不活跃',
-      lowratio: '低回关比', normal: '普通' };
     var out = u.tags.map(function (t) {
-      return '<span class="tag ' + t + '">' + esc(names[t] || t) + '</span>';
+      return '<span class="tag ' + t + '">' + esc(Core.tagLabel(t)) + '</span>';
     });
     if (u.reasons.length) out.push('<span class="tag protected">🛡 ' + esc(u.reasons.join(' / ')) + '</span>');
     if (!out.length) out.push('<span class="tag">普通</span>');
@@ -269,7 +272,7 @@
         '<a class="hd" href="https://x.com/' + esc(u.handle) + '" target="_blank" rel="noopener noreferrer">@' + esc(u.handle) + '</a>' +
         tagHtml(u) + '</div>' +
         '<div class="meta">粉丝 ' + fmt(u.followers) + ' · 关注 ' + fmt(u.friends) +
-        ' · 推文 ' + fmt(u.tweets) + ' · 区间 ' + esc(u.band) +
+        ' · 推文 ' + fmt(u.tweets) + ' · 粉丝量 ' + esc(BAND_LABELS[u.band] || '未分类') +
         (u.lastTweetAt ? ' · 最后发推 ' + esc(String(u.lastTweetAt).slice(0, 16)) : '') + '</div>' +
         (u.bio ? '<div class="bio" title="' + esc(u.bio) + '">' + esc(u.bio) + '</div>' : '') +
         '</div><div class="ops">' +
@@ -330,7 +333,7 @@
     var done = t.index || 0;
     $('progressBar').style.width = (total ? Math.round(done / total * 100) : 0) + '%';
     var phase = t.phase || 'idle';
-    var label = { idle: '任务空闲', running: '执行中', paused: '已暂停', stopped: '已停止', done: '已完成' }[phase] || phase;
+    var label = { idle: '任务空闲', running: '执行中', paused: '已暂停', stopped: '已停止', done: '已完成' }[phase] || '任务状态';
     var text = label + ' · 成功 ' + ((t.ok || []).length) + ' / 失败 ' + ((t.fail || []).length) +
       ' / 共 ' + total + (t.message ? ' · ' + t.message : '');
     status('taskStatus', phase === 'idle'
@@ -445,8 +448,8 @@
       lines.push('', '已跳过 ' + task.skipped.length + ' 个受保护账号：');
       task.skipped.forEach(function (s) { lines.push('  @' + s.handle + ' — ' + s.reason); });
     }
-    lines.push('', '节奏：每次间隔 ' + task.settings.minDelay + '~' +
-      (task.settings.minDelay + task.settings.jitter) + ' ms；预计耗时约 ' +
+    lines.push('', '节奏：每次间隔 ' + task.settings.minDelay + '～' +
+      (task.settings.minDelay + task.settings.jitter) + ' 毫秒；预计耗时约 ' +
       Math.ceil(task.handles.length * (task.settings.minDelay + task.settings.jitter / 2) / 60000) + ' 分钟。');
     lines.push('执行时会打开/定位你自己的「关注中」页，只点击对应行的原生按钮，找不到就跳过。');
     openModal('批量取关预演（不会执行任何操作）',
@@ -473,8 +476,8 @@
     if (!tab || tab.id == null) { status('taskStatus', '没能打开 X 的「关注中」页，任务未启动。', 'err'); return; }
     var pong = await sendToTab(tab.id, { type: 'FOLLOW_PING' });
     if (!pong || !pong.ok || pong.source !== 'following') {
-      status('taskStatus', '请刷新 X 的「关注中」标签页，确认页面停留在 /' + me +
-        '/following 后再点一次执行（安全起见未启动任务）。', 'err');
+      status('taskStatus', '请刷新 X 的「关注中」标签页，确认页面停留在自己的关注列表页后' +
+        '再点一次执行（安全起见未启动任务）。', 'err');
       return;
     }
     var t = {
@@ -512,7 +515,7 @@
     var blob = new Blob(['\ufeff' + Core.toCsv(list)], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'TapePost-follow-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.download = 'TapePost关注关系名单-' + new Date().toISOString().slice(0, 10) + '.csv';
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);

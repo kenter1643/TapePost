@@ -278,11 +278,18 @@ ok('delayFor 确定性、有下限、落在设定区间', (() => {
   const d1 = Core.delayFor(3, s), d2 = Core.delayFor(3, s);
   return d1 === d2 && d1 >= 5000 && d1 <= 8000 && Core.delayFor(9, s) >= 5000;
 })());
-ok('CSV 表头与行数正确', (() => {
+ok('CSV 表头与行数正确（中文表头）', (() => {
   const csv = Core.toCsv([a, b]);
   const lines = csv.split('\r\n');
-  return lines[0].startsWith('handle,name,followers') && lines.length === 3;
+  return lines[0].startsWith('用户名,昵称,粉丝数') && lines.length === 3;
 })());
+ok('CSV 认证值与分类标签全中文', (() => {
+  const csv = Core.toCsv([Object.assign({}, a, { tags: ['verified', 'big'] }),
+    Object.assign({}, b, { tags: ['empty', 'protected'] })]);
+  return csv.includes(',是,') && csv.includes('认证账号、大 V') &&
+    csv.includes('疑似空号、受保护') && !/\b(yes|no|verified|empty|protected)\b/.test(csv);
+})());
+ok('tagLabel 对未知标签也返回中文兜底', Core.tagLabel('unknown_tag') === '普通');
 ok('CSV 对逗号 / 引号 / 换行做转义', (() => {
   const csv = Core.toCsv([{ handle: 'q', name: 'a,"b"\nc', followers: 0, friends: 0, tweets: 0 }]);
   return csv.includes('"a,""b""\nc"');
@@ -335,6 +342,28 @@ ok('面板渲染用户资料前统一转义', /var esc = function/.test(followJs
   /esc\(u\.handle\)/.test(followJs));
 ok('头像只接受 https 外链', /\^https:\\\/\\\//.test(followJs));
 ok('扩展页不引用任何远程脚本', !/src="https?:\/\//.test(followHtml));
+
+// ---------------------------------------------------------------- 6.5 面板文案中文化
+console.log('== 6.5 面板文案中文化 ==');
+ok('下拉选项可见文字全部中文', (() => {
+  const opts = Array.from(followHtml.matchAll(/<option[^>]*>([^<]+)<\/option>/g)).map((m) => m[1]);
+  return opts.length >= 10 && opts.every((s) => !/[A-Za-z]{2,}/.test(s));
+})());
+ok('旧英文界面文案已清除', ['导出 CSV', '用户名 A → Z', '>1k-1w<', '>10w+<', ' ms；']
+  .every((s) => !followHtml.includes(s) && !followJs.includes(s)));
+ok('粉丝量区间显示中文，筛选内部 id 仍稳定',
+  /100～1000 人/.test(followHtml) && /10 万人以上/.test(followHtml) &&
+  Core.followerBand(9999) === '1k-1w');
+ok('明细行的粉丝量走中文映射', /BAND_LABELS\[u\.band\]/.test(followJs) && /粉丝量 '/.test(followJs));
+ok('分类标签由内核中文映射渲染', /Core\.tagLabel\(t\)/.test(followJs));
+ok('导出表格表头不再是英文字段名', !/'handle', 'name', 'followers'/.test(coreSrc));
+ok('导出文件名为中文', /TapePost关注关系名单-/.test(followJs));
+ok('预演节奏用「毫秒」而非 ms', /毫秒；预计耗时约/.test(followJs) && !/ ms；预计耗时约/.test(followJs));
+ok('任务状态兜底不会露出英文 phase', /\|\| '任务状态'/.test(followJs));
+ok('采集完成提示用中文，不再直接输出 following / followers',
+  /'采集完成：' \+ \(src === 'followers' \? '粉丝' : '关注中'\)/.test(bridge) &&
+  !/'采集完成：' \+ src/.test(bridge));
+ok('品牌名与版本号作为专有名词保留', /v1\.5\.19/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
 
 // ---------------------------------------------------------------- 7. 商店包
 console.log('== 7. 商店包 ==');

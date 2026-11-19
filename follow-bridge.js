@@ -158,8 +158,8 @@
       if (o.idle >= Core.DEFAULTS.idleRounds || o.scrolls >= Core.DEFAULTS.maxScroll || tooLong) {
         o.status = 'done';
         o.finishedAt = Date.now();
-        o.message = '采集完成：' + src + ' 共 ' + count + ' 人' +
-          (tooLong ? '（已达时间上限，可再点一次继续）' : '');
+        o.message = '采集完成：' + (src === 'followers' ? '粉丝' : '关注中') +
+          '共 ' + count + ' 人' + (tooLong ? '（已达时间上限，可再点一次继续）' : '');
         postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
       }
       var w = {}; w[KEY_CAPTURE] = o;

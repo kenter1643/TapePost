@@ -310,14 +310,26 @@
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
 
+  /* 分类标签在内核里用稳定的英文 id（集合运算与测试依赖它），
+   * 但导出表格给用户看时一律翻译成中文。 */
+  var TAG_LABELS = {
+    verified: '认证账号', big: '大 V', empty: '疑似空号', inactive: '长期不活跃',
+    lowratio: '低回关比', normal: '普通', protected: '受保护'
+  };
+
+  function tagLabel(t) {
+    return TAG_LABELS[t] || '普通';
+  }
+
   function toCsv(users) {
-    var head = ['handle', 'name', 'followers', 'friends', 'tweets', 'verified',
-      'lastTweetAt', 'tags', 'bio', 'url'];
+    var head = ['用户名', '昵称', '粉丝数', '关注数', '推文数', '是否认证',
+      '最后发推时间', '分类', '简介', '主页链接'];
     var lines = [head.join(',')];
     (users || []).forEach(function (u) {
       lines.push([
         '@' + u.handle, u.name || '', u.followers || 0, u.friends || 0, u.tweets || 0,
-        u.verified ? 'yes' : 'no', u.lastTweetAt || '', (u.tags || []).join('|'),
+        u.verified ? '是' : '否', u.lastTweetAt || '',
+        (u.tags || []).map(tagLabel).join('、'),
         u.bio || '', 'https://x.com/' + u.handle
       ].map(csvEscape).join(','));
     });
@@ -346,6 +358,7 @@
     isProtected: isProtected,
     buildTask: buildTask,
     delayFor: delayFor,
+    tagLabel: tagLabel,
     toCsv: toCsv
   };
 });
