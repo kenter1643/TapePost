@@ -1,0 +1,381 @@
+/* TapePost 1.5.19 · X 关注关系分析专项自检
+ *
+ * 覆盖：接线与版本、合规资料、通用用户提取器、集合 / 分类、白名单与预演、
+ * 安全不变量（不主动发请求 / 不读凭证 / 取关需确认 / 定位失败自动停机）、
+ * 商店包内容。纯离线断言，不需要登录 X，也不产生任何网络请求。
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const zlib = require('zlib');
+const DIR = __dirname;
+const read = (f) => fs.readFileSync(path.join(DIR, f), 'utf8');
+const exists = (f) => fs.existsSync(path.join(DIR, f));
+
+let passed = 0;
+let failed = 0;
+function ok(name, cond) {
+  if (cond) { passed++; }
+  else { failed++; console.log('  FAIL  ' + name); }
+}
+function eq(name, actual, expected) {
+  ok(name + '（期望 ' + JSON.stringify(expected) + '，实际 ' + JSON.stringify(actual) + '）', actual === expected);
+}
+
+const Core = require('./follow-core.js');
+const manifest = JSON.parse(read('manifest.json'));
+const listing = JSON.parse(read('store/listing.json'));
+const popHtml = read('popup.html');
+const panelHtml = read('panel.html');
+const popJs = read('popup.js');
+const contentJs = read('content.js');
+const followHtml = read('follow.html');
+const followJs = read('follow.js');
+const capture = read('follow-capture.js');
+const bridge = read('follow-bridge.js');
+const coreSrc = read('follow-core.js');
+const readme = read('README.md');
+const privs = [
+  read('docs/privacy.html'),
+  read('store/privacy-site/index.html'),
+  fs.readFileSync(path.join(DIR, '..', 'vote-ledger', 'privacy.html'), 'utf8')
+];
+const tutorialPath = '/Users/kentermacbook/Documents/Obsidian Vault/文章创作/X文章/TapePost信仰者工具小白教程-2026-11-14.md';
+const tutorial = fs.existsSync(tutorialPath) ? fs.readFileSync(tutorialPath, 'utf8') : '';
+
+const NEW_FILES = ['follow-core.js', 'follow-capture.js', 'follow-bridge.js', 'follow.html', 'follow.js'];
+
+// ---------------------------------------------------------------- 1. 版本与接线
+console.log('== 1. 版本与接线 ==');
+eq('manifest 版本', manifest.version, '1.5.19');
+eq('listing 版本', listing.version, '1.5.19');
+ok('manifest.description ≤132 且含关注分析', manifest.description.length <= 132 &&
+  /关注互关分析/.test(manifest.description));
+ok('listing.summary_132 ≤132 且含关注分析', listing.summary_132.length <= 132 &&
+  /关注互关分析/.test(listing.summary_132));
+eq('listing.manifest_description_132 与 manifest 一致', listing.manifest_description_132, manifest.description);
+eq('permissions 仍 9 项', manifest.permissions.length, 9);
+eq('host_permissions 仍 34 条', manifest.host_permissions.length, 34);
+ok('X 四条主机权限本就在列', ['https://x.com/*', 'https://*.x.com/*',
+  'https://twitter.com/*', 'https://*.twitter.com/*'].every((h) => manifest.host_permissions.includes(h)));
+eq('content_scripts 由 2 段增至 3 段', manifest.content_scripts.length, 3);
+ok('原 7 站 ISOLATED 段未被塞入新脚本',
+  manifest.content_scripts[0].js.every((f) => f.indexOf('follow-') !== 0) &&
+  !manifest.content_scripts[0].world);
+eq('MAIN 段仍是 document_start', manifest.content_scripts[1].run_at, 'document_start');
+eq('MAIN 段仍是 MAIN world', manifest.content_scripts[1].world, 'MAIN');
+ok('MAIN 段含 follow-core / grok-native / follow-capture 且 core 在最前', (() => {
+  const js = manifest.content_scripts[1].js;
+  return js[0] === 'follow-core.js' && js.includes('grok-native.js') &&
+    js.includes('follow-capture.js') && js.indexOf('follow-core.js') < js.indexOf('follow-capture.js');
+})());
+ok('新增段只匹配 X / twitter.com', (() => {
+  const m = manifest.content_scripts[2].matches;
+  return m.length === 4 && m.every((x) => /x\.com|twitter\.com/.test(x));
+})());
+ok('新增段是 ISOLATED world / document_idle', !manifest.content_scripts[2].world &&
+  manifest.content_scripts[2].run_at === 'document_idle');
+ok('新增段以 follow-core.js 打头再注入 follow-bridge.js', (() => {
+  const js = manifest.content_scripts[2].js;
+  return js[0] === 'follow-core.js' && js[1] === 'follow-bridge.js';
+})());
+NEW_FILES.forEach((f) => ok('新运行时文件存在 ' + f, exists(f)));
+ok('弹窗有关注分析入口按钮', /id="openFollow"/.test(popHtml) &&
+  /X 关注关系分析/.test(popHtml));
+ok('popup.js 打开 follow.html', /getURL\('follow\.html'\)/.test(popJs));
+ok('follow.html 先引 core 再引面板脚本',
+  followHtml.indexOf('<script src="follow-core.js"></script>') < followHtml.indexOf('<script src="follow.js"></script>'));
+ok('follow.html 版本兜底 v1.5.19', /v1\.5\.19/.test(followHtml));
+ok('四处 UI 兜底统一 v1.5.19', /v1\.5\.19/.test(popHtml) && /v1\.5\.19/.test(panelHtml) &&
+  /v1\.5\.19/.test(contentJs) && /v1\.5\.19/.test(popJs));
+ok('两段 Dashboard justification 仍 ≤1000 且 en_chars 对得上',
+  listing.dashboard_permission_justifications.fields.every((f) =>
+    f.en.length <= 1000 && f.en_chars === f.en.length));
+ok('consistency_note 已说明 follow-capture.js 是静态 MAIN world 脚本',
+  /follow-capture\.js/.test(listing.dashboard_permission_justifications.consistency_note));
+
+// ---------------------------------------------------------------- 2. 合规资料
+console.log('== 2. 合规资料与文档 ==');
+ok('详细描述首条为 1.5.19，第二条保留 1.5.18',
+  String(listing.detailed_description[0]).startsWith('【1.5.19') &&
+  String(listing.detailed_description[1]).startsWith('【1.5.18'));
+ok('详细描述含「不主动发任何请求 / 不读取登录凭证 / 只存本机」',
+  /不主动发任何请求/.test(listing.detailed_description[0]) &&
+  /不读取 Authorization/.test(listing.detailed_description[0]) &&
+  /只存本机/.test(listing.detailed_description[0]));
+ok('single_purpose 增列 1.5.19', /1\.5\.19/.test(listing.single_purpose));
+ok('主机访问理由以 1.5.19 补充开头且仍写 34 条 / 9 项',
+  listing.host_access_justification.startsWith('【1.5.19 补充') &&
+  /仍 34 条/.test(listing.host_access_justification) &&
+  /仍 9 项/.test(listing.host_access_justification));
+ok('逐项权限理由（storage / host_permissions）同步 1.5.19',
+  /1\.5\.19/.test(listing.permission_justifications.storage) &&
+  /1\.5\.19/.test(listing.permission_justifications.host_permissions));
+ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.19',
+  /1\.5\.19/.test(listing.data_use_disclosure.what_is_transmitted) &&
+  /1\.5\.19/.test(listing.data_use_disclosure.what_is_not_transmitted));
+ok('第三方接收方明确「无新增」', /【1\.5\.19】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
+ok('credential_handling_note 说明 follow-capture 不读凭证',
+  /follow-capture\.js/.test(listing.credential_handling_note) &&
+  /不读取任何请求头/.test(listing.credential_handling_note));
+ok('data_usage_form_answers 以 1.5.19 补充开头', listing.data_usage_form_answers.startsWith('【1.5.19 补充】'));
+ok('发布清单指向 1.5.19 包 / 33 文件', listing.pre_submit_checklist.some((x) =>
+  /TapePost_1\.5\.19_store\.zip（33 文件/.test(x)));
+ok('发布清单新增关注分析核对项', listing.pre_submit_checklist.some((x) =>
+  /只被动读取/.test(x) && /先预演后确认/.test(x)));
+privs.forEach((html, i) => {
+  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.19', /适用版本：1\.5\.19/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.19 关注分析段',
+    /1\.5\.19 X 关注关系分析/.test(html) && /不主动发起任何请求/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 页脚日期已更新', /Last updated: 2026-11-19/.test(html));
+});
+ok('README 有 1.5.19 章节与 33 文件说明',
+  /### 1\.5\.19：新增 X 关注关系分析/.test(readme) && /33 个文件/.test(readme));
+ok('README 说明取关只点原生按钮、不调用写接口',
+  /不调用 X 任何私有 \/ 公开写接口/.test(readme));
+if (tutorial) {
+  ok('Obsidian 教程版本同步 1.5.19', /version: 1\.5\.19/.test(tutorial) &&
+    /适用版本：\*\*v1\.5\.19\*\*/.test(tutorial));
+  ok('Obsidian 教程新增关注分析章节与 FAQ',
+    /## 十二、进阶：X 关注关系分析/.test(tutorial) && /怎么看谁没回关我/.test(tutorial));
+} else {
+  console.log('  （未找到 Obsidian 教程，跳过 2 条）');
+}
+
+// ---------------------------------------------------------------- 3. 用户提取器
+console.log('== 3. 通用用户提取器 ==');
+const sandbox = {};
+vm.createContext(sandbox);
+vm.runInContext(coreSrc, sandbox);
+ok('follow-core.js 在浏览器 world 里挂载 FollowCore',
+  !!sandbox.FollowCore && typeof sandbox.FollowCore.pickUsers === 'function');
+ok('模块同时支持 CommonJS require', typeof Core.pickUsers === 'function');
+
+const uA = { __typename: 'User', rest_id: '101', legacy: {
+  screen_name: 'Alice', name: '爱丽丝', followers_count: 12000, friends_count: 30,
+  statuses_count: 900, verified: true, description: 'hello, world',
+  profile_image_url_https: 'https://pbs.twimg.com/a.jpg', created_at: 'Wed Oct 10 20:19:24 +0000 2018'
+}, is_blue_verified: false };
+ok('裸 User 节点可提取', Core.pickUsers(uA).length === 1 && Core.pickUsers(uA)[0].handle === 'alice');
+ok('user_results.result 嵌套可提取', Core.pickUsers({ itemContent: { user_results: { result: uA } } })[0].handle === 'alice');
+ok('core.user_results.result 嵌套可提取', Core.pickUsers({ core: { user_results: { result: uA } } })[0].handle === 'alice');
+ok('timeline entries 多用户可提取并按 handle 去重', (() => {
+  const payload = { data: { timeline: { instructions: [{ entries: [
+    { content: { itemContent: { user_results: { result: uA } } } },
+    { content: { itemContent: { user_results: { result: { rest_id: '102', legacy: { screen_name: 'Bob', name: 'B' } } } } } },
+    { content: { itemContent: { user_results: { result: uA } } } }
+  ] }] } } };
+  const out = Core.pickUsers(payload);
+  return out.length === 2 && out.map((x) => x.handle).sort().join(',') === 'alice,bob';
+})());
+ok('推文节点（full_text / Tweet）不会被当成用户', (() => {
+  const payload = { legacy: { full_text: 'hi', screen_name: 'ghost' }, __typename: 'Tweet' };
+  return Core.pickUsers(payload).length === 0;
+})());
+ok('合法 JSON 字符串也可解析', Core.pickUsers(JSON.stringify({ user_results: { result: uA } }))[0].handle === 'alice');
+ok('坏 JSON / null / 数字 / 空串一律返回 []', [[], ['', null, 42, '{bad']].every((v) => Core.pickUsers(v).length === 0));
+ok('凭证类字段一律不进入结果对象', (() => {
+  const dirty = Object.assign({}, uA, { ct0: 'SECRET', authorization: 'Bearer X', email: 'a@b.c', auth_token: 'zzz' });
+  const u = Core.pickUsers(dirty)[0];
+  return u && !('ct0' in u) && !('authorization' in u) && !('email' in u) && !('auth_token' in u);
+})());
+ok('handle 统一小写并去掉 @', Core.lowerHandle('@Alice_1') === 'alice_1' && Core.validHandle('alice_1'));
+ok('非法 handle 被拒', !Core.validHandle('a-b') && !Core.validHandle('') && !Core.validHandle('x'.repeat(21)));
+ok('缺字段补默认值，公开资料齐全', (() => {
+  const u = Core.pickUsers({ rest_id: '1', legacy: { screen_name: 'Default' } })[0];
+  return u && u.followers === 0 && u.friends === 0 && u.tweets === 0 &&
+    u.verified === false && u.name === 'default' && u.bio === '' && u.handle === 'default';
+})());
+ok('认证字段兼容 legacy.verified / is_blue_verified / node.verified',
+  Core.pickUsers({ legacy: { screen_name: 'A', verified: true } })[0].verified === true &&
+  Core.pickUsers({ legacy: { screen_name: 'B' }, is_blue_verified: true })[0].blue === true &&
+  Core.pickUsers({ legacy: { screen_name: 'C' }, verified: true })[0].verified === true);
+ok('超大响应受 MAX_NODES 保护、不抛异常', (() => {
+  const big = { list: [] };
+  for (let i = 0; i < 26000; i++) big.list.push({ rest_id: String(i), legacy: { screen_name: 'u' + i } });
+  try { const out = Core.pickUsers(big); return out.length > 0 && out.length <= 20000; }
+  catch (e) { return false; }
+})());
+ok('sanitizeUser 过滤 token / cookie / session 键', (() => {
+  const out = Core.sanitizeUser({ handle: 'a', ct0: 'x', bearer: 'y', session: 'z', name: 'A' });
+  return out.handle === 'a' && out.name === 'A' && !('ct0' in out) && !('bearer' in out) && !('session' in out);
+})());
+
+// ---------------------------------------------------------------- 4. 集合与分类
+console.log('== 4. 集合运算与分类 ==');
+const a = { handle: 'alice', name: 'A', followers: 12000, friends: 30, tweets: 900, verified: true };
+const b = { handle: 'bob', name: 'B', followers: 3, friends: 900, tweets: 0, defaultAvatar: true };
+const c = { handle: 'carol', name: 'C', followers: 500, friends: 400, tweets: 12 };
+const fMap = Core.mergeSnapshot({}, [a, b]);
+const rMap = Core.mergeSnapshot({}, [a, c]);
+eq('mergeSnapshot 不修改入参', Object.keys(fMap).length, 2);
+ok('mergeSnapshot 按 handle 去重且保留已有资料', (() => {
+  const m = Core.mergeSnapshot(fMap, [{ handle: 'bob', name: 'B2' }]);
+  return Object.keys(m).length === 2 && m.bob.name === 'B2' && m.bob.friends === 900;
+})());
+const sets = Core.relationSets(fMap, rMap);
+eq('未回关我 = 我关注了对方没关注我', sets.notBack.map((x) => x.handle).join(','), 'bob');
+eq('我未回关 = 对方关注了我我没回关', sets.toFollowBack.map((x) => x.handle).join(','), 'carol');
+eq('互关 = 两边都有', sets.mutual.map((x) => x.handle).join(','), 'alice');
+eq('关注数 / 粉丝数', sets.followingCount + '/' + sets.followerCount, '2/2');
+eq('互关率 50%', sets.mutualRate, 50);
+eq('空集合不报错', Core.relationSets({}, {}).mutualRate, 0);
+ok('集合归属只按来源页面，不信 legacy.following / followed_by', (() => {
+  const m1 = Core.mergeSnapshot({}, [{ handle: 'x', following: false, followedBy: true }]);
+  const m2 = Core.mergeSnapshot({}, []);
+  return Core.relationSets(m1, m2).notBack.length === 1;
+})());
+ok('classify：认证 + 大 V', Core.classify(a, {}).includes('verified') && Core.classify(a, {}).includes('big'));
+ok('classify：疑似空号 + 低回关比', Core.classify(b, {}).includes('empty') && Core.classify(b, {}).includes('lowratio'));
+ok('classify：普通账号兜底 normal', Core.classify(c, {}).join(',') === 'normal');
+ok('classify：长期不活跃按最后发推时间判定', (() => {
+  const old = { handle: 'old', followers: 100, friends: 50, tweets: 5, lastTweetAt: '2020-01-01T00:00:00Z' };
+  return Core.classify(old, { now: Date.parse('2026-11-19') }).includes('inactive');
+})());
+ok('classify：近 30 天有发推不算不活跃', (() => {
+  const now = Date.parse('2026-11-19T00:00:00Z');
+  const fresh = { handle: 'fresh', followers: 100, friends: 50, tweets: 5,
+    lastTweetAt: new Date(now - 30 * 86400000).toISOString() };
+  return !Core.classify(fresh, { now: now }).includes('inactive');
+})());
+ok('classify：缺最后推文时间时不能凭账号注册时间误判不活跃', (() => {
+  const old = { handle: 'old', followers: 100, friends: 50, tweets: 5,
+    createdAt: 'Wed Oct 10 20:19:24 +0000 2018', lastTweetAt: '' };
+  return !Core.classify(old, { now: Date.parse('2026-11-19T00:00:00Z') }).includes('inactive');
+})());
+eq('followerBand 0-100', Core.followerBand(99), '0-100');
+eq('followerBand 100-1k', Core.followerBand(100), '100-1k');
+eq('followerBand 1k-1w', Core.followerBand(9999), '1k-1w');
+eq('followerBand 1w-10w', Core.followerBand(10000), '1w-10w');
+eq('followerBand 10w+', Core.followerBand(100000), '10w+');
+eq('统计卡 5 组', Core.GROUPS.length, 5);
+eq('分类筛选 8 组', Core.FILTERS.length, 8);
+ok('parseDate 兼容 X 旧版时间格式', Core.parseDate('Wed Oct 10 20:19:24 +0000 2018') > 0);
+eq('ageDays 计算正确', Core.ageDays('2026-11-09T00:00:00Z', Date.parse('2026-11-19T00:00:00Z')), 10);
+
+// ---------------------------------------------------------------- 5. 白名单与预演
+console.log('== 5. 白名单 / 预演 / 限速 ==');
+ok('白名单账号被保护', Core.protectedReasons(a, { whitelist: ['@Alice'] }).includes('白名单'));
+ok('认证 / 大 V 受 skipProtected 保护', Core.protectedReasons(a, { skipProtected: true }).length >= 2);
+ok('锁推账号始终受保护', Core.protectedReasons({ handle: 'z', locked: true }, { skipProtected: false }).includes('锁推账号'));
+ok('关掉 skipProtected 后认证与大 V 不再保护，白名单仍保护', (() => {
+  const r = Core.protectedReasons(a, { skipProtected: false, whitelist: [] });
+  return r.length === 0 && Core.protectedReasons(a, { skipProtected: false, whitelist: ['alice'] }).length === 1;
+})());
+ok('isProtected 与 protectedReasons 一致', Core.isProtected(a, {}) === (Core.protectedReasons(a, {}).length > 0));
+const task = Core.buildTask(['bob', 'alice', 'carol', 'bob', 'bad-handle'], [a, b, c], {});
+eq('预演名单跳过受保护账号', task.handles.join(','), 'bob,carol');
+eq('预演跳过原因写明认证 / 大 V', task.skipped.length, 1);
+ok('预演去重且忽略非法 handle', !task.handles.includes('bad-handle'));
+ok('预演结果只有纯数据，不触发任何点击（无 DOM / chrome 依赖）',
+  typeof task.handles === 'object' && !('click' in task));
+ok('batchLimit 生效', Core.buildTask(['a', 'b', 'c'], [], { batchLimit: 2, skipProtected: false }).handles.length === 2);
+ok('minDelay 下限 3000 生效', Core.buildTask(['a'], [], { minDelay: 10 }).settings.minDelay === 3000);
+ok('delayFor 确定性、有下限、落在设定区间', (() => {
+  const s = { minDelay: 5000, jitter: 3000 };
+  const d1 = Core.delayFor(3, s), d2 = Core.delayFor(3, s);
+  return d1 === d2 && d1 >= 5000 && d1 <= 8000 && Core.delayFor(9, s) >= 5000;
+})());
+ok('CSV 表头与行数正确', (() => {
+  const csv = Core.toCsv([a, b]);
+  const lines = csv.split('\r\n');
+  return lines[0].startsWith('handle,name,followers') && lines.length === 3;
+})());
+ok('CSV 对逗号 / 引号 / 换行做转义', (() => {
+  const csv = Core.toCsv([{ handle: 'q', name: 'a,"b"\nc', followers: 0, friends: 0, tweets: 0 }]);
+  return csv.includes('"a,""b""\nc"');
+})());
+ok('CSV 带主页 URL 与 @handle', /@bob/.test(Core.toCsv([b])) && /https:\/\/x\.com\/bob/.test(Core.toCsv([b])));
+
+// ---------------------------------------------------------------- 6. 安全不变量（源码级）
+console.log('== 6. 安全不变量 ==');
+ok('采集器默认关闭（stats.enabled = false）', /enabled:\s*false/.test(capture));
+ok('采集器只在收到 TAPEFOLLOW_CMD start 时启用',
+  /action === 'start'\)\s*\{\s*stats\.enabled = true/.test(capture));
+ok('采集器收到 stop 立即关闭', /action === 'stop'\)\s*\{\s*stats\.enabled = false/.test(capture));
+ok('采集器只读响应体，用 clone().text() 不消耗原响应', /res\.clone\(\)\.text\(\)/.test(capture));
+ok('采集器不读取 authorization / ct0 / cookie / transaction-id',
+  !/headers\.get\(['"](?:authorization|ct0|cookie|x-client-transaction-id)/i.test(capture) &&
+  !/document\.cookie/.test(capture));
+ok('采集器不写死 GraphQL 端点名、不主动发请求',
+  !/https:\/\/x\.com\/i\/api\/graphql\//.test(capture) &&
+  !/origFetch\(\s*['"]https:/.test(capture));
+ok('采集器只在 following / followers 路径与 /i/api/ 响应下处理',
+  /apiUrl\(u\)/.test(capture) && /pageInfo\(\)/.test(capture));
+ok('桥接层要求 confirmed === true 且 dryRun === false',
+  /t\.dryRun !== false \|\| t\.confirmed !== true/.test(bridge));
+ok('桥接层只在「关注中」页执行',
+  /pageSource\(\) !== 'following'/.test(bridge));
+ok('桥接层二次校验受保护账号',
+  /Core\.protectedReasons\(u,/.test(bridge));
+ok('桥接层定位到行后校验 handle 一致性，不匹配就跳过',
+  /cellHandle\(cell\) !== handle/.test(bridge));
+ok('桥接层点击后校验按钮状态变成「关注」',
+  /looksUnfollowed\(cell\)/.test(bridge) && /FOLLOW_WORDS/.test(bridge));
+ok('连续 3 次定位失败自动停机', /MAX_FAIL_STREAK = 3/.test(bridge) &&
+  /连续 3 次定位失败/.test(bridge));
+ok('桥接层不调用任何 X 写接口 / 不发 fetch 请求',
+  !/fetch\(/.test(bridge) && !/XMLHttpRequest/.test(bridge));
+ok('桥接层支持 paused / stopped 中断',
+  /ph === 'paused'/.test(bridge) && /ph === 'stopped'/.test(bridge));
+ok('预演函数只生成名单并弹确认层，不写任务',
+  /openModal\('批量取关预演/.test(followJs) && /state\.pending = task/.test(followJs));
+ok('确认执行写 confirmed:true / dryRun:false',
+  /confirmed: true/.test(followJs) && /dryRun: false/.test(followJs));
+ok('面板明确提示 X 风控', /风控/.test(followHtml) && /临时限制/.test(followHtml));
+ok('面板提供暂停 / 继续 / 停止 / 清空本机名单',
+  ['pauseTask', 'resumeTask', 'stopTask', 'clearData'].every((id) => followHtml.includes('id="' + id + '"')));
+ok('面板五张统计卡 + 分类 chips 由内核定义驱动',
+  /Core\.GROUPS\.map/.test(followJs) && /Core\.FILTERS\.map/.test(followJs));
+ok('follow.html 不含内联脚本（符合 MV3 CSP）',
+  !/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(followHtml));
+ok('面板渲染用户资料前统一转义', /var esc = function/.test(followJs) && /esc\(u\.name/.test(followJs) &&
+  /esc\(u\.handle\)/.test(followJs));
+ok('头像只接受 https 外链', /\^https:\\\/\\\//.test(followJs));
+ok('扩展页不引用任何远程脚本', !/src="https?:\/\//.test(followHtml));
+
+// ---------------------------------------------------------------- 7. 商店包
+console.log('== 7. 商店包 ==');
+const zipPath = path.join(DIR, 'store', 'TapePost_1.5.19_store.zip');
+if (fs.existsSync(zipPath)) {
+  // 极简 zip 中央目录解析（沿用 test-tapeup-removed.js 的做法）
+  const buf = fs.readFileSync(zipPath);
+  const entries = {};
+  let off = 0;
+  while ((off = buf.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]), off)) !== -1) {
+    const method = buf.readUInt16LE(off + 8);
+    const csize = buf.readUInt32LE(off + 18);
+    const nameLen = buf.readUInt16LE(off + 26);
+    const extraLen = buf.readUInt16LE(off + 28);
+    const name = buf.slice(off + 30, off + 30 + nameLen).toString('utf8');
+    const start = off + 30 + nameLen + extraLen;
+    entries[name] = { method: method, data: buf.slice(start, start + csize) };
+    off = start + csize;
+  }
+  const names = Object.keys(entries);
+  eq('商店包 33 文件', names.length, 33);
+  ok('五个新运行时文件都进包', NEW_FILES.every((f) => names.includes(f)));
+  ok('测试脚本不进包', names.every((n) => !n.startsWith('test-')));
+  ok('根目录即 manifest.json', names.includes('manifest.json'));
+  const manEntry = entries['manifest.json'];
+  if (manEntry) {
+    const text = manEntry.method === 8
+      ? zlib.inflateRawSync(manEntry.data).toString('utf8')
+      : manEntry.data.toString('utf8');
+    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.19');
+  }
+  ok('包内文件与工作区逐字节一致', NEW_FILES.every((f) => {
+    const e = entries[f];
+    if (!e) return false;
+    const data = e.method === 8 ? zlib.inflateRawSync(e.data) : e.data;
+    return data.equals(fs.readFileSync(path.join(DIR, f)));
+  }));
+} else {
+  console.log('  （包尚未生成，跳过 6 条 zip 断言）');
+}
+
+console.log('\n结果：' + passed + '/' + (passed + failed) +
+  (failed ? ' 通过，' + failed + ' 条失败' : ' 全部通过 ✓'));
+process.exit(failed ? 1 : 0);

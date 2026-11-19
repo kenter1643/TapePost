@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>TapePost信仰者工具 · X 关注关系分析</title>
+  <style>
+    /* ===== TapePost Design System · 1.5.10 / 关注分析面板 1.5.19 ===== */
+    :root {
+      --brand-600:#e8622c; --brand-500:#ff8a3d; --brand-400:#ffb08a; --brand-300:#ffd6bd;
+      --grad-brand:linear-gradient(92deg,#ffe14d,#ff9a3d 45%,#ff5f4d);
+      --grad-cta:linear-gradient(92deg,#ff9a3d,#ff5f4d);
+      --green:#34d399; --green-soft:#6ee7b7; --green-bg:rgba(52,211,153,.12);
+      --red:#ff6b5e; --red-soft:#ff9b91; --red-bg:rgba(255,107,94,.12);
+      --amber:#ffb08a; --amber-bg:rgba(255,138,61,.12);
+      --cyan:#22d3ee; --cyan-bg:rgba(34,211,238,.12);
+      --violet:#a78bfa; --link:#7dd3fc;
+      --text-1:#f3f6fa; --text-2:#d3dbe7; --text-3:#aeb9c8; --text-onbrand:#1a0f0a;
+      --surface-1:rgba(255,255,255,.04); --surface-2:rgba(255,255,255,.07); --surface-3:rgba(255,255,255,.11);
+      --border-1:rgba(255,255,255,.10); --border-2:rgba(255,255,255,.16);
+      --border-brand:rgba(255,138,61,.38);
+      --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
+      --r-xs:6px; --r-sm:8px; --r-md:10px; --r-lg:14px; --r-pill:999px;
+      --shadow-1:0 2px 8px rgba(0,0,0,.28); --shadow-2:0 8px 24px rgba(0,0,0,.36);
+      --ring:0 0 0 3px rgba(255,138,61,.28);
+      --fs-micro:10px; --fs-caption:11px; --fs-form:12px; --fs-body:13px;
+      --fs-subhead:14px; --fs-title:16px; --fs-display:22px; --fs-hero:30px;
+      --ease:cubic-bezier(.2,.8,.2,1); --dur-fast:120ms; --dur-base:200ms;
+    }
+    @media (prefers-contrast:more) { :root { --border-1:rgba(255,255,255,.28); --border-2:rgba(255,255,255,.36); --text-3:var(--text-2); } }
+    *,*::before,*::after { box-sizing:border-box; }
+    html { -webkit-text-size-adjust:100%; }
+    body { margin:0; padding:0 var(--sp-5) 80px; min-height:100vh;
+      font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+      color:var(--text-1); font-size:var(--fs-body); line-height:1.6; position:relative; overflow-x:hidden;
+      background:radial-gradient(1100px 520px at 50% -12%,rgba(255,94,77,.26),transparent 62%),
+                 radial-gradient(820px 480px at 108% -4%,rgba(255,180,60,.16),transparent 56%),
+                 radial-gradient(900px 600px at -10% 110%,rgba(120,90,255,.14),transparent 60%),
+                 linear-gradient(180deg,#13070f 0%,#0c0a16 42%,#090b13 100%);
+      background-attachment:fixed; }
+    body::before { content:""; position:fixed; inset:-30% -15%; z-index:0; pointer-events:none;
+      background:repeating-linear-gradient(118deg,rgba(255,94,77,.035) 0 22px,rgba(255,170,60,.028) 22px 44px,transparent 44px 80px);
+      transform:skewY(-5deg); animation:track 24s linear infinite; }
+    @keyframes track { from { background-position:0 0; } to { background-position:0 640px; } }
+    .wrap { max-width:1180px; margin:0 auto; position:relative; z-index:1; }
+    ::selection { background:rgba(255,138,61,.35); }
+    ::-webkit-scrollbar { width:10px; height:10px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.16); background-clip:padding-box;
+      border:2px solid transparent; border-radius:var(--r-pill); }
+    button,input,select,textarea { font-family:inherit; }
+    button,a { transition:background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease),
+      box-shadow var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease); }
+    button:active:not(:disabled) { transform:translateY(1px); }
+    button:disabled { opacity:.48; cursor:not-allowed; }
+    :focus-visible { outline:2px solid var(--brand-400); outline-offset:2px; }
+    :where(input,select,textarea):focus-visible { outline:none; border-color:var(--brand-500); box-shadow:var(--ring); }
+    a:focus-visible { border-radius:var(--r-xs); }
+    input[type=checkbox] { width:15px; height:15px; margin:0; accent-color:var(--brand-500); flex:0 0 auto; }
+    @media (prefers-reduced-motion:reduce) {
+      *,*::before,*::after { animation-duration:.001ms !important; animation-iteration-count:1 !important;
+        transition-duration:.001ms !important; scroll-behavior:auto !important; }
+    }
+
+    /* ---------- 头部 ---------- */
+    header { padding:var(--sp-6) 0 var(--sp-4); border-bottom:1px solid var(--border-1); }
+    .brandline { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; }
+    .logo { width:36px; height:36px; border-radius:var(--r-md); background:var(--grad-cta);
+      color:var(--text-onbrand); font-weight:800; font-size:var(--fs-display); display:flex;
+      align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(255,94,77,.32); }
+    h1 { display:flex; align-items:baseline; gap:0; flex-wrap:wrap; margin:0;
+      font-size:var(--fs-display); line-height:1.35; letter-spacing:.2px; font-weight:800; }
+    .brand-word { background:var(--grad-brand); -webkit-background-clip:text; background-clip:text;
+      color:transparent; font-weight:800; letter-spacing:-.3px; }
+    .brand-cn { margin-left:5px; color:var(--text-1); font-weight:700; }
+    .h1-sep { margin:0 var(--sp-2); color:var(--text-3); font-weight:400; }
+    .h1-page { color:var(--text-2); font-weight:600; font-size:var(--fs-title); }
+    .ver { margin-left:auto; font-size:var(--fs-caption); color:#ffd34d; border:1px solid rgba(255,138,61,.5);
+      background:rgba(255,138,61,.16); border-radius:var(--r-pill); padding:var(--sp-1) var(--sp-3); white-space:nowrap; }
+    .sub { margin:var(--sp-3) 0 0; color:var(--text-2); max-width:900px; }
+    .privacy { margin:var(--sp-4) 0 0; padding:var(--sp-3) var(--sp-4); border-radius:var(--r-md);
+      background:var(--green-bg); border:1px solid rgba(52,211,153,.45); color:var(--green-soft); }
+    .privacy b { color:var(--green); }
+    .privacy ul { margin:var(--sp-2) 0 0; padding-left:var(--sp-5); }
+    .privacy li { margin:var(--sp-1) 0; }
+
+    /* ---------- 通用卡片 ---------- */
+    section { margin-top:var(--sp-6); padding:var(--sp-4) var(--sp-5) var(--sp-5);
+      border:1px solid var(--border-1); border-radius:var(--r-lg); background:var(--surface-1); box-shadow:var(--shadow-1); }
+    h2 { margin:0 0 var(--sp-3); font-size:var(--fs-title); font-weight:700; display:flex;
+      align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+    h2 .badge { font-size:var(--fs-micro); font-weight:700; color:var(--brand-300);
+      border:1px solid var(--border-brand); border-radius:var(--r-pill); padding:1px var(--sp-2); background:var(--amber-bg); }
+    .hint { color:var(--text-3); font-size:var(--fs-caption); line-height:1.6; }
+    .row { display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; margin:var(--sp-3) 0; }
+    .grow { flex:1 1 220px; min-width:0; }
+    input[type=text],input[type=number],select { font-size:var(--fs-form); padding:var(--sp-2) var(--sp-3);
+      color:var(--text-1); background:rgba(8,12,20,.6); border:1px solid var(--border-2);
+      border-radius:var(--r-sm); min-height:34px; }
+    input[type=text]::placeholder { color:var(--text-3); }
+    label.inline { display:flex; align-items:center; gap:var(--sp-2); margin:0;
+      font-size:var(--fs-form); color:var(--text-2); cursor:pointer; }
+    button { font-size:var(--fs-form); font-weight:700; cursor:pointer; min-height:34px;
+      padding:var(--sp-2) var(--sp-4); border-radius:var(--r-sm); border:1px solid var(--border-2);
+      background:var(--surface-2); color:var(--text-1); }
+    button:hover:not(:disabled) { background:var(--surface-3); border-color:var(--brand-500); }
+    button.primary { border:none; background:var(--grad-cta); color:#fff; box-shadow:0 6px 18px rgba(255,94,77,.28); }
+    button.primary:hover:not(:disabled) { filter:brightness(1.08); }
+    button.ghost { background:transparent; border-color:var(--border-brand); color:var(--brand-300); }
+    button.danger { background:var(--red-bg); border-color:rgba(255,107,94,.6); color:var(--red-soft); }
+    button.mini { min-height:26px; padding:var(--sp-1) var(--sp-2); font-size:var(--fs-caption); }
+    .status { margin-top:var(--sp-3); padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm);
+      background:rgba(8,12,20,.6); border:1px solid var(--border-1); font-size:var(--fs-caption);
+      color:var(--text-2); min-height:32px; }
+    .status.warn { border-color:rgba(255,138,61,.5); color:var(--amber); background:var(--amber-bg); }
+    .status.ok { border-color:rgba(52,211,153,.5); color:var(--green-soft); background:var(--green-bg); }
+    .status.err { border-color:rgba(255,107,94,.5); color:var(--red-soft); background:var(--red-bg); }
+
+    /* ---------- 采集 ---------- */
+    .steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:var(--sp-3); }
+    .step { padding:var(--sp-3); border:1px solid var(--border-1); border-radius:var(--r-md); background:var(--surface-1); }
+    .step .n { display:inline-flex; width:22px; height:22px; align-items:center; justify-content:center;
+      border-radius:50%; background:var(--grad-brand); color:var(--text-onbrand); font-weight:800; font-size:var(--fs-caption); }
+    .step h3 { margin:var(--sp-2) 0 var(--sp-1); font-size:var(--fs-subhead); font-weight:700; }
+    .step p { margin:0 0 var(--sp-3); font-size:var(--fs-caption); color:var(--text-3); }
+    .step .cnt { font-size:var(--fs-title); font-weight:800; color:var(--green); }
+    .step .when { font-size:var(--fs-micro); color:var(--text-3); margin-left:var(--sp-2); font-weight:400; }
+
+    /* ---------- 统计卡 ---------- */
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:var(--sp-3); }
+    .card { text-align:left; padding:var(--sp-3) var(--sp-4); border:1px solid var(--border-1);
+      border-radius:var(--r-md); background:var(--surface-1); cursor:pointer; min-height:96px; }
+    .card:hover { background:var(--surface-2); border-color:var(--border-brand); }
+    .card.active { border-color:var(--brand-500); background:var(--amber-bg); box-shadow:var(--ring); }
+    .card .k { font-size:var(--fs-caption); color:var(--text-3); }
+    .card .v { font-size:var(--fs-hero); font-weight:800; line-height:1.25; letter-spacing:-.5px; }
+    .card .d { font-size:var(--fs-micro); color:var(--text-3); }
+    .card.warn .v { color:var(--amber); } .card.ok .v { color:var(--green); }
+    .card.info .v { color:var(--cyan); } .card.plain .v { color:var(--text-1); }
+    .rate { margin-top:var(--sp-3); font-size:var(--fs-caption); color:var(--text-3); }
+
+    /* ---------- 明细 ---------- */
+    .chips { display:flex; gap:var(--sp-2); flex-wrap:wrap; margin-bottom:var(--sp-3); }
+    .chip { min-height:28px; padding:var(--sp-1) var(--sp-3); border-radius:var(--r-pill);
+      border:1px solid var(--border-2); background:var(--surface-1); color:var(--text-2); font-size:var(--fs-caption); }
+    .chip.active { border-color:var(--brand-500); background:var(--amber-bg); color:var(--brand-300); font-weight:700; }
+    .toolbar { display:flex; gap:var(--sp-2); flex-wrap:wrap; align-items:center; margin-bottom:var(--sp-3); }
+    .toolbar .grow { flex:1 1 180px; }
+    .listhead { display:flex; align-items:center; gap:var(--sp-2); padding:var(--sp-2) var(--sp-3);
+      font-size:var(--fs-caption); color:var(--text-3); border-bottom:1px solid var(--border-1); }
+    .list { max-height:520px; overflow:auto; border:1px solid var(--border-1); border-radius:var(--r-md); }
+    .item { display:flex; align-items:flex-start; gap:var(--sp-3); padding:var(--sp-3);
+      border-bottom:1px solid var(--border-1); }
+    .item:last-child { border-bottom:none; }
+    .item:hover { background:var(--surface-1); }
+    .item .av { width:38px; height:38px; border-radius:50%; flex:0 0 auto; object-fit:cover;
+      background:var(--surface-3); border:1px solid var(--border-1); }
+    .item .main { flex:1 1 auto; min-width:0; }
+    .item .line1 { display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+    .item .nm { font-weight:700; font-size:var(--fs-body); color:var(--text-1); }
+    .item .hd { font-size:var(--fs-caption); color:var(--link); text-decoration:none; }
+    .item .hd:hover { text-decoration:underline; }
+    .item .meta { font-size:var(--fs-caption); color:var(--text-3); margin-top:2px; }
+    .item .bio { font-size:var(--fs-caption); color:var(--text-2); margin-top:var(--sp-1);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:640px; }
+    .tag { font-size:var(--fs-micro); padding:1px var(--sp-2); border-radius:var(--r-pill);
+      border:1px solid var(--border-2); color:var(--text-3); background:var(--surface-1); white-space:nowrap; }
+    .tag.verified,.tag.big { color:var(--cyan); border-color:rgba(34,211,238,.45); background:var(--cyan-bg); }
+    .tag.empty,.tag.inactive,.tag.lowratio { color:var(--amber); border-color:rgba(255,138,61,.45); background:var(--amber-bg); }
+    .tag.protected { color:var(--green); border-color:rgba(52,211,153,.45); background:var(--green-bg); }
+    .item .ops { display:flex; flex-direction:column; gap:var(--sp-1); align-items:flex-end; flex:0 0 auto; }
+    .empty-list { padding:var(--sp-6); text-align:center; color:var(--text-3); font-size:var(--fs-body); }
+    .pager { display:flex; align-items:center; justify-content:center; gap:var(--sp-3); margin-top:var(--sp-3); }
+
+    /* ---------- 批量取关 ---------- */
+    section.danger-zone { border-color:rgba(255,107,94,.45); background:var(--red-bg); }
+    .warnbox { padding:var(--sp-3) var(--sp-4); border-radius:var(--r-md);
+      background:rgba(120,20,20,.24); border:1px solid rgba(255,107,94,.5); color:var(--red-soft); font-size:var(--fs-form); }
+    .warnbox b { color:var(--red); }
+    .cfg { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:var(--sp-3); margin:var(--sp-3) 0; }
+    .cfg label { display:block; font-size:var(--fs-caption); color:var(--text-3); margin-bottom:var(--sp-1); }
+    .cfg input,.cfg select { width:100%; }
+    .progress { height:10px; border-radius:var(--r-pill); background:var(--surface-2); overflow:hidden; margin:var(--sp-3) 0; }
+    .progress > i { display:block; height:100%; width:0; background:var(--grad-cta); transition:width var(--dur-base) var(--ease); }
+    .log { max-height:190px; overflow:auto; padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm);
+      background:rgba(8,12,20,.7); border:1px solid var(--border-1);
+      font:var(--fs-caption)/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--text-2); white-space:pre-wrap; }
+    .modal { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center;
+      background:rgba(4,6,12,.78); padding:var(--sp-5); }
+    .modal.show { display:flex; }
+    .dialog { width:min(680px,100%); max-height:82vh; overflow:auto; padding:var(--sp-5);
+      border-radius:var(--r-lg); border:1px solid var(--border-2); background:#141726; box-shadow:var(--shadow-2); }
+    .dialog h3 { margin:0 0 var(--sp-3); font-size:var(--fs-title); }
+    .dialog .warnbox { margin-bottom:var(--sp-3); }
+    .dialog pre { max-height:220px; overflow:auto; padding:var(--sp-3); border-radius:var(--r-sm);
+      background:rgba(8,12,20,.7); border:1px solid var(--border-1); font-size:var(--fs-caption);
+      color:var(--text-2); white-space:pre-wrap; word-break:break-all; }
+    .whitelist { display:flex; gap:var(--sp-2); flex-wrap:wrap; margin-top:var(--sp-3); }
+    .footer { margin-top:var(--sp-6); padding-top:var(--sp-3); border-top:1px solid var(--border-1);
+      font-size:var(--fs-caption); color:var(--text-3); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brandline">
+      <div class="logo">T</div>
+      <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span>
+        <span class="h1-sep">/</span><span class="h1-page">X 关注关系分析</span></h1>
+      <span class="ver" id="followVer">v1.5.19</span>
+    </div>
+    <p class="sub">分析你在 X（x.com）上的关注与粉丝：谁没回关、谁等你回关、谁已互关；
+      点统计卡或分类看明细，勾选后可限速批量取关。全程只在本机计算，不上传任何数据。</p>
+    <div class="privacy">
+      <b>隐私与边界</b>
+      <ul>
+        <li>名单来自 <b>X 网页客户端自己加载出来的</b>「关注中 / 粉丝」分页数据，扩展只被动读取，<b>不额外发请求、不读取登录凭证、不调用任何私有写接口</b>。</li>
+        <li>公开主页资料（用户名、昵称、粉丝数等）只存在本机 <code>chrome.storage.local</code>，不经过 TapePost 服务器或任何第三方。</li>
+        <li>批量取关是唯一写操作：只点击 X 页面上该账号那一行的原生「正在关注」按钮，先预演、需你确认、限速执行、可随时暂停/停止。</li>
+      </ul>
+    </div>
+  </header>
+
+  <!-- 1. 采集 -->
+  <section id="secCapture">
+    <h2>① 采集名单 <span class="badge">只读 · 本机</span></h2>
+    <div class="row">
+      <label class="inline" for="meHandle">我的 X 用户名</label>
+      <input type="text" id="meHandle" class="grow" placeholder="例如 YikunChen1983（不含 @）" spellcheck="false" />
+      <button id="detectMe" class="ghost">从当前 X 页面识别</button>
+      <button id="saveMe" class="ghost">保存</button>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="n">1</span>
+        <h3>我关注的人</h3>
+        <p>打开自己的「关注中」页并自动向下滚动，等 X 自己把分页加载完。</p>
+        <div><span class="cnt" id="cntFollowing">0</span><span class="when" id="whenFollowing">未采集</span></div>
+        <div class="row"><button id="capFollowing" class="primary">开始采集</button>
+          <button id="stopCapture" class="ghost mini">停止</button></div>
+      </div>
+      <div class="step">
+        <span class="n">2</span>
+        <h3>我的粉丝</h3>
+        <p>打开「粉丝」页并自动滚动。两边都采完才能算互关关系。</p>
+        <div><span class="cnt" id="cntFollowers">0</span><span class="when" id="whenFollowers">未采集</span></div>
+        <div class="row"><button id="capFollowers" class="primary">开始采集</button></div>
+      </div>
+      <div class="step">
+        <span class="n">3</span>
+        <h3>分析与清理</h3>
+        <p>在下方点统计卡 / 分类查看明细；白名单账号永不出现在取关名单里。</p>
+        <div class="row"><button id="clearData" class="ghost mini">清空本机名单</button></div>
+      </div>
+    </div>
+    <div class="status" id="capStatus">尚未采集。请先确认已登录 x.com，再点上面两个按钮；采集期间请保持标签页在前台或可见。</div>
+  </section>
+
+  <!-- 2. 统计 -->
+  <section id="secStats">
+    <h2>② 关系统计 <span class="badge">点卡片看明细</span></h2>
+    <div class="cards" id="cards"></div>
+    <div class="rate" id="rateLine">互关率 —</div>
+  </section>
+
+  <!-- 3. 明细 -->
+  <section id="secList">
+    <h2>③ 明细清单 <span class="badge" id="listTitle">未回关我</span></h2>
+    <div class="chips" id="chips"></div>
+    <div class="toolbar">
+      <input type="text" id="search" class="grow" placeholder="搜索昵称 / @用户名 / 简介" spellcheck="false" />
+      <select id="sortBy" aria-label="排序">
+        <option value="followers">粉丝数：多 → 少</option>
+        <option value="followersAsc">粉丝数：少 → 多</option>
+        <option value="tweets">推文数：多 → 少</option>
+        <option value="inactive">最久没发推</option>
+        <option value="handle">用户名 A → Z</option>
+      </select>
+      <select id="band" aria-label="粉丝量区间">
+        <option value="">全部粉丝量</option>
+        <option value="0-100">0-100</option><option value="100-1k">100-1k</option>
+        <option value="1k-1w">1k-1w</option><option value="1w-10w">1w-10w</option>
+        <option value="10w+">10w+</option>
+      </select>
+      <button id="selectAll" class="ghost mini">全选本页</button>
+      <button id="selectNone" class="ghost mini">清空选择</button>
+      <button id="exportCsv" class="ghost mini">导出 CSV</button>
+    </div>
+    <div class="listhead">
+      <input type="checkbox" id="headCheck" aria-label="全选本页" />
+      <span id="listCount">0 人</span>
+      <span style="margin-left:auto" id="selectedCount">已选 0 人</span>
+    </div>
+    <div class="list" id="list"><div class="empty-list">还没有数据，先完成上面的两步采集。</div></div>
+    <div class="pager">
+      <button id="prevPage" class="ghost mini">上一页</button>
+      <span class="hint" id="pageInfo">第 1 / 1 页</span>
+      <button id="nextPage" class="ghost mini">下一页</button>
+    </div>
+    <div class="row">
+      <span class="hint">白名单（这些账号永远不会进入取关名单）：</span>
+    </div>
+    <div class="whitelist" id="whitelist"></div>
+  </section>
+
+  <!-- 4. 批量取关 -->
+  <section id="secUnfollow" class="danger-zone">
+    <h2>④ 批量取关 <span class="badge">需确认 · 可暂停</span></h2>
+    <div class="warnbox">
+      <b>请先读这段：</b>X 对自动化批量操作有风控，短时间大量取关可能被临时限制甚至冻结账号。
+      本功能默认每个账号间隔 ≥ 5 秒随机、单批最多 50 人、认证/大 V/白名单自动跳过、连续 3 次定位失败立即停机。
+      建议先小批量试跑；执行期间不要手动操作该标签页。
+    </div>
+    <div class="cfg">
+      <div><label for="cfgDelay">最小间隔（毫秒，下限 3000）</label>
+        <input type="number" id="cfgDelay" min="3000" max="60000" step="500" value="5000" /></div>
+      <div><label for="cfgJitter">随机抖动上限（毫秒）</label>
+        <input type="number" id="cfgJitter" min="0" max="20000" step="500" value="3000" /></div>
+      <div><label for="cfgBatch">单批上限（人）</label>
+        <input type="number" id="cfgBatch" min="1" max="50" step="1" value="50" /></div>
+      <div><label for="cfgProtect">受保护账号</label>
+        <select id="cfgProtect"><option value="1">跳过认证 / 大 V / 锁推 / 白名单</option>
+          <option value="0">只跳过白名单与锁推</option></select></div>
+    </div>
+    <div class="row">
+      <button id="dryRun" class="primary">预演：查看将取关名单</button>
+      <button id="pauseTask" class="ghost">暂停</button>
+      <button id="resumeTask" class="ghost">继续</button>
+      <button id="stopTask" class="danger">立即停止</button>
+    </div>
+    <div class="progress"><i id="progressBar"></i></div>
+    <div class="status" id="taskStatus">任务空闲。勾选账号后先点「预演」，确认名单无误再执行。</div>
+    <div class="log" id="taskLog">（执行日志会显示在这里）</div>
+  </section>
+
+  <div class="footer">
+    TapePost信仰者工具 · X 关注关系分析 · 数据只存本机 · 未授权不执行任何写操作 ·
+    采集与取关均依赖 X 网页客户端当前结构，若 X 改版导致定位失败，扩展会自动停机而不是盲点。
+  </div>
+</div>
+
+<!-- 预演确认层 -->
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="dialog">
+    <h3 id="modalTitle">批量取关预演</h3>
+    <div class="warnbox" id="modalWarn"></div>
+    <pre id="modalBody"></pre>
+    <div class="row" style="justify-content:flex-end">
+      <button id="modalCancel" class="ghost">取消</button>
+      <button id="modalConfirm" class="danger">确认执行取关</button>
+    </div>
+  </div>
+</div>
+
+<script src="follow-core.js"></script>
+<script src="follow.js"></script>
+</body>
+</html>

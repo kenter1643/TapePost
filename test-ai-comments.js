@@ -89,7 +89,7 @@ function makeChrome() {
   const base = {
     storage: { local: area('local'), sync: area('sync'), session: area('local') },
     runtime: {
-      getManifest: () => ({ version: '1.5.18' }), getURL: (p) => 'chrome-extension://fake/' + p,
+      getManifest: () => ({ version: '1.5.19' }), getURL: (p) => 'chrome-extension://fake/' + p,
       sendMessage: () => Promise.resolve({}), onMessage: { addListener: () => {} },
       onInstalled: { addListener: () => {} }, onStartup: { addListener: () => {} }, lastError: null
     },
