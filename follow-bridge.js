@@ -1,5 +1,5 @@
 /*
- * TapePost · 关注关系桥接与取关执行器（ISOLATED world，1.5.19）
+ * TapePost · 关注关系桥接与取关执行器（ISOLATED world，1.5.20）
  * ---------------------------------------------------------------
  * 职责：
  *   1) 收 MAIN world 的被动采集结果，合并进本机 chrome.storage.local；
@@ -32,6 +32,11 @@
   var KEY_SETTINGS = 'followSettings';
   var TICK_MS = 1500;
   var MAX_FAIL_STREAK = 3;
+  var lastStoreError = '';
+  var lastTickAt = 0;
+  var memData = null;   // 内存副本：写入失败也能下批补写，不让已合并的名单丢掉
+
+  function wrap(key, val) { var o = {}; o[key] = val; return o; }
 
   var storeGet = function (keys) {
     return new Promise(function (resolve) {
@@ -41,8 +46,16 @@
   };
   var storeSet = function (obj) {
     return new Promise(function (resolve) {
-      try { chrome.storage.local.set(obj, function () { resolve(true); }); }
-      catch (e) { resolve(false); }
+      try {
+        chrome.storage.local.set(obj, function () {
+          try {
+            var err = chrome.runtime && chrome.runtime.lastError;
+            if (err) { lastStoreError = String(err.message || err); resolve(false); return; }
+          } catch (e) {}
+          lastStoreError = '';
+          resolve(true);
+        });
+      } catch (e) { lastStoreError = String(e && e.message || e); resolve(false); }
     });
   };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
@@ -90,33 +103,103 @@
     try { window.postMessage(Object.assign({ [TAG]: true }, payload), '*'); } catch (e) {}
   }
 
+  /* 实时落盘（1.5.20 修复）：旧版只在 cap.status === 'running' 且来源等于
+   * cap.target 时才写，采集一旦自动结束、或用户关掉面板让状态卡住，后续批次
+   * 就被整批丢弃，重新打开面板只剩「上次抓到的一部分」。现在每批到达立即
+   * merge 并写入 chrome.storage.local，与采集状态完全解耦；写入失败保留内存
+   * 副本，下一批继续补写，并把失败原因暴露给面板。 */
+  function normalizeData(raw) {
+    var d = raw && typeof raw === 'object' ? raw : emptyData();
+    var u = d.updatedAt && typeof d.updatedAt === 'object' ? d.updatedAt : {};
+    return {
+      me: Core.lowerHandle(d.me || ''),
+      following: d.following && typeof d.following === 'object' ? d.following : {},
+      followers: d.followers && typeof d.followers === 'object' ? d.followers : {},
+      updatedAt: { following: Number(u.following) || 0, followers: Number(u.followers) || 0 },
+      savedAt: Number(d.savedAt) || 0,
+      version: 1, source: 'passive'
+    };
+  }
+
+  // storage 最新值 + 内存副本合并：面板写的 me 与桥接刚采到的用户都不丢
+  function mergeData(fromStore, fromMemory) {
+    var out = normalizeData(fromStore);
+    var mem = normalizeData(fromMemory);
+    ['following', 'followers'].forEach(function (src) {
+      Object.keys(mem[src]).forEach(function (k) { if (!out[src][k]) out[src][k] = mem[src][k]; });
+      out.updatedAt[src] = Math.max(out.updatedAt[src], mem.updatedAt[src]);
+    });
+    if (!out.me) out.me = mem.me;
+    return out;
+  }
+
+  // 名单很大时裁掉超长简介，避免触及 storage.local 配额导致整个 set 静默失败
+  function compactIfNeeded(d) {
+    var size = 0;
+    try { size = JSON.stringify(d).length; } catch (e) { return d; }
+    if (size < 6 * 1024 * 1024) return d;
+    ['following', 'followers'].forEach(function (src) {
+      Object.keys(d[src]).forEach(function (k) {
+        var u = d[src][k];
+        if (u && typeof u.bio === 'string' && u.bio.length > 160) u.bio = u.bio.slice(0, 160);
+      });
+    });
+    return d;
+  }
+
+  function readData() {
+    return storeGet([KEY_DATA]).then(function (r) {
+      memData = mergeData(r[KEY_DATA], memData);
+      return memData;
+    });
+  }
+
+  function persistData() {
+    if (!memData) return Promise.resolve(true);
+    memData.savedAt = Date.now();
+    compactIfNeeded(memData);
+    return storeSet(wrap(KEY_DATA, memData)).then(function (ok) {
+      if (!ok) {
+        storeGet([KEY_CAPTURE]).then(function (r) {
+          var c = Object.assign({}, r[KEY_CAPTURE] || {}, {
+            storageError: lastStoreError, savedAt: memData ? memData.savedAt : 0
+          });
+          return storeSet(wrap(KEY_CAPTURE, c));
+        }).catch(function () {});
+      }
+      return ok;
+    });
+  }
+
+  function ingest(batches) {
+    return serial(function () {
+      return readData().then(function (data) {
+        var page = pageSource();
+        var touched = false;
+        (batches || []).forEach(function (b) {
+          var src = b.source === 'followers' ? 'followers' : 'following';
+          // 只接受当前 X 标签页对应的来源，不把别的列表混进本机名单
+          if (page && src !== page) return;
+          var users = Array.isArray(b.users) ? b.users : [];
+          if (!users.length) return;
+          data[src] = Core.mergeSnapshot(data[src], users);
+          data.updatedAt[src] = Date.now();
+          if (b.me && !data.me) data.me = Core.lowerHandle(b.me);
+          touched = true;
+        });
+        memData = data;
+        return touched ? persistData() : true;   // 无条件立即落盘，不看采集状态
+      });
+    });
+  }
+
   window.addEventListener('message', function (event) {
     if (event.source !== window) return;
     var d = event.data;
     if (!d || d[TAG] !== true) return;
     if (d.type === 'TAPEFOLLOW_DATA') {
       var batches = Array.isArray(d.batches) ? d.batches : [];
-      if (!batches.length) return;
-      serial(function () {
-        return storeGet([KEY_DATA, KEY_CAPTURE]).then(function (r) {
-          var cap = r[KEY_CAPTURE] || {};
-          if (cap.status !== 'running') return;      // 没在采集就不落盘
-          var data = r[KEY_DATA] || emptyData();
-          var changed = false;
-          batches.forEach(function (b) {
-            var src = b.source === 'followers' ? 'followers' : 'following';
-            if (cap.target && src !== cap.target) return;   // 只收当前目标页的数据
-            var before = Object.keys(data[src] || {}).length;
-            data[src] = Core.mergeSnapshot(data[src], b.users);
-            if (Object.keys(data[src]).length !== before) changed = true;
-            data.updatedAt[src] = Date.now();
-            if (b.me && !data.me) data.me = Core.lowerHandle(b.me);
-          });
-          if (!changed) return;
-          data.version = 1;
-          return storeSet((function () { var o = {}; o[KEY_DATA] = data; return o; })());
-        });
-      });
+      if (batches.length) ingest(batches);
     } else if (d.type === 'TAPEFOLLOW_PONG') {
       window.__tapeFollowLastPong = d;
     }
@@ -139,31 +222,37 @@
   function captureTick() {
     if (captureBusy) return;
     captureBusy = true;
-    storeGet([KEY_CAPTURE, KEY_DATA]).then(function (r) {
-      var cap = r[KEY_CAPTURE] || {};
-      var src = pageSource();
-      var running = cap.status === 'running' && cap.target && cap.target === src;
-      postToMain({ type: 'TAPEFOLLOW_CMD', action: running ? 'start' : 'stop' });
-      if (!running) return;
-      var data = r[KEY_DATA] || emptyData();
-      var count = Object.keys(data[src] || {}).length;
-      var o = Object.assign({}, cap);
-      o.scrolls = (cap.scrolls || 0) + 1;
-      o.idle = (count === (cap.lastCount || 0)) ? (cap.idle || 0) + 1 : 0;
-      o.lastCount = count;
-      o.count = count;
-      o.me = data.me || detectMe() || cap.me || '';
-      scrollOnce();
-      var tooLong = cap.startedAt && (Date.now() - cap.startedAt > Core.DEFAULTS.maxCaptureMs);
-      if (o.idle >= Core.DEFAULTS.idleRounds || o.scrolls >= Core.DEFAULTS.maxScroll || tooLong) {
-        o.status = 'done';
-        o.finishedAt = Date.now();
-        o.message = '采集完成：' + (src === 'followers' ? '粉丝' : '关注中') +
-          '共 ' + count + ' 人' + (tooLong ? '（已达时间上限，可再点一次继续）' : '');
-        postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
-      }
-      var w = {}; w[KEY_CAPTURE] = o;
-      return storeSet(w);
+    // 用「storage 最新值 + 内存副本」算人数，避免拿旧快照误判「无新增」提前结束
+    return readData().then(function (data) {
+      return storeGet([KEY_CAPTURE]).then(function (r) {
+        var cap = r[KEY_CAPTURE] || {};
+        var src = pageSource();
+        var running = cap.status === 'running' && cap.target && cap.target === src;
+        postToMain({ type: 'TAPEFOLLOW_CMD', action: running ? 'start' : 'stop' });
+        if (!running) return;
+        var count = Object.keys(data[src] || {}).length;
+        var o = Object.assign({}, cap);
+        o.scrolls = (cap.scrolls || 0) + 1;
+        o.idle = (count === (cap.lastCount || 0)) ? (cap.idle || 0) + 1 : 0;
+        o.lastCount = count;
+        o.count = count;
+        o.lastTickAt = Date.now();
+        lastTickAt = o.lastTickAt;
+        o.savedAt = data.savedAt || cap.savedAt || 0;
+        if (cap.storageError) o.storageError = cap.storageError;
+        o.me = data.me || detectMe() || cap.me || '';
+        scrollOnce();
+        var tooLong = cap.startedAt && (Date.now() - cap.startedAt > Core.DEFAULTS.maxCaptureMs);
+        if (o.idle >= Core.DEFAULTS.idleRounds || o.scrolls >= Core.DEFAULTS.maxScroll || tooLong) {
+          o.status = 'done';
+          o.finishedAt = Date.now();
+          o.message = '采集完成：' + (src === 'followers' ? '粉丝' : '关注中') +
+            '共 ' + count + ' 人（已实时保存到本机）' +
+            (tooLong ? '（已达时间上限，可再点一次继续）' : '');
+          postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
+        }
+        return storeSet(wrap(KEY_CAPTURE, o));
+      });
     }).catch(function () {}).then(function () { captureBusy = false; });
   }
   setInterval(captureTick, TICK_MS);
@@ -341,9 +430,16 @@
     chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       if (!msg || String(msg.type || '').indexOf('FOLLOW_') !== 0) return false;
       if (msg.type === 'FOLLOW_PING') {
-        sendResponse({ ok: true, source: pageSource(), me: detectMe(),
-          captureStats: (window.__tapeFollowLastPong || {}).stats || null, busy: taskBusy });
-        return false;
+        readData().then(function (d) {
+          sendResponse({ ok: true, source: pageSource(), me: detectMe(),
+            captureStats: (window.__tapeFollowLastPong || {}).stats || null, busy: taskBusy,
+            savedCount: {
+              following: Object.keys(d.following || {}).length,
+              followers: Object.keys(d.followers || {}).length
+            },
+            savedAt: d.savedAt || 0, storageError: lastStoreError, lastTickAt: lastTickAt });
+        });
+        return true;
       }
       if (msg.type === 'FOLLOW_DETECT_ME') {
         sendResponse({ ok: true, me: detectMe(), source: pageSource() });
@@ -357,7 +453,32 @@
     });
   }
 
-  // 首帧问一次 MAIN 状态，便于面板诊断「采集器是否注入成功」
-  setTimeout(function () { postToMain({ type: 'TAPEFOLLOW_CMD', action: 'ping' }); }, 800);
+  // 面板点「开始采集」后立即开启 MAIN 采集器，不用等 1.5 秒的滚动 tick
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'local') return;
+      // 用户在面板点了「清空本机名单」：丢掉内存副本，避免下一批把旧名单复活
+      if (changes[KEY_DATA]) {
+        var nd = changes[KEY_DATA].newValue;
+        var cleared = !nd || (!Object.keys(nd.following || {}).length &&
+          !Object.keys(nd.followers || {}).length && !nd.savedAt);
+        if (cleared) memData = null;
+      }
+      if (!changes[KEY_CAPTURE]) return;
+      var c = changes[KEY_CAPTURE].newValue || {};
+      var on = c.status === 'running' && c.target && c.target === pageSource();
+      postToMain({ type: 'TAPEFOLLOW_CMD', action: on ? 'start' : 'stop' });
+    });
+  }
+
+  // 首帧问一次 MAIN 状态，并按已保存的采集状态立刻补发开关（页面刷新后也能续上）
+  setTimeout(function () {
+    postToMain({ type: 'TAPEFOLLOW_CMD', action: 'ping' });
+    storeGet([KEY_CAPTURE]).then(function (r) {
+      var c = r[KEY_CAPTURE] || {};
+      var on = c.status === 'running' && c.target && c.target === pageSource();
+      postToMain({ type: 'TAPEFOLLOW_CMD', action: on ? 'start' : 'stop' });
+    });
+  }, 800);
   setTimeout(captureTick, 600);
 })();

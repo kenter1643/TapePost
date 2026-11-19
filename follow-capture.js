@@ -1,5 +1,5 @@
 /*
- * TapePost · X 关注关系被动采集器（MAIN world，1.5.19）
+ * TapePost · X 关注关系被动采集器（MAIN world，1.5.20）
  * ---------------------------------------------------------------
  * 只做一件事：观察 X 网页客户端「自己已经发出并收到的」关注中 / 粉丝列表
  * 响应，把里面的公开主页资料摘出来，用 window.postMessage 交给 ISOLATED
@@ -73,6 +73,19 @@
         batches: batch, stats: Object.assign({}, stats) }, '*');
     } catch (e) {}
   }
+
+  // 页面被关闭 / 切到后台前把还没合并发出的尾批立即送出，避免卸载时丢最后一批
+  function flushNow() {
+    try { if (postTimer) { clearTimeout(postTimer); postTimer = 0; } } catch (e) {}
+    flush();
+  }
+  try {
+    window.addEventListener('pagehide', flushNow);
+    window.addEventListener('beforeunload', flushNow);
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) flushNow();
+    });
+  } catch (e) {}
 
   function handleText(text, url) {
     if (!text || text.length < 40 || text.length > 8 * 1024 * 1024) return;

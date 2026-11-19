@@ -1,5 +1,5 @@
 /*
- * TapePost · X 关注关系分析面板（1.5.19）
+ * TapePost · X 关注关系分析面板（1.5.20）
  * ---------------------------------------------------------------
  * 只读本机 chrome.storage.local 里的名单，做统计 / 分类 / 明细，并在用户
  * 明确确认后调度 follow-bridge.js 执行限速批量取关。
@@ -55,6 +55,34 @@
       catch (e) { resolve(false); }
     });
   }
+  function emptyData() {
+    return { me: '', following: {}, followers: {},
+      updatedAt: { following: 0, followers: 0 }, savedAt: 0, version: 1, source: 'passive' };
+  }
+  function normalizeData(raw) {
+    var d = raw && typeof raw === 'object' ? raw : emptyData();
+    var u = d.updatedAt && typeof d.updatedAt === 'object' ? d.updatedAt : {};
+    return {
+      me: Core.lowerHandle(d.me || ''),
+      following: d.following && typeof d.following === 'object' ? d.following : {},
+      followers: d.followers && typeof d.followers === 'object' ? d.followers : {},
+      updatedAt: { following: Number(u.following) || 0, followers: Number(u.followers) || 0 },
+      savedAt: Number(d.savedAt) || 0, version: 1, source: 'passive'
+    };
+  }
+  // 任何写 followData 都必须「先读最新再合并」：面板内存里的旧快照不能覆盖
+  // 桥接层在面板关闭期间实时落盘的新用户（1.5.20 修复数据丢失的关键）。
+  async function writeData(patch) {
+    var r = await get([K.data]);
+    var d = normalizeData(r[K.data]);
+    Object.keys(patch || {}).forEach(function (k) { d[k] = patch[k]; });
+    d = normalizeData(d);
+    var w = {}; w[K.data] = d;
+    await set(w);
+    state.data = d;
+    return d;
+  }
+
   function tabsQuery(q) {
     return new Promise(function (resolve) {
       try { chrome.tabs.query(q, function (t) { resolve(t || []); }); }
@@ -97,17 +125,34 @@
   }
 
   // ---------------------------------------------------------------- 初始化
+  // 面板重新打开时：如果上次采集的状态还停在 running，但 X 标签页已经不在
+  // （桥接层超过 30 秒没打过 tick），就标成「已中断」而不是永远显示正在采集。
+  // 名单本身完整保留，用户点「继续采集」即可从已保存的部分往下补。
+  var CAP_STALE_MS = 30000;
+  async function recoverStaleCapture() {
+    var c = Object.assign({}, state.capture || {});
+    if (c.status !== 'running') return;
+    var last = c.lastTickAt || c.startedAt || 0;
+    if (last && Date.now() - last < CAP_STALE_MS) return;
+    var kept = Object.keys(state.data[c.target] || {}).length;
+    c.status = 'interrupted';
+    c.finishedAt = Date.now();
+    c.message = '上次采集中断，本机已保留 ' + kept + ' 人。点「继续采集」从已保存的名单往下补，' +
+      '已抓到的人不会重复；关闭面板不会丢失数据。';
+    var w = {}; w[K.capture] = c;
+    await set(w);
+    state.capture = c;
+  }
+
   async function refresh() {
     var r = await get([K.data, K.capture, K.task, K.whitelist, K.settings]);
-    state.data = r[K.data] || state.data;
-    state.data.following = state.data.following || {};
-    state.data.followers = state.data.followers || {};
-    state.data.updatedAt = state.data.updatedAt || { following: 0, followers: 0 };
+    state.data = normalizeData(r[K.data]);
     state.capture = r[K.capture] || {};
     state.task = r[K.task] || {};
     state.whitelist = r[K.whitelist] || [];
     state.settings = Object.assign({}, Core.DEFAULTS, r[K.settings] || {});
     if (!$('meHandle').value) $('meHandle').value = state.data.me || '';
+    await recoverStaleCapture();
     renderAll();
   }
 
@@ -121,23 +166,34 @@
   }
 
   function renderCapture() {
-    var d = state.data;
-    $('cntFollowing').textContent = fmt(Object.keys(d.following).length);
-    $('cntFollowers').textContent = fmt(Object.keys(d.followers).length);
+    var d = normalizeData(state.data);
+    state.data = d;
+    var nf = Object.keys(d.following).length, nr = Object.keys(d.followers).length;
+    $('cntFollowing').textContent = fmt(nf);
+    $('cntFollowers').textContent = fmt(nr);
     $('whenFollowing').textContent = when(d.updatedAt.following);
     $('whenFollowers').textContent = when(d.updatedAt.followers);
+    var lastWrite = d.savedAt || Math.max(d.updatedAt.following, d.updatedAt.followers);
+    $('saveHint').textContent = '实时保存：本机已存 ' + fmt(nf + nr) + ' 人（关注中 ' + fmt(nf) +
+      ' / 粉丝 ' + fmt(nr) + '）· 最后写入 ' + when(lastWrite) +
+      ' · 每批数据立即写盘，关闭面板或中途停止都不会丢，下次打开自动恢复';
     var c = state.capture || {};
+    if (c.storageError) {
+      $('saveHint').textContent += ' ｜ ⚠ 本机写入异常：' + c.storageError + '（请检查浏览器存储空间后重试）';
+    }
     if (c.status === 'running') {
       status('capStatus', '正在采集「' + (c.target === 'followers' ? '粉丝' : '关注中') +
         '」… 已滚动 ' + (c.scrolls || 0) + ' 次，当前 ' + (c.count || 0) +
-        ' 人。请保持该标签页可见，X 分页加载完会自动停止。', 'warn');
+        ' 人，每批已实时保存。请保持该标签页可见，X 分页加载完会自动停止。', 'warn');
     } else if (c.status === 'done') {
       var zero = (c.count || 0) === 0;
       status('capStatus', (c.message || '采集完成') +
         (zero ? '；采到 0 人，请确认已登录 x.com、用户名填写正确，或刷新该标签后重试。' : ''),
         zero ? 'warn' : 'ok');
     } else if (c.status === 'stopped') {
-      status('capStatus', '采集已停止。', 'warn');
+      status('capStatus', '采集已停止，已抓到的名单仍保存在本机。可点「继续采集」接着补。', 'warn');
+    } else if (c.status === 'interrupted') {
+      status('capStatus', c.message || '上次采集中断，已保存的名单仍在本机。', 'warn');
     } else {
       status('capStatus', '尚未采集。请先确认已登录 x.com，再点上面两个按钮；采集期间请保持标签页在前台或可见。');
     }
@@ -366,12 +422,17 @@
   async function startCapture(target) {
     var me = meHandle();
     if (!me) return;
-    var d = state.data;
+    // 从最新缓存起步：面板关闭期间桥接层实时写入的人也算进来，实现断点续采
+    var fresh = await get([K.data]);
+    var d = normalizeData(fresh[K.data]);
+    state.data = d;
+    var had = Object.keys(d[target] || {}).length;
     var url = 'https://x.com/' + me + '/' + (target === 'followers' ? 'followers' : 'following');
     var cap = {
       status: 'running', target: target, me: me, startedAt: Date.now(),
-      scrolls: 0, idle: 0, count: Object.keys(d[target] || {}).length,
-      lastCount: Object.keys(d[target] || {}).length, message: ''
+      scrolls: 0, idle: 0, count: had, lastCount: had,
+      lastTickAt: Date.now(), savedAt: d.savedAt || 0,
+      resumedFrom: had, message: ''
     };
     var w = {}; w[K.capture] = cap;
     await set(w);
@@ -389,12 +450,18 @@
     if (tab && tab.id != null) {
       var pong = await sendToTab(tab.id, { type: 'FOLLOW_PING' });
       if (!pong || !pong.ok) {
-        status('capStatus', '采集脚本还没在这个标签就绪。请刷新该 X 标签页后，回到本面板再点一次「开始采集」。', 'warn');
+        status('capStatus', '采集脚本还没在这个标签就绪。请刷新该 X 标签页后，回到本面板再点一次「开始采集」；' +
+          '已保存的 ' + had + ' 人不会丢失。', 'warn');
         return;
       }
+      if (pong.storageError) {
+        status('capStatus', '⚠ 本机缓存写入异常：' + pong.storageError +
+          '。请检查浏览器存储空间；已保存的 ' + had + ' 人仍在。', 'err');
+      }
     }
-    status('capStatus', '已打开「' + (target === 'followers' ? '粉丝' : '关注中') +
-      '」页并开始自动滚动；X 分页加载完（连续几轮没有新增）会自动结束。', 'warn');
+    status('capStatus', (had ? '继续采集（已从本机缓存恢复 ' + had + ' 人）' : '已开始采集') +
+      '：正在自动滚动「' + (target === 'followers' ? '粉丝' : '关注中') +
+      '」页，每批数据立即存到本机；X 分页加载完（连续几轮没有新增）会自动结束。', 'warn');
   }
 
   async function detectMe() {
@@ -403,10 +470,8 @@
     var r = await sendToTab(tab.id, { type: 'FOLLOW_DETECT_ME' });
     if (r && r.ok && r.me) {
       $('meHandle').value = r.me;
-      state.data.me = r.me;
-      var w = {}; w[K.data] = state.data;
-      await set(w);
-      status('capStatus', '已识别：@' + r.me + '。点「保存」或直接开始采集。', 'ok');
+      await writeData({ me: r.me });
+      status('capStatus', '已识别：@' + r.me + '。点「保存」或直接开始采集，已保存的名单不受影响。', 'ok');
     } else {
       status('capStatus', '没能自动识别（可能这个标签是扩展重载前的旧脚本）。请刷新 X 标签后重试，或直接手填用户名。', 'warn');
     }
@@ -528,10 +593,8 @@
     $('saveMe').addEventListener('click', async function () {
       var me = meHandle();
       if (!me) return;
-      state.data.me = me;
-      var w = {}; w[K.data] = state.data;
-      await set(w);
-      status('capStatus', '已保存 @' + me + '。现在可以开始采集。', 'ok');
+      await writeData({ me: me });
+      status('capStatus', '已保存 @' + me + '。现在可以开始采集，之前采集到的名单仍在。', 'ok');
     });
     $('capFollowing').addEventListener('click', function () { startCapture('following'); });
     $('capFollowers').addEventListener('click', function () { startCapture('followers'); });
@@ -539,15 +602,17 @@
       var c = Object.assign({}, state.capture || {}, { status: 'stopped', finishedAt: Date.now() });
       var w = {}; w[K.capture] = c;
       await set(w); state.capture = c; renderCapture();
+      status('capStatus', '采集已停止。已经抓到的名单已实时保存在本机，不会丢失。', 'warn');
     });
     $('clearData').addEventListener('click', function () {
       openModal('清空本机名单', '<b>只会删除本机的关注/粉丝快照与任务记录</b>，白名单和设置会保留，X 上的关注关系不会有任何变化。',
         '确定要清空吗？清空后需要重新执行两步采集。', async function () {
-          try { chrome.storage.local.remove([K.data, K.capture, K.task], function () {}); } catch (e) {}
-          state.data = { me: $('meHandle').value, following: {}, followers: {},
-            updatedAt: { following: 0, followers: 0 }, version: 1, source: 'passive' };
+          // 覆盖式写入（不用 remove）：面板与桥接层都能看到一次明确的「已清空」状态
+          await writeData({ me: $('meHandle').value, following: {}, followers: {},
+            updatedAt: { following: 0, followers: 0 }, savedAt: 0 });
+          var w = {}; w[K.capture] = {}; w[K.task] = {};
+          await set(w);
           state.capture = {}; state.task = {}; state.selected = Object.create(null);
-          await set((function () { var o = {}; o[K.data] = state.data; return o; })());
           renderAll();
         });
     });
@@ -587,7 +652,10 @@
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener(function (changes, area) {
       if (area !== 'local') return;
-      if (changes[K.data]) { state.data = changes[K.data].newValue || state.data; renderCapture(); renderCards(); renderList(); }
+      if (changes[K.data]) {
+        state.data = normalizeData(changes[K.data].newValue || state.data);
+        renderCapture(); renderCards(); renderList();
+      }
       if (changes[K.capture]) { state.capture = changes[K.capture].newValue || {}; renderCapture(); }
       if (changes[K.task]) { state.task = changes[K.task].newValue || {}; renderTask(); }
       if (changes[K.whitelist]) { state.whitelist = changes[K.whitelist].newValue || []; renderWhitelist(); renderList(); }

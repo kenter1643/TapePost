@@ -1,4 +1,4 @@
-/* TapePost 1.5.19 · X 关注关系分析专项自检
+/* TapePost 1.5.20 · X 关注关系分析专项自检
  *
  * 覆盖：接线与版本、合规资料、通用用户提取器、集合 / 分类、白名单与预演、
  * 安全不变量（不主动发请求 / 不读凭证 / 取关需确认 / 定位失败自动停机）、
@@ -49,8 +49,8 @@ const NEW_FILES = ['follow-core.js', 'follow-capture.js', 'follow-bridge.js', 'f
 
 // ---------------------------------------------------------------- 1. 版本与接线
 console.log('== 1. 版本与接线 ==');
-eq('manifest 版本', manifest.version, '1.5.19');
-eq('listing 版本', listing.version, '1.5.19');
+eq('manifest 版本', manifest.version, '1.5.20');
+eq('listing 版本', listing.version, '1.5.20');
 ok('manifest.description ≤132 且含关注分析', manifest.description.length <= 132 &&
   /关注互关分析/.test(manifest.description));
 ok('listing.summary_132 ≤132 且含关注分析', listing.summary_132.length <= 132 &&
@@ -108,9 +108,9 @@ ok('README / 教程 / 上架资料 / 隐私政策口径同步为「互关管理�
 ok('popup.js 打开 follow.html', /getURL\('follow\.html'\)/.test(popJs));
 ok('follow.html 先引 core 再引面板脚本',
   followHtml.indexOf('<script src="follow-core.js"></script>') < followHtml.indexOf('<script src="follow.js"></script>'));
-ok('follow.html 版本兜底 v1.5.19', /v1\.5\.19/.test(followHtml));
-ok('四处 UI 兜底统一 v1.5.19', /v1\.5\.19/.test(popHtml) && /v1\.5\.19/.test(panelHtml) &&
-  /v1\.5\.19/.test(contentJs) && /v1\.5\.19/.test(popJs));
+ok('follow.html 版本兜底 v1.5.20', /v1\.5\.20/.test(followHtml));
+ok('四处 UI 兜底统一 v1.5.20', /v1\.5\.20/.test(popHtml) && /v1\.5\.20/.test(panelHtml) &&
+  /v1\.5\.20/.test(contentJs) && /v1\.5\.20/.test(popJs));
 ok('两段 Dashboard justification 仍 ≤1000 且 en_chars 对得上',
   listing.dashboard_permission_justifications.fields.every((f) =>
     f.en.length <= 1000 && f.en_chars === f.en.length));
@@ -119,46 +119,47 @@ ok('consistency_note 已说明 follow-capture.js 是静态 MAIN world 脚本',
 
 // ---------------------------------------------------------------- 2. 合规资料
 console.log('== 2. 合规资料与文档 ==');
-ok('详细描述首条为 1.5.19，第二条保留 1.5.18',
-  String(listing.detailed_description[0]).startsWith('【1.5.19') &&
-  String(listing.detailed_description[1]).startsWith('【1.5.18'));
+ok('详细描述首条为 1.5.20，第二条保留 1.5.19',
+  String(listing.detailed_description[0]).startsWith('【1.5.20') &&
+  String(listing.detailed_description[1]).startsWith('【1.5.19'));
 ok('详细描述含「不主动发任何请求 / 不读取登录凭证 / 只存本机」',
   /不主动发任何请求/.test(listing.detailed_description[0]) &&
   /不读取 Authorization/.test(listing.detailed_description[0]) &&
   /只存本机/.test(listing.detailed_description[0]));
-ok('single_purpose 增列 1.5.19', /1\.5\.19/.test(listing.single_purpose));
-ok('主机访问理由以 1.5.19 补充开头且仍写 34 条 / 9 项',
-  listing.host_access_justification.startsWith('【1.5.19 补充') &&
+ok('single_purpose 增列 1.5.20', /1\.5\.20/.test(listing.single_purpose));
+ok('主机访问理由以 1.5.20 补充开头且仍写 34 条 / 9 项',
+  listing.host_access_justification.startsWith('【1.5.20 补充') &&
   /仍 34 条/.test(listing.host_access_justification) &&
   /仍 9 项/.test(listing.host_access_justification));
-ok('逐项权限理由（storage / host_permissions）同步 1.5.19',
-  /1\.5\.19/.test(listing.permission_justifications.storage) &&
-  /1\.5\.19/.test(listing.permission_justifications.host_permissions));
-ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.19',
-  /1\.5\.19/.test(listing.data_use_disclosure.what_is_transmitted) &&
-  /1\.5\.19/.test(listing.data_use_disclosure.what_is_not_transmitted));
-ok('第三方接收方明确「无新增」', /【1\.5\.19】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
+ok('逐项权限理由（storage / host_permissions）同步 1.5.20',
+  /1\.5\.20/.test(listing.permission_justifications.storage) &&
+  /1\.5\.20/.test(listing.permission_justifications.host_permissions));
+ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.20',
+  /1\.5\.20/.test(listing.data_use_disclosure.what_is_transmitted) &&
+  /1\.5\.20/.test(listing.data_use_disclosure.what_is_not_transmitted));
+ok('第三方接收方明确「无新增」', /【1\.5\.20】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
 ok('credential_handling_note 说明 follow-capture 不读凭证',
   /follow-capture\.js/.test(listing.credential_handling_note) &&
   /不读取任何请求头/.test(listing.credential_handling_note));
-ok('data_usage_form_answers 以 1.5.19 补充开头', listing.data_usage_form_answers.startsWith('【1.5.19 补充】'));
-ok('发布清单指向 1.5.19 包 / 33 文件', listing.pre_submit_checklist.some((x) =>
-  /TapePost_1\.5\.19_store\.zip（33 文件/.test(x)));
+ok('data_usage_form_answers 以 1.5.20 补充开头', listing.data_usage_form_answers.startsWith('【1.5.20 补充】'));
+ok('发布清单指向 1.5.20 包 / 33 文件', listing.pre_submit_checklist.some((x) =>
+  /TapePost_1\.5\.20_store\.zip（33 文件/.test(x)));
 ok('发布清单新增关注分析核对项', listing.pre_submit_checklist.some((x) =>
   /只被动读取/.test(x) && /先预演后确认/.test(x)));
 privs.forEach((html, i) => {
-  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.19', /适用版本：1\.5\.19/.test(html));
-  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.19 关注分析段',
-    /1\.5\.19 X 关注关系分析/.test(html) && /不主动发起任何请求/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.20', /适用版本：1\.5\.20/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.20 关注分析段',
+    /1\.5\.20 X 关注关系分析/.test(html) && /不主动发起任何请求/.test(html));
   ok('隐私政策副本 ' + (i + 1) + ' 页脚日期已更新', /Last updated: 2026-11-19/.test(html));
 });
-ok('README 有 1.5.19 章节与 33 文件说明',
+ok('README 有 1.5.20 修复章节、1.5.19 功能章节与 33 文件说明',
+  /### 1\.5\.20：修复关注名单丢失/.test(readme) &&
   /### 1\.5\.19：新增 X 关注关系分析/.test(readme) && /33 个文件/.test(readme));
 ok('README 说明取关只点原生按钮、不调用写接口',
   /不调用 X 任何私有 \/ 公开写接口/.test(readme));
 if (tutorial) {
-  ok('Obsidian 教程版本同步 1.5.19', /version: 1\.5\.19/.test(tutorial) &&
-    /适用版本：\*\*v1\.5\.19\*\*/.test(tutorial));
+  ok('Obsidian 教程版本同步 1.5.20', /version: 1\.5\.20/.test(tutorial) &&
+    /适用版本：\*\*v1\.5\.20\*\*/.test(tutorial));
   ok('Obsidian 教程新增关注分析章节与 FAQ',
     /## 十二、进阶：X 关注关系分析/.test(tutorial) && /怎么看谁没回关我/.test(tutorial));
 } else {
@@ -384,11 +385,11 @@ ok('任务状态兜底不会露出英文 phase', /\|\| '任务状态'/.test(foll
 ok('采集完成提示用中文，不再直接输出 following / followers',
   /'采集完成：' \+ \(src === 'followers' \? '粉丝' : '关注中'\)/.test(bridge) &&
   !/'采集完成：' \+ src/.test(bridge));
-ok('品牌名与版本号作为专有名词保留', /v1\.5\.19/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
+ok('品牌名与版本号作为专有名词保留', /v1\.5\.20/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
 
 // ---------------------------------------------------------------- 7. 商店包
 console.log('== 7. 商店包 ==');
-const zipPath = path.join(DIR, 'store', 'TapePost_1.5.19_store.zip');
+const zipPath = path.join(DIR, 'store', 'TapePost_1.5.20_store.zip');
 if (fs.existsSync(zipPath)) {
   // 极简 zip 中央目录解析（沿用 test-tapeup-removed.js 的做法）
   const buf = fs.readFileSync(zipPath);
@@ -414,7 +415,7 @@ if (fs.existsSync(zipPath)) {
     const text = manEntry.method === 8
       ? zlib.inflateRawSync(manEntry.data).toString('utf8')
       : manEntry.data.toString('utf8');
-    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.19');
+    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.20');
   }
   ok('包内文件与工作区逐字节一致', NEW_FILES.every((f) => {
     const e = entries[f];
@@ -426,6 +427,211 @@ if (fs.existsSync(zipPath)) {
   console.log('  （包尚未生成，跳过 6 条 zip 断言）');
 }
 
-console.log('\n结果：' + passed + '/' + (passed + failed) +
-  (failed ? ' 通过，' + failed + ' 条失败' : ' 全部通过 ✓'));
-process.exit(failed ? 1 : 0);
+// ---------------------------------------------------------------- 8. 持久化离线模拟
+// 用真实 follow-bridge.js / follow.js 源码 + mock chrome.storage.local，复现用户
+// 反馈的「上次抓了一部分，重新打开粉丝分析就没有了」。纯离线，不联网、不碰 X。
+async function persistenceChecks() {
+  console.log('== 8. 持久化离线模拟 ==');
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function makeStore(initial) {
+    const db = Object.assign(Object.create(null), initial || {});
+    const listeners = [];
+    const runtime = {
+      lastError: null,
+      getManifest: () => ({ version: '1.5.20' }),
+      onMessage: { addListener() {} }
+    };
+    let failNext = 0;
+    const local = {
+      get(keys, cb) {
+        const out = {};
+        (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in db) out[k] = db[k]; });
+        setTimeout(() => cb(out), 0);
+      },
+      set(obj, cb) {
+        if (failNext > 0) {
+          failNext--;
+          runtime.lastError = { message: 'QUOTA_BYTES quota exceeded' };
+          setTimeout(() => { cb(); runtime.lastError = null; }, 0);
+          return;
+        }
+        const changes = {};
+        Object.keys(obj).forEach((k) => {
+          changes[k] = { oldValue: db[k], newValue: obj[k] };
+          db[k] = obj[k];
+        });
+        listeners.forEach((fn) => { try { fn(changes, 'local'); } catch (e) {} });
+        setTimeout(() => cb(), 0);
+      },
+      remove(keys, cb) {
+        (Array.isArray(keys) ? keys : [keys]).forEach((k) => delete db[k]);
+        if (cb) setTimeout(cb, 0);
+      }
+    };
+    return {
+      db,
+      chrome: {
+        storage: { local: local, onChanged: { addListener: (fn) => listeners.push(fn) } },
+        runtime: runtime,
+        tabs: {
+          query: (q, cb) => cb([]), create: (o, cb) => cb(null),
+          sendMessage: (id, msg, cb) => cb(null)
+        }
+      },
+      failOnce() { failNext = 1; }
+    };
+  }
+
+  function runBridge(store, pathname) {
+    const msgListeners = [];
+    const sent = [];
+    const sandbox = {
+      console: console, Promise: Promise, Date: Date, Math: Math, Object: Object,
+      Array: Array, String: String, Number: Number, RegExp: RegExp, JSON: JSON,
+      setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0,
+      chrome: store.chrome,
+      location: { pathname: pathname },
+      document: {
+        querySelector: () => null, querySelectorAll: () => [],
+        body: { scrollHeight: 0 }, documentElement: { scrollHeight: 0 },
+        addEventListener: () => {}
+      },
+      addEventListener: (type, fn) => { if (type === 'message') msgListeners.push(fn); },
+      postMessage: (msg) => sent.push(msg),
+      scrollTo: () => {}, scrollBy: () => {}
+    };
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+    sandbox.FollowCore = Core;
+    vm.createContext(sandbox);
+    vm.runInContext(read('follow-bridge.js'), sandbox);
+    // vm 里的 window 是 contextified 代理，事件源必须用沙箱内部拿到的同一个引用
+    const innerWindow = vm.runInContext('window', sandbox);
+    return {
+      emit(batches) {
+        msgListeners.forEach((fn) => fn({
+          source: innerWindow,
+          data: { __tapeFollow: true, type: 'TAPEFOLLOW_DATA', batches: batches }
+        }));
+      },
+      sent: sent
+    };
+  }
+
+  async function runPanel(store) {
+    const els = {};
+    const mk = (id) => ({
+      id: id, textContent: '', innerHTML: '', value: '', checked: false, disabled: false,
+      className: '', style: {}, handlers: {},
+      classList: { add() {}, remove() {}, contains() { return false; } },
+      addEventListener(t, fn) { (this.handlers[t] = this.handlers[t] || []).push(fn); },
+      removeEventListener() {}, querySelectorAll() { return []; },
+      querySelector() { return null; }, appendChild() {}, remove() {}, click() {}
+    });
+    const getEl = (id) => els[id] || (els[id] = mk(id));
+    const documentMock = {
+      getElementById: getEl, addEventListener() {}, createElement: () => mk('a'),
+      body: { appendChild() {} }, hidden: false
+    };
+    const sandbox = {
+      console: console, Promise: Promise, Date: Date, Math: Math, Object: Object,
+      Array: Array, String: String, Number: Number, RegExp: RegExp, JSON: JSON,
+      setTimeout: setTimeout, clearTimeout: clearTimeout,
+      chrome: store.chrome, document: documentMock,
+      window: { FollowCore: Core },
+      Blob: function () {}, URL: { createObjectURL: () => '', revokeObjectURL() {} }
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(read('follow.js'), sandbox);
+    await wait(90);
+    return { getEl: getEl };
+  }
+
+  const batch = (names, src) => [{
+    source: src, me: 'alice',
+    users: names.map((h) => ({ handle: h, name: h, followers: 10, friends: 5, tweets: 2 }))
+  }];
+  const namesOf = (db, src) => Object.keys(((db.followData || {})[src] || {}));
+
+  // 场景 1：采集中连抓两批，必须逐批立即落盘、增量合并
+  const s1 = makeStore({
+    followCapture: { status: 'running', target: 'following' },
+    followData: { me: 'alice', following: {}, followers: {},
+      updatedAt: { following: 0, followers: 0 }, savedAt: 0 }
+  });
+  const b1 = runBridge(s1, '/alice/following');
+  b1.emit(batch(['bob', 'carol'], 'following'));
+  await wait(30);
+  ok('模拟：第一批响应立即写进本机缓存', namesOf(s1.db, 'following').length === 2);
+  b1.emit(batch(['dave'], 'following'));
+  await wait(30);
+  ok('模拟：第二批增量合并，不覆盖前一批', namesOf(s1.db, 'following').length === 3);
+  ok('模拟：面板写入的 me 不被桥接覆盖', s1.db.followData.me === 'alice');
+  ok('模拟：每次落盘都刷新 savedAt', s1.db.followData.savedAt > 0);
+
+  // 场景 2：采集已结束后到达的尾批（旧版被 cap.status 门槛整批丢弃）
+  const s2 = makeStore({ followCapture: { status: 'done', target: 'following' } });
+  runBridge(s2, '/alice/following').emit(batch(['erin'], 'following'));
+  await wait(30);
+  ok('模拟：采集已结束后到达的尾批仍落盘', namesOf(s2.db, 'following').length === 1);
+
+  // 场景 3：状态里的目标页与当前页面不一致时，按当前页面来源落盘
+  const s3 = makeStore({ followCapture: { status: 'running', target: 'followers' } });
+  runBridge(s3, '/alice/following').emit(batch(['frank'], 'following'));
+  await wait(30);
+  ok('模拟：状态目标不一致时仍按页面来源落盘', namesOf(s3.db, 'following').length === 1);
+
+  // 场景 4：写入失败后保留内存副本，下一批一起补写
+  const s4 = makeStore({ followCapture: { status: 'running', target: 'following' } });
+  const b4 = runBridge(s4, '/alice/following');
+  s4.failOnce();
+  b4.emit(batch(['gina'], 'following'));
+  await wait(30);
+  ok('模拟：写入失败时不谎报成功', namesOf(s4.db, 'following').length === 0);
+  b4.emit(batch(['hank'], 'following'));
+  await wait(50);
+  ok('模拟：下一批把失败批次一起补写', namesOf(s4.db, 'following').indexOf('gina') !== -1 &&
+    namesOf(s4.db, 'following').indexOf('hank') !== -1);
+  ok('模拟：写入失败原因写进采集状态供面板提示',
+    /QUOTA/.test(String((s4.db.followCapture || {}).storageError || '')));
+
+  // 场景 5：用户关掉面板再重新打开 —— 名单必须还在，且卡住的采集中断但不丢数据
+  const reopen = makeStore(s1.db);
+  const p1 = await runPanel(reopen);
+  ok('模拟：重新打开面板仍显示已抓到的 3 人', p1.getEl('cntFollowing').textContent === '3');
+  ok('模拟：面板显示实时保存提示', /实时保存/.test(p1.getEl('saveHint').textContent));
+  ok('模拟：卡住的采集标为中断、名单完整保留',
+    /上次采集中断/.test(p1.getEl('capStatus').textContent) &&
+    namesOf(reopen.db, 'following').length === 3);
+
+  // 场景 6：面板点「保存用户名」不能拿旧快照覆盖桥接层刚写的人
+  p1.getEl('meHandle').value = 'alice2';
+  const saveHandlers = p1.getEl('saveMe').handlers.click || [];
+  if (saveHandlers.length) await saveHandlers[0]();
+  await wait(50);
+  ok('模拟：面板保存用户名后名单仍完整', namesOf(reopen.db, 'following').length === 3);
+  ok('模拟：面板保存用户名采用先读后写', reopen.db.followData.me === 'alice2');
+
+  // 静态不变量
+  ok('桥接层已去掉「只有 running 才落盘」的门槛',
+    !/cap\.status !== 'running'/.test(bridge) && /无条件立即落盘/.test(bridge));
+  ok('桥接层用内存副本 + storage 最新值合并', /function mergeData/.test(bridge) &&
+    /function persistData/.test(bridge));
+  ok('MAIN 采集器卸载前 flush 尾批', /pagehide/.test(capture) && /flushNow/.test(capture));
+  ok('面板写数据先读最新再合并', /async function writeData/.test(followJs) &&
+    /先读最新再合并/.test(followJs));
+  ok('面板检测卡住的 running 并保留名单', /recoverStaleCapture/.test(followJs) &&
+    /interrupted/.test(followJs));
+  ok('面板有实时保存提示元素', /id="saveHint"/.test(followHtml) && /saveHint/.test(followJs));
+}
+
+persistenceChecks().then(function () {
+  console.log('\n结果：' + passed + '/' + (passed + failed) +
+    (failed ? ' 通过，' + failed + ' 条失败' : ' 全部通过 ✓'));
+  process.exit(failed ? 1 : 0);
+}).catch(function (e) {
+  console.log('  FAIL  持久化模拟异常：' + (e && e.stack || e));
+  console.log('\n结果：' + passed + '/' + (passed + failed + 1) + ' 通过，' + (failed + 1) + ' 条失败');
+  process.exit(1);
+});

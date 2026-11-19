@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>TapePost信仰者工具 · X 关注关系分析</title>
   <style>
-    /* ===== TapePost Design System · 1.5.10 / 关注分析面板 1.5.19 ===== */
+    /* ===== TapePost Design System · 1.5.10 / 关注分析面板 1.5.20 ===== */
     :root {
       --brand-600:#e8622c; --brand-500:#ff8a3d; --brand-400:#ffb08a; --brand-300:#ffd6bd;
       --grad-brand:linear-gradient(92deg,#ffe14d,#ff9a3d 45%,#ff5f4d);
@@ -206,7 +206,7 @@
       <div class="logo">T</div>
       <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span>
         <span class="h1-sep">/</span><span class="h1-page">X 关注关系分析</span></h1>
-      <span class="ver" id="followVer">v1.5.19</span>
+      <span class="ver" id="followVer">v1.5.20</span>
     </div>
     <p class="sub">分析你在 X（x.com）上的关注与粉丝：谁没回关、谁等你回关、谁已互关；
       点统计卡或分类看明细，勾选后可限速批量取关。全程只在本机计算，不上传任何数据。</p>
@@ -214,7 +214,7 @@
       <b>隐私与边界</b>
       <ul>
         <li>名单来自 <b>X 网页客户端自己加载出来的</b>「关注中 / 粉丝」分页数据，扩展只被动读取，<b>不额外发请求、不读取登录凭证、不调用任何私有写接口</b>。</li>
-        <li>公开主页资料（用户名、昵称、粉丝数等）只存在本机 <code>chrome.storage.local</code>，不经过 TapePost 服务器或任何第三方。</li>
+        <li>公开主页资料（用户名、昵称、粉丝数等）只存在本机 <code>chrome.storage.local</code>，不经过 TapePost 服务器或任何第三方；<b>每批数据立即写盘</b>，关闭面板 / 中途停止都不丢，重新打开自动恢复并可断点续采。</li>
         <li>批量取关是唯一写操作：只点击 X 页面上该账号那一行的原生「正在关注」按钮，先预演、需你确认、限速执行、可随时暂停/停止。</li>
       </ul>
     </div>
@@ -253,6 +253,7 @@
       </div>
     </div>
     <div class="status" id="capStatus">尚未采集。请先确认已登录 x.com，再点上面两个按钮；采集期间请保持标签页在前台或可见。</div>
+    <p class="hint" id="saveHint">数据每一批都会立即写入本机缓存，关闭面板或中途停止都不会丢；下次打开自动恢复，点「继续采集」可从已保存的名单往下补。</p>
   </section>
 
   <!-- 2. 统计 -->
