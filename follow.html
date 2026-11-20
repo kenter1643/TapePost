@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>TapePost信仰者工具 · X 关注关系分析</title>
   <style>
-    /* ===== TapePost Design System · 1.5.10 / 关注分析面板 1.5.20 ===== */
+    /* ===== TapePost Design System · 1.5.10 / 关注分析面板 1.5.21 ===== */
     :root {
       --brand-600:#e8622c; --brand-500:#ff8a3d; --brand-400:#ffb08a; --brand-300:#ffd6bd;
       --grad-brand:linear-gradient(92deg,#ffe14d,#ff9a3d 45%,#ff5f4d);
@@ -91,6 +91,12 @@
     h2 .badge { font-size:var(--fs-micro); font-weight:700; color:var(--brand-300);
       border:1px solid var(--border-brand); border-radius:var(--r-pill); padding:1px var(--sp-2); background:var(--amber-bg); }
     .hint { color:var(--text-3); font-size:var(--fs-caption); line-height:1.6; }
+    #draftHint:empty { display:none; }
+    #draftHint { margin-top:var(--sp-2); padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm); }
+    .hint.draft-ok { color:var(--green-soft); background:var(--green-bg);
+      border:1px solid rgba(52,211,153,.42); }
+    .hint.draft-warn { color:var(--amber); background:var(--amber-bg);
+      border:1px solid rgba(255,138,61,.42); }
     .row { display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; margin:var(--sp-3) 0; }
     .grow { flex:1 1 220px; min-width:0; }
     input[type=text],input[type=number],select { font-size:var(--fs-form); padding:var(--sp-2) var(--sp-3);
@@ -206,7 +212,7 @@
       <div class="logo">T</div>
       <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span>
         <span class="h1-sep">/</span><span class="h1-page">X 关注关系分析</span></h1>
-      <span class="ver" id="followVer">v1.5.20</span>
+      <span class="ver" id="followVer">v1.5.21</span>
     </div>
     <p class="sub">分析你在 X（x.com）上的关注与粉丝：谁没回关、谁等你回关、谁已互关；
       点统计卡或分类看明细，勾选后可限速批量取关。全程只在本机计算，不上传任何数据。</p>
@@ -216,6 +222,7 @@
         <li>名单来自 <b>X 网页客户端自己加载出来的</b>「关注中 / 粉丝」分页数据，扩展只被动读取，<b>不额外发请求、不读取登录凭证、不调用任何私有写接口</b>。</li>
         <li>公开主页资料（用户名、昵称、粉丝数等）只存在本机 <code>chrome.storage.local</code>，不经过 TapePost 服务器或任何第三方；<b>每批数据立即写盘</b>，关闭面板 / 中途停止都不丢，重新打开自动恢复并可断点续采。</li>
         <li>批量取关是唯一写操作：只点击 X 页面上该账号那一行的原生「正在关注」按钮，先预演、需你确认、限速执行、可随时暂停/停止。</li>
+        <li><b>1.5.21 页面内扫描浮层</b>：X 的「关注中 / 粉丝」页右侧会出现全中文「互关管理」小面板，可全量扫描 / 增量续扫 / 停止，并在列表里标红未回关（可随时关闭）。它同样<b>只被动读取 X 自己加载的数据、不额外发请求、不读凭证</b>；「从当前位置选未回关」只把账号带入本面板供你勾选，<b>不会自动取关</b>；扫描不会删除已保存的名单。</li>
       </ul>
     </div>
   </header>
@@ -254,6 +261,8 @@
     </div>
     <div class="status" id="capStatus">尚未采集。请先确认已登录 x.com，再点上面两个按钮；采集期间请保持标签页在前台或可见。</div>
     <p class="hint" id="saveHint">数据每一批都会立即写入本机缓存，关闭面板或中途停止都不会丢；下次打开自动恢复，点「继续采集」可从已保存的名单往下补。</p>
+    <p class="hint" id="draftHint"></p>
+    <p class="hint">1.5.21 起也可以直接在 X 的「关注中 / 粉丝」页右侧用全中文「互关管理」扫描浮层：全量扫描 / 增量续扫 / 停止 / 列表标红，同样每批实时写盘；浮层里点「从当前位置选未回关」会把账号带到这里，仍需你预演并确认后才会取关。</p>
   </section>
 
   <!-- 2. 统计 -->

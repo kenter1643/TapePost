@@ -1,4 +1,4 @@
-/* TapePost 1.5.20 · X 关注关系分析专项自检
+/* TapePost 1.5.21 · X 关注关系分析 / X 页面内扫描浮层专项自检
  *
  * 覆盖：接线与版本、合规资料、通用用户提取器、集合 / 分类、白名单与预演、
  * 安全不变量（不主动发请求 / 不读凭证 / 取关需确认 / 定位失败自动停机）、
@@ -36,6 +36,9 @@ const followJs = read('follow.js');
 const capture = read('follow-capture.js');
 const bridge = read('follow-bridge.js');
 const coreSrc = read('follow-core.js');
+const overlayJs = read('follow-overlay.js');
+const overlayCss = read('follow-overlay.css');
+const bgSrc = read('background.js');
 const readme = read('README.md');
 const privs = [
   read('docs/privacy.html'),
@@ -46,11 +49,12 @@ const tutorialPath = '/Users/kentermacbook/Documents/Obsidian Vault/文章创作
 const tutorial = fs.existsSync(tutorialPath) ? fs.readFileSync(tutorialPath, 'utf8') : '';
 
 const NEW_FILES = ['follow-core.js', 'follow-capture.js', 'follow-bridge.js', 'follow.html', 'follow.js'];
+const OVERLAY_FILES = ['follow-overlay.js', 'follow-overlay.css'];
 
 // ---------------------------------------------------------------- 1. 版本与接线
 console.log('== 1. 版本与接线 ==');
-eq('manifest 版本', manifest.version, '1.5.20');
-eq('listing 版本', listing.version, '1.5.20');
+eq('manifest 版本', manifest.version, '1.5.21');
+eq('listing 版本', listing.version, '1.5.21');
 ok('manifest.description ≤132 且含关注分析', manifest.description.length <= 132 &&
   /关注互关分析/.test(manifest.description));
 ok('listing.summary_132 ≤132 且含关注分析', listing.summary_132.length <= 132 &&
@@ -81,7 +85,19 @@ ok('新增段以 follow-core.js 打头再注入 follow-bridge.js', (() => {
   const js = manifest.content_scripts[2].js;
   return js[0] === 'follow-core.js' && js[1] === 'follow-bridge.js';
 })());
-NEW_FILES.forEach((f) => ok('新运行时文件存在 ' + f, exists(f)));
+NEW_FILES.concat(OVERLAY_FILES).forEach((f) => ok('新运行时文件存在 ' + f, exists(f)));
+ok('第三段注入 follow-overlay.js 与 follow-overlay.css', (() => {
+  const c = manifest.content_scripts[2];
+  return c.js.includes('follow-overlay.js') && (c.css || []).includes('follow-overlay.css');
+})());
+ok('浮层是静态 content_scripts，不走动态注入路径',
+  /follow-overlay\.js/.test(JSON.stringify(manifest.content_scripts)) &&
+  !/executeScript/.test(overlayJs) && !/insertCSS/.test(overlayJs));
+ok('第三段仍以 core / bridge 打头，浮层排在最后', (() => {
+  const js = manifest.content_scripts[2].js;
+  return js[0] === 'follow-core.js' && js[1] === 'follow-bridge.js' &&
+    js[js.length - 1] === 'follow-overlay.js';
+})());
 ok('弹窗有关注分析入口按钮', /id="openFollow"/.test(popHtml) &&
   /X 关注关系分析/.test(popHtml));
 ok('互关管理主入口固定在品牌头正下方、行情面板之前', (() => {
@@ -108,9 +124,9 @@ ok('README / 教程 / 上架资料 / 隐私政策口径同步为「互关管理�
 ok('popup.js 打开 follow.html', /getURL\('follow\.html'\)/.test(popJs));
 ok('follow.html 先引 core 再引面板脚本',
   followHtml.indexOf('<script src="follow-core.js"></script>') < followHtml.indexOf('<script src="follow.js"></script>'));
-ok('follow.html 版本兜底 v1.5.20', /v1\.5\.20/.test(followHtml));
-ok('四处 UI 兜底统一 v1.5.20', /v1\.5\.20/.test(popHtml) && /v1\.5\.20/.test(panelHtml) &&
-  /v1\.5\.20/.test(contentJs) && /v1\.5\.20/.test(popJs));
+ok('follow.html 版本兜底 v1.5.21', /v1\.5\.21/.test(followHtml));
+ok('四处 UI 兜底统一 v1.5.21', /v1\.5\.21/.test(popHtml) && /v1\.5\.21/.test(panelHtml) &&
+  /v1\.5\.21/.test(contentJs) && /v1\.5\.21/.test(popJs));
 ok('两段 Dashboard justification 仍 ≤1000 且 en_chars 对得上',
   listing.dashboard_permission_justifications.fields.every((f) =>
     f.en.length <= 1000 && f.en_chars === f.en.length));
@@ -119,51 +135,59 @@ ok('consistency_note 已说明 follow-capture.js 是静态 MAIN world 脚本',
 
 // ---------------------------------------------------------------- 2. 合规资料
 console.log('== 2. 合规资料与文档 ==');
-ok('详细描述首条为 1.5.20，第二条保留 1.5.19',
-  String(listing.detailed_description[0]).startsWith('【1.5.20') &&
-  String(listing.detailed_description[1]).startsWith('【1.5.19'));
+ok('详细描述首条为 1.5.21，第二条保留 1.5.20 / 第三条 1.5.19',
+  String(listing.detailed_description[0]).startsWith('【1.5.21') &&
+  String(listing.detailed_description[1]).startsWith('【1.5.20') &&
+  String(listing.detailed_description[2]).startsWith('【1.5.19'));
 ok('详细描述含「不主动发任何请求 / 不读取登录凭证 / 只存本机」',
   /不主动发任何请求/.test(listing.detailed_description[0]) &&
   /不读取 Authorization/.test(listing.detailed_description[0]) &&
   /只存本机/.test(listing.detailed_description[0]));
-ok('single_purpose 增列 1.5.20', /1\.5\.20/.test(listing.single_purpose));
-ok('主机访问理由以 1.5.20 补充开头且仍写 34 条 / 9 项',
-  listing.host_access_justification.startsWith('【1.5.20 补充') &&
+ok('single_purpose 增列 1.5.21', /1\.5\.21/.test(listing.single_purpose));
+ok('主机访问理由以 1.5.21 补充开头且仍写 34 条 / 9 项',
+  listing.host_access_justification.startsWith('【1.5.21 补充') &&
   /仍 34 条/.test(listing.host_access_justification) &&
   /仍 9 项/.test(listing.host_access_justification));
-ok('逐项权限理由（storage / host_permissions）同步 1.5.20',
-  /1\.5\.20/.test(listing.permission_justifications.storage) &&
-  /1\.5\.20/.test(listing.permission_justifications.host_permissions));
-ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.20',
-  /1\.5\.20/.test(listing.data_use_disclosure.what_is_transmitted) &&
-  /1\.5\.20/.test(listing.data_use_disclosure.what_is_not_transmitted));
-ok('第三方接收方明确「无新增」', /【1\.5\.20】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
-ok('credential_handling_note 说明 follow-capture 不读凭证',
+ok('逐项权限理由（storage / host_permissions）同步 1.5.21',
+  /1\.5\.21/.test(listing.permission_justifications.storage) &&
+  /1\.5\.21/.test(listing.permission_justifications.host_permissions));
+ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.21',
+  /1\.5\.21/.test(listing.data_use_disclosure.what_is_transmitted) &&
+  /1\.5\.21/.test(listing.data_use_disclosure.what_is_not_transmitted));
+ok('第三方接收方明确「无新增」', /【1\.5\.21】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
+ok('credential_handling_note 说明 follow-capture / follow-overlay 不读凭证',
   /follow-capture\.js/.test(listing.credential_handling_note) &&
+  /follow-overlay\.js/.test(listing.credential_handling_note) &&
   /不读取任何请求头/.test(listing.credential_handling_note));
-ok('data_usage_form_answers 以 1.5.20 补充开头', listing.data_usage_form_answers.startsWith('【1.5.20 补充】'));
-ok('发布清单指向 1.5.20 包 / 33 文件', listing.pre_submit_checklist.some((x) =>
-  /TapePost_1\.5\.20_store\.zip（33 文件/.test(x)));
+ok('data_usage_form_answers 以 1.5.21 补充开头', listing.data_usage_form_answers.startsWith('【1.5.21 补充】'));
+ok('发布清单指向 1.5.21 包 / 35 文件', listing.pre_submit_checklist.some((x) =>
+  /TapePost_1\.5\.21_store\.zip（35 文件/.test(x)));
+ok('发布清单新增页面扫描浮层核对项', listing.pre_submit_checklist.some((x) =>
+  /页面内扫描浮层/.test(x) && /绝不自动取关/.test(x)));
 ok('发布清单新增关注分析核对项', listing.pre_submit_checklist.some((x) =>
   /只被动读取/.test(x) && /先预演后确认/.test(x)));
 privs.forEach((html, i) => {
-  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.20', /适用版本：1\.5\.20/.test(html));
-  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.20 关注分析段',
-    /1\.5\.20 X 关注关系分析/.test(html) && /不主动发起任何请求/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.21', /适用版本：1\.5\.21/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.21 页面扫描浮层段',
+    /1\.5\.21 X 页面内中文扫描浮层/.test(html) && /不主动发起任何请求/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 保留 1.5.20 实时落盘段', /1\.5\.20 X 关注关系分析/.test(html));
   ok('隐私政策副本 ' + (i + 1) + ' 页脚日期已更新', /Last updated: 2026-11-19/.test(html));
 });
-ok('README 有 1.5.20 修复章节、1.5.19 功能章节与 33 文件说明',
+ok('README 有 1.5.21 浮层章节、1.5.20 修复章节、1.5.19 功能章节与 35 文件说明',
+  /### 1\.5\.21：X 页面内中文/.test(readme) &&
   /### 1\.5\.20：修复关注名单丢失/.test(readme) &&
-  /### 1\.5\.19：新增 X 关注关系分析/.test(readme) && /33 个文件/.test(readme));
+  /### 1\.5\.19：新增 X 关注关系分析/.test(readme) && /35 个文件/.test(readme));
 ok('README 说明取关只点原生按钮、不调用写接口',
   /不调用 X 任何私有 \/ 公开写接口/.test(readme));
 if (tutorial) {
-  ok('Obsidian 教程版本同步 1.5.20', /version: 1\.5\.20/.test(tutorial) &&
-    /适用版本：\*\*v1\.5\.20\*\*/.test(tutorial));
+  ok('Obsidian 教程版本同步 1.5.21', /version: 1\.5\.21/.test(tutorial) &&
+    /适用版本：\*\*v1\.5\.21\*\*/.test(tutorial));
   ok('Obsidian 教程新增关注分析章节与 FAQ',
     /## 十二、进阶：X 关注关系分析/.test(tutorial) && /怎么看谁没回关我/.test(tutorial));
+  ok('Obsidian 教程新增页面扫描浮层章节与 FAQ',
+    /### 1\.5\.21 新玩法/.test(tutorial) && /别的扩展的 Scan 面板全是英文/.test(tutorial));
 } else {
-  console.log('  （未找到 Obsidian 教程，跳过 2 条）');
+  console.log('  （未找到 Obsidian 教程，跳过 3 条）');
 }
 
 // ---------------------------------------------------------------- 3. 用户提取器
@@ -385,11 +409,11 @@ ok('任务状态兜底不会露出英文 phase', /\|\| '任务状态'/.test(foll
 ok('采集完成提示用中文，不再直接输出 following / followers',
   /'采集完成：' \+ \(src === 'followers' \? '粉丝' : '关注中'\)/.test(bridge) &&
   !/'采集完成：' \+ src/.test(bridge));
-ok('品牌名与版本号作为专有名词保留', /v1\.5\.20/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
+ok('品牌名与版本号作为专有名词保留', /v1\.5\.21/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
 
 // ---------------------------------------------------------------- 7. 商店包
 console.log('== 7. 商店包 ==');
-const zipPath = path.join(DIR, 'store', 'TapePost_1.5.20_store.zip');
+const zipPath = path.join(DIR, 'store', 'TapePost_1.5.21_store.zip');
 if (fs.existsSync(zipPath)) {
   // 极简 zip 中央目录解析（沿用 test-tapeup-removed.js 的做法）
   const buf = fs.readFileSync(zipPath);
@@ -406,8 +430,8 @@ if (fs.existsSync(zipPath)) {
     off = start + csize;
   }
   const names = Object.keys(entries);
-  eq('商店包 33 文件', names.length, 33);
-  ok('五个新运行时文件都进包', NEW_FILES.every((f) => names.includes(f)));
+  eq('商店包 35 文件', names.length, 35);
+  ok('七个新运行时文件都进包', NEW_FILES.concat(OVERLAY_FILES).every((f) => names.includes(f)));
   ok('测试脚本不进包', names.every((n) => !n.startsWith('test-')));
   ok('根目录即 manifest.json', names.includes('manifest.json'));
   const manEntry = entries['manifest.json'];
@@ -415,9 +439,9 @@ if (fs.existsSync(zipPath)) {
     const text = manEntry.method === 8
       ? zlib.inflateRawSync(manEntry.data).toString('utf8')
       : manEntry.data.toString('utf8');
-    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.20');
+    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.21');
   }
-  ok('包内文件与工作区逐字节一致', NEW_FILES.every((f) => {
+  ok('包内文件与工作区逐字节一致', NEW_FILES.concat(OVERLAY_FILES).every((f) => {
     const e = entries[f];
     if (!e) return false;
     const data = e.method === 8 ? zlib.inflateRawSync(e.data) : e.data;
@@ -439,7 +463,7 @@ async function persistenceChecks() {
     const listeners = [];
     const runtime = {
       lastError: null,
-      getManifest: () => ({ version: '1.5.20' }),
+      getManifest: () => ({ version: '1.5.21' }),
       onMessage: { addListener() {} }
     };
     let failNext = 0;
@@ -626,7 +650,212 @@ async function persistenceChecks() {
   ok('面板有实时保存提示元素', /id="saveHint"/.test(followHtml) && /saveHint/.test(followJs));
 }
 
-persistenceChecks().then(function () {
+
+// ---------------------------------------------------------------- 9. 页面内扫描浮层离线模拟
+// 用真实 follow-overlay.js 源码 + mock chrome.storage.local / DOM，复现页面内
+// 「全量扫描 / 增量续扫 / 标红 / 带入待选」全链路。纯离线，不联网、不碰 X。
+function fakeCell(handle) {
+  const anchor = { getAttribute: () => '/' + handle, parentNode: { appendChild() {} } };
+  const classes = [];
+  return {
+    classes: classes,
+    querySelectorAll: () => [anchor],
+    querySelector: () => null,
+    classList: { add: (c) => classes.push(c), remove: (c) => {
+      const i = classes.indexOf(c); if (i >= 0) classes.splice(i, 1);
+    } },
+    appendChild() {}
+  };
+}
+function makeOverlayEl(id, created) {
+  return {
+    id: id, innerHTML: '', textContent: '', className: '', checked: false, disabled: false,
+    style: {}, handlers: {}, parentNode: { appendChild() {} },
+    classList: { add() {}, remove() {} },
+    addEventListener(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn); },
+    appendChild() {}, setAttribute() {}, getAttribute() { return ''; },
+    querySelector() { return null; }, querySelectorAll() { return []; }
+  };
+}
+function runOverlay(db, pathname, cells) {
+  const els = {};
+  const created = [];
+  ['tpfFold', 'tpfFull', 'tpfResume', 'tpfStop', 'tpfPick', 'tpfMark',
+    'tpfPanelLink', 'tpfHint', 'tpfStat', 'tpfBar'].forEach((id) => {
+    els[id] = makeOverlayEl(id, created);
+  });
+  const store = {
+    get(keys, cb) {
+      const out = {};
+      (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in db) out[k] = db[k]; });
+      cb(out);
+    },
+    set(obj, cb) { Object.keys(obj).forEach((k) => { db[k] = obj[k]; }); cb(); },
+    remove(keys, cb) { (Array.isArray(keys) ? keys : [keys]).forEach((k) => delete db[k]); if (cb) cb(); }
+  };
+  const doc = {
+    body: { appendChild() {} }, documentElement: { appendChild() {} }, hidden: false,
+    getElementById: (id) => els[id] || null,
+    createElement: (tag) => { const e = makeOverlayEl(tag, created); created.push(e); return e; },
+    querySelector: () => null,
+    querySelectorAll: (sel) => (sel === '[data-testid="UserCell"]' ? (cells || []) : []),
+    addEventListener() {}
+  };
+  const sent = [];
+  const sandbox = {
+    window: { FollowCore: Core, open: () => ({}) },
+    document: doc,
+    location: { pathname: pathname },
+    chrome: {
+      storage: { local: store, onChanged: { addListener() {} } },
+      runtime: {
+        getURL: (f) => 'chrome-extension://test/' + f,
+        sendMessage: (m, cb) => { sent.push(m); if (cb) cb(); }
+      }
+    },
+    console: console,
+    setInterval: () => 1, clearInterval: () => {},
+    setTimeout: () => 1, clearTimeout: () => {}
+  };
+  sandbox.window.location = sandbox.location;
+  vm.createContext(sandbox);
+  vm.runInContext(overlayJs, sandbox, { filename: 'follow-overlay.js' });
+  return { db: db, els: els, created: created, sent: sent,
+    Pure: vm.runInContext('window.TapeFollowOverlay', sandbox) };
+}
+
+async function overlayChecks() {
+  console.log('== 9. 页面内扫描浮层离线模拟 ==');
+  const overlayCode = overlayJs.slice(overlayJs.indexOf('(function ()'))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const db = Object.create(null);
+  db.followData = {
+    me: 'alice',
+    following: { bob: { handle: 'bob' }, carol: { handle: 'carol' } },
+    followers: { carol: { handle: 'carol' }, dave: { handle: 'dave' } }
+  };
+  const cells = [fakeCell('bob'), fakeCell('carol')];
+  const ov = runOverlay(db, '/alice/following', cells);
+  const click = (id) => {
+    const hs = ov.els[id].handlers.click || [];
+    return hs.length ? hs[0]() : Promise.resolve();
+  };
+  await Promise.resolve(); await Promise.resolve();
+
+  ok('模拟：浮层在 /following 页建起来并渲染中文状态',
+    /本机已存/.test(ov.els.tpfStat.innerHTML) && /4/.test(ov.els.tpfStat.innerHTML));
+  ok('模拟：只认 following / followers 路径，其它页面不出现',
+    ov.Pure.pageSource('/alice/following') === 'following' &&
+    ov.Pure.pageSource('/alice/followers') === 'followers' &&
+    ov.Pure.pageSource('/home') === '');
+  ok('模拟：句柄解析过滤 X 保留路径',
+    ov.Pure.handleFromHref('/Bob') === 'bob' &&
+    ov.Pure.handleFromHref('/i/flow/login') === '' &&
+    ov.Pure.handleFromHref('/home') === '');
+  ok('模拟：粉丝名单为空时绝不标红', ov.Pure.shouldMark({ bob: {} }, {}) === false);
+  ok('模拟：两份名单齐了才算未回关（bob 标、carol 不标）', (() => {
+    const nb = ov.Pure.notBackHandles(
+      { bob: { handle: 'bob' }, carol: { handle: 'carol' } },
+      { carol: { handle: 'carol' }, dave: { handle: 'dave' } });
+    return !!nb.bob && !nb.carol;
+  })());
+  ok('模拟：增量续扫无锚点自动退回全量',
+    ov.Pure.buildCapture({ mode: 'incremental', source: 'following', now: 1000 }).mode === 'full');
+  ok('模拟：锚点来源不一致时退回全量',
+    ov.Pure.buildCapture({ mode: 'incremental', source: 'following', me: 'alice', now: 1000,
+      anchor: { source: 'followers', savedAt: 900, me: 'alice' } }).mode === 'full');
+  ok('模拟：锚点账号不一致时退回全量',
+    ov.Pure.buildCapture({ mode: 'incremental', source: 'following', me: 'alice', now: 1000,
+      anchor: { source: 'following', savedAt: 900, me: 'bob' } }).mode === 'full');
+  ok('模拟：有效锚点保留增量且起点人数沿用已存', (() => {
+    const c = ov.Pure.buildCapture({ mode: 'incremental', source: 'following', me: 'alice',
+      now: 1000, had: 12, anchor: { source: 'following', savedAt: 900, me: 'alice', count: 12 } });
+    return c.mode === 'incremental' && c.count === 12 && c.resumedFrom === 12;
+  })());
+  ok('模拟：待选草稿小写去重、带来源与时间戳', (() => {
+    const d = ov.Pure.buildDraft(['Bob', 'bob', 'CAROL', ''], 'following', 1234);
+    return d.handles.length === 2 && d.handles[0] === 'bob' && d.handles[1] === 'carol' &&
+      d.source === 'following' && d.from === 'overlay' && d.at === 1234;
+  })());
+  ok('模拟：状态文案全中文且显示两份名单人数',
+    /本机已存/.test(ov.Pure.statusText({ status: 'running', scrolls: 3 },
+      { following: 2, followers: 2 })) &&
+    !/Scan|Following|Followers/i.test(ov.Pure.statusText({}, { following: 1, followers: 1 })));
+
+  await click('tpfFull');
+  ok('模拟：点「全量扫描」只写 followCapture，不删已存名单',
+    db.followCapture && db.followCapture.mode === 'full' &&
+    db.followCapture.status === 'running' && db.followCapture.target === 'following' &&
+    db.followCapture.count === 2 && Object.keys(db.followData.following).length === 2);
+  ok('模拟：浮层不写 followTask / 不设 confirmed',
+    !('followTask' in db) && !/confirmed/.test(JSON.stringify(db.followCapture || {})));
+
+  db.followScanAnchor = { source: 'following', me: 'alice', scrollY: 1200,
+    count: 2, savedAt: Date.now() };
+  await click('tpfResume');
+  ok('模拟：点「增量续扫」按锚点保留 incremental',
+    db.followCapture.mode === 'incremental' && db.followCapture.resumedFrom === 2);
+
+  await click('tpfStop');
+  ok('模拟：点「停止」只改状态，名单完整保留',
+    db.followCapture.status === 'stopped' && Object.keys(db.followData.following).length === 2);
+
+  // 打开「标红」开关：只有 bob 是未回关，carol 不应被标
+  const ch = ov.els.tpfMark.handlers.change || [];
+  if (ch.length) ch[0]({ target: { checked: true } });
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  ok('模拟：标红开关只给未回关行加类 / 徽标',
+    cells[0].classes.indexOf('tpf-row-notback') !== -1 &&
+    cells[1].classes.indexOf('tpf-row-notback') === -1 &&
+    ov.created.some((e) => e.className === 'tpf-badge' && e.textContent === '未回关'));
+  ok('模拟：标红开关状态只存本机',
+    db.followOverlayUi && db.followOverlayUi.markEnabled === true);
+
+  await click('tpfPick');
+  ok('模拟：「从当前位置选未回关」只写一次性待选草稿',
+    db.followSelectionDraft && db.followSelectionDraft.from === 'overlay' &&
+    db.followSelectionDraft.handles.indexOf('bob') !== -1 &&
+    db.followSelectionDraft.handles.indexOf('carol') === -1);
+  ok('模拟：带入待选后仍没有取关任务',
+    !('followTask' in db) && !/confirmed/.test(JSON.stringify(db)));
+  ok('模拟：点「打开分析面板」只发扩展内部消息，不直接开扩展页', (() => {
+    ov.sent.length = 0;
+    const hs = ov.els.tpfPanelLink.handlers.click || [];
+    if (hs.length) hs[0]({ preventDefault() {} });
+    return ov.sent.length === 1 && ov.sent[0].type === 'TAPEFOLLOW_OPEN_PANEL' &&
+      !/window\.open\s*\(/.test(overlayCode);
+  })());
+
+  // 静态安全不变量
+  ok('浮层不 fetch / 不发 XHR / 不读凭证',
+    !/window\.fetch|\bfetch\s*\(|XMLHttpRequest|ct0|Authorization|document\.cookie/i.test(overlayCode));
+  ok('后台注册 TAPEFOLLOW_OPEN_PANEL，只打开扩展自己的 follow.html',
+    /TAPEFOLLOW_OPEN_PANEL/.test(bgSrc) &&
+    /getURL\('follow\.html'\)/.test(bgSrc) &&
+    /chrome\.tabs\.create/.test(bgSrc));
+  ok('浮层只写三个本机键，绝不写 followTask',
+    /followCapture/.test(overlayJs) && /followScanAnchor/.test(overlayJs) &&
+    /followSelectionDraft/.test(overlayJs) && !/followTask\s*:/.test(overlayJs) &&
+    !/confirmed\s*:/.test(overlayJs));
+  ok('浮层所有可见文案为中文（品牌名 / 技术标识符除外）',
+    /全量扫描/.test(overlayJs) && /增量续扫/.test(overlayJs) && /未回关/.test(overlayJs) &&
+    /打开分析面板/.test(overlayJs) && !/'Scan'|"Scan"/.test(overlayJs) &&
+    !/Followback Marker/.test(overlayJs.replace(/^[\s\S]*?\*\//, '')));
+  ok('浮层样式全部带 tpf- 前缀，不污染 X 页面全局选择器',
+    /#tpfOverlay/.test(overlayCss) && /\.tpf-/.test(overlayCss) &&
+    !/^\s*(body|html|a|button|div)\s*\{/m.test(overlayCss));
+  ok('桥接层支持 mode 与锚点，且面板无 mode 时行为不变',
+    /KEY_ANCHOR/.test(bridge) && /cap\.mode/.test(bridge) &&
+    /pendingScrollY/.test(bridge) && /行为与 1\.5\.20/.test(bridge));
+  ok('面板消费待选草稿但绝不自动确认取关',
+    /async function adoptDraft/.test(followJs) && /state\.selected\[k\] = true/.test(followJs) &&
+    /protectedReasons/.test(followJs) && /id="draftHint"/.test(followHtml));
+  ok('面板版本与提示同步 1.5.21',
+    /v1\.5\.21/.test(followHtml) && /页面内扫描浮层/.test(followHtml));
+}
+
+persistenceChecks().then(overlayChecks).then(function () {
   console.log('\n结果：' + passed + '/' + (passed + failed) +
     (failed ? ' 通过，' + failed + ' 条失败' : ' 全部通过 ✓'));
   process.exit(failed ? 1 : 0);

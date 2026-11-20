@@ -1,12 +1,14 @@
 /*
- * TapePost · 关注关系桥接与取关执行器（ISOLATED world，1.5.20）
+ * TapePost · 关注关系桥接与取关执行器（ISOLATED world，1.5.21）
  * ---------------------------------------------------------------
  * 职责：
  *   1) 收 MAIN world 的被动采集结果，合并进本机 chrome.storage.local；
  *   2) 用户点「开始采集」后，只滚动 X 自己的关注中 / 粉丝页，等 X 自己分页
  *      加载完（连续无新增即结束），全程不发额外请求；
  *   3) 批量取关：只点击 X 页面上「该用户那一行」的原生关注按钮，
- *      两级回退定位 + 文字校验 + 限速 + 暂停/停止 + 单批上限 + 白名单二次校验。
+ *      两级回退定位 + 文字校验 + 限速 + 暂停/停止 + 单批上限 + 白名单二次校验；
+ *   4) 1.5.21 页面内浮层：按 followCapture.mode 决定起始滚动位置，并维护
+ *      followScanAnchor 供「增量续扫」回到上次位置（名单始终不清空）。
  *
  * 安全不变量（任何改动都不能破）：
  *   - 不调用 X 的任何私有/公开写接口，不 fetch、不重放请求；
@@ -30,11 +32,15 @@
   var KEY_TASK = 'followTask';
   var KEY_WHITELIST = 'followWhitelist';
   var KEY_SETTINGS = 'followSettings';
+  var KEY_ANCHOR = 'followScanAnchor';
   var TICK_MS = 1500;
   var MAX_FAIL_STREAK = 3;
   var lastStoreError = '';
   var lastTickAt = 0;
   var memData = null;   // 内存副本：写入失败也能下批补写，不让已合并的名单丢掉
+  var memAnchor = null; // 增量续扫锚点（按当前 X 账号 / 列表记录上次扫描位置）
+  var appliedModeFor = 0;
+  var pendingScrollY = null;
 
   function wrap(key, val) { var o = {}; o[key] = val; return o; }
 
@@ -205,7 +211,48 @@
     }
   });
 
+  /* 1.5.21 页面内浮层的起始位置：
+   *   mode = full          → 先回到列表顶部再逐屏滚动（已有名单保留、自动去重）；
+   *   mode = incremental   → 先回到 followScanAnchor 记下的位置再往下补；
+   *   面板的 startCapture 不写 mode，pendingScrollY 一直是 null，行为与 1.5.20
+   *   完全一致（不额外跳位置），避免破坏既有的「继续采集」断点续采。
+   * 这一帧只定位、不额外滚动，防止一下跳过一屏漏采。 */
+  function applyScanMode(cap, src) {
+    if (!cap.mode || !cap.startedAt || appliedModeFor === cap.startedAt) return;
+    appliedModeFor = cap.startedAt;
+    if (cap.mode === 'full') { pendingScrollY = 0; return; }
+    if (cap.mode === 'incremental') {
+      var a = memAnchor;
+      pendingScrollY = (a && a.source === src && a.savedAt) ? (Number(a.scrollY) || 0) : 0;
+    }
+  }
+
+  /* 每批人数变化（或至少每 10 秒）记一次锚点，写入频率远低于名单落盘。
+   * 锚点只含本机公开资料的统计信息，不含任何凭证或页面内容。 */
+  function writeAnchor(src, data, cap) {
+    if (!src) return Promise.resolve(true);
+    var keys = Object.keys(data[src] || {});
+    var now = Date.now();
+    if (memAnchor && memAnchor.source === src && memAnchor.count === keys.length &&
+        now - (Number(memAnchor.savedAt) || 0) < 10000 && cap.status === 'running') {
+      return Promise.resolve(true);
+    }
+    var a = {
+      me: data.me || detectMe() || '', source: src,
+      scrollY: Math.round(Number(window.scrollY) || 0),
+      count: keys.length, lastHandle: keys.length ? keys[keys.length - 1] : '',
+      savedAt: now, mode: cap.mode || 'incremental'
+    };
+    memAnchor = a;
+    return storeSet(wrap(KEY_ANCHOR, a));
+  }
+
   function scrollOnce() {
+    if (pendingScrollY != null) {
+      try { window.scrollTo(0, pendingScrollY); } catch (e) {}
+      pendingScrollY = null;
+      return;
+    }
     try {
       var h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
       window.scrollTo(0, h);
@@ -241,6 +288,7 @@
         o.savedAt = data.savedAt || cap.savedAt || 0;
         if (cap.storageError) o.storageError = cap.storageError;
         o.me = data.me || detectMe() || cap.me || '';
+        applyScanMode(cap, src);
         scrollOnce();
         var tooLong = cap.startedAt && (Date.now() - cap.startedAt > Core.DEFAULTS.maxCaptureMs);
         if (o.idle >= Core.DEFAULTS.idleRounds || o.scrolls >= Core.DEFAULTS.maxScroll || tooLong) {
@@ -251,7 +299,9 @@
             (tooLong ? '（已达时间上限，可再点一次继续）' : '');
           postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
         }
-        return storeSet(wrap(KEY_CAPTURE, o));
+        return storeSet(wrap(KEY_CAPTURE, o)).then(function () {
+          return writeAnchor(src, data, o);
+        });
       });
     }).catch(function () {}).then(function () { captureBusy = false; });
   }
@@ -437,7 +487,11 @@
               following: Object.keys(d.following || {}).length,
               followers: Object.keys(d.followers || {}).length
             },
-            savedAt: d.savedAt || 0, storageError: lastStoreError, lastTickAt: lastTickAt });
+            savedAt: d.savedAt || 0, storageError: lastStoreError, lastTickAt: lastTickAt,
+            anchor: memAnchor ? {
+              source: memAnchor.source, count: memAnchor.count,
+              scrollY: memAnchor.scrollY, savedAt: memAnchor.savedAt
+            } : null });
         });
         return true;
       }
@@ -464,6 +518,7 @@
           !Object.keys(nd.followers || {}).length && !nd.savedAt);
         if (cleared) memData = null;
       }
+      if (changes[KEY_ANCHOR]) memAnchor = changes[KEY_ANCHOR].newValue || null;
       if (!changes[KEY_CAPTURE]) return;
       var c = changes[KEY_CAPTURE].newValue || {};
       var on = c.status === 'running' && c.target && c.target === pageSource();
@@ -474,7 +529,8 @@
   // 首帧问一次 MAIN 状态，并按已保存的采集状态立刻补发开关（页面刷新后也能续上）
   setTimeout(function () {
     postToMain({ type: 'TAPEFOLLOW_CMD', action: 'ping' });
-    storeGet([KEY_CAPTURE]).then(function (r) {
+    storeGet([KEY_CAPTURE, KEY_ANCHOR]).then(function (r) {
+      memAnchor = r[KEY_ANCHOR] || null;
       var c = r[KEY_CAPTURE] || {};
       var on = c.status === 'running' && c.target && c.target === pageSource();
       postToMain({ type: 'TAPEFOLLOW_CMD', action: on ? 'start' : 'stop' });

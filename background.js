@@ -28,6 +28,23 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   return false;
 });
 
+/* 1.5.21：X 页面内「互关管理」扫描浮层要打开独立分析面板。
+ * 内容脚本里 window.open('chrome-extension://…') 会被 Chrome 拦（清单也没有
+ * web_accessible_resources），所以改由扩展内部 runtime 消息请后台创建标签页。
+ * 只打开扩展自己的 follow.html，不访问任何外部网址、不读取页面内容、
+ * 不新增权限或数据流向；与 TAPE_WAKE 一样在文件顶部同步注册，保证 SW 冷启动
+ * 就有接收端。 */
+chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+  if (!msg || msg.type !== 'TAPEFOLLOW_OPEN_PANEL') return false;
+  try {
+    chrome.tabs.create({ url: chrome.runtime.getURL('follow.html'), active: true });
+    sendResponse({ ok: true });
+  } catch (e) {
+    try { sendResponse({ ok: false, error: String(e && e.message || e) }); } catch (e2) {}
+  }
+  return false;
+});
+
 // ---- 1. DNR：给图床注入 Referer ----
 /*
  * urlFilter 用 ||域名/ 的域名锚点写法：

@@ -1,0 +1,138 @@
+/* TapePost 1.5.21 · X 页面内「互关管理 / 扫描」浮层
+ * ---------------------------------------------------------------
+ * 所有选择器都带 tpf- 前缀或 #tpfOverlay 限定；只有用户打开「标红」开关后
+ * 才会给 X 自己的 UserCell 加 tpf-row-notback，关闭即刻清除。
+ * 浮层用固定深色卡片，保证 X 浅色 / 深色两种主题下都可读。
+ */
+#tpfOverlay {
+  position: fixed !important; right: 18px !important; bottom: 18px !important;
+  z-index: 2147483000 !important; width: 276px !important; max-width: calc(100vw - 36px) !important;
+  box-sizing: border-box !important; overflow: hidden !important;
+  border: 1px solid rgba(255, 138, 61, .45) !important;
+  border-radius: 14px !important;
+  background: linear-gradient(160deg, #1b1220 0%, #12101c 55%, #0d1018 100%) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .48), 0 0 0 1px rgba(255, 255, 255, .05) !important;
+  color: #f3f6fa !important;
+  font: 12px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+}
+#tpfOverlay * { box-sizing: border-box !important; }
+#tpfOverlay.tpf-collapsed .tpf-body { display: none !important; }
+
+.tpf-head {
+  display: flex !important; align-items: center !important; gap: 9px !important;
+  padding: 10px 12px !important; cursor: default !important;
+  background: linear-gradient(92deg, rgba(34, 211, 238, .16), rgba(167, 139, 250, .14)) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, .09) !important;
+}
+.tpf-logo {
+  flex: 0 0 auto !important; width: 26px !important; height: 26px !important;
+  border-radius: 8px !important; display: flex !important; align-items: center !important;
+  justify-content: center !important; font-weight: 800 !important; font-size: 15px !important;
+  color: #241206 !important; background: linear-gradient(92deg, #ffe14d, #ff9a3d 48%, #ff5f4d) !important;
+}
+.tpf-title { flex: 1 1 auto !important; min-width: 0 !important; }
+.tpf-title b { display: block !important; font-size: 12px !important; font-weight: 700 !important; color: #f3f6fa !important; }
+.tpf-title small { display: block !important; font-size: 10px !important; color: #aeb9c8 !important; }
+.tpf-fold {
+  flex: 0 0 auto !important; width: 24px !important; height: 24px !important; padding: 0 !important;
+  border: 1px solid rgba(255, 255, 255, .16) !important; border-radius: 6px !important;
+  background: rgba(255, 255, 255, .06) !important; color: #d3dbe7 !important;
+  font-size: 13px !important; line-height: 1 !important; cursor: pointer !important;
+}
+.tpf-fold:hover { background: rgba(255, 255, 255, .14) !important; }
+
+.tpf-body { padding: 10px 12px 12px !important; }
+.tpf-stat {
+  font-size: 11px !important; color: #d3dbe7 !important; line-height: 1.6 !important;
+  min-height: 34px !important;
+}
+.tpf-stat b { color: #ffd34d !important; font-weight: 700 !important; }
+.tpf-bar {
+  height: 5px !important; border-radius: 999px !important; overflow: hidden !important;
+  background: rgba(255, 255, 255, .09) !important; margin: 7px 0 10px !important;
+}
+.tpf-bar > i {
+  display: block !important; height: 100% !important; width: 0 !important;
+  background: linear-gradient(92deg, #22d3ee, #a78bfa 52%, #ff8a3d) !important;
+  border-radius: 999px !important; transition: width .25s ease !important;
+}
+.tpf-btns { display: flex !important; gap: 6px !important; flex-wrap: wrap !important; }
+.tpf-btn {
+  flex: 1 1 auto !important; min-width: 74px !important; min-height: 30px !important;
+  padding: 5px 8px !important; border-radius: 8px !important; cursor: pointer !important;
+  border: 1px solid rgba(255, 255, 255, .18) !important;
+  background: rgba(255, 255, 255, .07) !important; color: #f3f6fa !important;
+  font-size: 11px !important; font-weight: 700 !important;
+  font-family: inherit !important; line-height: 1.4 !important;
+}
+.tpf-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .15) !important; border-color: #ff8a3d !important; }
+.tpf-btn:disabled { opacity: .42 !important; cursor: not-allowed !important; }
+.tpf-btn.tpf-primary {
+  border: none !important; color: #fff !important;
+  background: linear-gradient(92deg, #ff9a3d, #ff5f4d) !important;
+  box-shadow: 0 4px 12px rgba(255, 94, 77, .3) !important;
+}
+.tpf-btn.tpf-stop { color: #ff9b91 !important; border-color: rgba(255, 107, 94, .5) !important; }
+.tpf-switch {
+  display: flex !important; align-items: center !important; gap: 7px !important;
+  margin: 10px 0 4px !important; font-size: 11px !important; color: #d3dbe7 !important;
+  cursor: pointer !important;
+}
+.tpf-switch input {
+  width: 14px !important; height: 14px !important; margin: 0 !important;
+  accent-color: #ff8a3d !important; flex: 0 0 auto !important;
+}
+.tpf-links {
+  display: flex !important; align-items: center !important; justify-content: space-between !important;
+  gap: 8px !important; margin-top: 9px !important; padding-top: 9px !important;
+  border-top: 1px solid rgba(255, 255, 255, .09) !important;
+}
+.tpf-link, .tpf-link:visited {
+  font-size: 11px !important; color: #7dd3fc !important; text-decoration: none !important;
+  white-space: nowrap !important;
+}
+.tpf-link:hover { text-decoration: underline !important; }
+.tpf-pick {
+  border: none !important; background: transparent !important; padding: 0 !important;
+  font-size: 11px !important; font-weight: 700 !important; font-family: inherit !important;
+  color: #ffb08a !important; cursor: pointer !important; text-align: right !important;
+}
+.tpf-pick:hover { text-decoration: underline !important; }
+.tpf-hint {
+  margin-top: 9px !important; padding: 7px 8px !important; border-radius: 8px !important;
+  background: rgba(52, 211, 153, .09) !important; border: 1px solid rgba(52, 211, 153, .3) !important;
+  color: #a9e9cf !important; font-size: 10px !important; line-height: 1.6 !important;
+}
+.tpf-hint.tpf-warn {
+  background: rgba(255, 138, 61, .1) !important; border-color: rgba(255, 138, 61, .42) !important;
+  color: #ffc9a3 !important;
+}
+.tpf-fold:focus-visible, .tpf-btn:focus-visible, .tpf-pick:focus-visible,
+.tpf-link:focus-visible, .tpf-switch input:focus-visible {
+  outline: 2px solid #ffb08a !important; outline-offset: 2px !important;
+}
+
+/* ---- 列表行内标红：只加 class + 一个徽标，不改 X 的按钮与数据 ---- */
+[data-testid="UserCell"].tpf-row-notback {
+  box-shadow: inset 3px 0 0 rgba(255, 95, 86, .92) !important;
+}
+.tpf-badge {
+  display: inline-block !important; margin-left: 6px !important; padding: 0 6px !important;
+  border-radius: 999px !important; vertical-align: middle !important; white-space: nowrap !important;
+  font-size: 10px !important; line-height: 16px !important; font-weight: 700 !important;
+  background: rgba(255, 95, 86, .16) !important; color: #ff6b5e !important;
+  border: 1px solid rgba(255, 95, 86, .45) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif !important;
+}
+
+@media (max-width: 900px) {
+  #tpfOverlay { right: 10px !important; bottom: 10px !important; width: 240px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #tpfOverlay *, .tpf-bar > i { transition-duration: .001ms !important; animation-duration: .001ms !important; }
+}
+@media (prefers-contrast: more) {
+  #tpfOverlay { border-color: #ff8a3d !important; }
+  .tpf-title small { color: #e3e9f2 !important; }
+}

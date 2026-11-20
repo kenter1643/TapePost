@@ -1,5 +1,5 @@
 /*
- * TapePost · X 关注关系分析面板（1.5.20）
+ * TapePost · X 关注关系分析面板（1.5.21）
  * ---------------------------------------------------------------
  * 只读本机 chrome.storage.local 里的名单，做统计 / 分类 / 明细，并在用户
  * 明确确认后调度 follow-bridge.js 执行限速批量取关。
@@ -12,9 +12,11 @@
 
   var K = {
     data: 'followData', capture: 'followCapture', task: 'followTask',
-    whitelist: 'followWhitelist', settings: 'followSettings'
+    whitelist: 'followWhitelist', settings: 'followSettings',
+    draft: 'followSelectionDraft'
   };
   var PAGE_SIZE = 50;
+  var DRAFT_TTL = 10 * 60 * 1000;
   // 内核里的区间 id 保持稳定（用于筛选与兼容历史数据），只在界面显示中文
   var BAND_LABELS = {
     '0-100': '100 人以下', '100-1k': '100～1000 人', '1k-1w': '1000～1 万人',
@@ -144,6 +146,36 @@
     state.capture = c;
   }
 
+  /* 1.5.21：接收 X 页面内中文扫描浮层「从当前位置选未回关」带入的账号。
+   * 安全边界：这里只把它们放进 state.selected（等同用户手动勾选），
+   * 绝不写 followTask、绝不设置 confirmed；用户仍须点「预演」再「我确认」，
+   * 由 follow-bridge.js 执行。草稿一次性消费，过期 / 受保护的账号不勾选。 */
+  async function adoptDraft() {
+    var r = await get([K.draft]);
+    var d = r[K.draft];
+    if (!d || !Array.isArray(d.handles) || !d.handles.length) return;
+    var w = {}; w[K.draft] = null;
+    await set(w);
+    if (!d.at || Date.now() - Number(d.at) > DRAFT_TTL) return;
+    var opts = Object.assign({}, Core.DEFAULTS, state.settings, { whitelist: state.whitelist });
+    var n = 0;
+    d.handles.forEach(function (h) {
+      var k = Core.lowerHandle(h);
+      var u = state.data.following[k];
+      if (!u || !Core.validHandle(k)) return;
+      if (Core.protectedReasons(u, opts).length) return;
+      state.selected[k] = true;
+      n++;
+    });
+    var el = $('draftHint');
+    if (!el) return;
+    el.textContent = n
+      ? '已从 X 页面内扫描浮层带入 ' + n + ' 位待选账号（当前可见的未回关）。' +
+        '这里只是帮你勾选，仍需点「预演」并确认后才会执行取关。'
+      : '页面浮层带入的账号已过期或属于受保护名单，未自动勾选；请在下方手动选择。';
+    el.className = 'hint ' + (n ? 'draft-ok' : 'draft-warn');
+  }
+
   async function refresh() {
     var r = await get([K.data, K.capture, K.task, K.whitelist, K.settings]);
     state.data = normalizeData(r[K.data]);
@@ -153,6 +185,7 @@
     state.settings = Object.assign({}, Core.DEFAULTS, r[K.settings] || {});
     if (!$('meHandle').value) $('meHandle').value = state.data.me || '';
     await recoverStaleCapture();
+    await adoptDraft();
     renderAll();
   }
 
