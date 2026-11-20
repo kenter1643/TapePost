@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>TapePost信仰者工具 · X 关注关系分析</title>
   <style>
-    /* ===== TapePost Design System · 1.5.10 / 关注分析面板 1.5.21 ===== */
+    /* ===== TapePost Design System · 1.5.10 / 关注分析面板 1.5.22 ===== */
     :root {
       --brand-600:#e8622c; --brand-500:#ff8a3d; --brand-400:#ffb08a; --brand-300:#ffd6bd;
       --grad-brand:linear-gradient(92deg,#ffe14d,#ff9a3d 45%,#ff5f4d);
@@ -212,7 +212,7 @@
       <div class="logo">T</div>
       <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span>
         <span class="h1-sep">/</span><span class="h1-page">X 关注关系分析</span></h1>
-      <span class="ver" id="followVer">v1.5.21</span>
+      <span class="ver" id="followVer">v1.5.22</span>
     </div>
     <p class="sub">分析你在 X（x.com）上的关注与粉丝：谁没回关、谁等你回关、谁已互关；
       点统计卡或分类看明细，勾选后可限速批量取关。全程只在本机计算，不上传任何数据。</p>
@@ -262,7 +262,7 @@
     <div class="status" id="capStatus">尚未采集。请先确认已登录 x.com，再点上面两个按钮；采集期间请保持标签页在前台或可见。</div>
     <p class="hint" id="saveHint">数据每一批都会立即写入本机缓存，关闭面板或中途停止都不会丢；下次打开自动恢复，点「继续采集」可从已保存的名单往下补。</p>
     <p class="hint" id="draftHint"></p>
-    <p class="hint">1.5.21 起也可以直接在 X 的「关注中 / 粉丝」页右侧用全中文「互关管理」扫描浮层：全量扫描 / 增量续扫 / 停止 / 列表标红，同样每批实时写盘；浮层里点「从当前位置选未回关」会把账号带到这里，仍需你预演并确认后才会取关。</p>
+    <p class="hint">1.5.21 起也可以直接在 X 的「关注中 / 粉丝」页右侧用全中文「互关管理」扫描浮层：全量扫描 / 增量续扫 / 停止 / 列表标红，同样每批实时写盘；浮层里点「从当前位置选未回关」会把账号带到这里，仍需你预演并确认后才会取关。<b>1.5.22 起扫描会一直等到 X 列表真正到底：</b>分页再慢也不会几秒没数据就停；若达到时间 / 滚动上限会标「中断」并完整保留名单，点「增量续扫」或上面的「开始采集」即可接着补。</p>
   </section>
 
   <!-- 2. 统计 -->

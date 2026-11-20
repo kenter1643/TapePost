@@ -1,5 +1,5 @@
 /*
- * TapePost · X 关注关系被动采集器（MAIN world，1.5.21）
+ * TapePost · X 关注关系被动采集器（MAIN world，1.5.22）
  * ---------------------------------------------------------------
  * 只做一件事：观察 X 网页客户端「自己已经发出并收到的」关注中 / 粉丝列表
  * 响应，把里面的公开主页资料摘出来，用 window.postMessage 交给 ISOLATED
@@ -26,6 +26,7 @@
   var RESERVED = /^(i|home|explore|settings|messages|notifications|search|compose|intent|share|login|signup|account|tos|privacy)$/i;
   var stats = { enabled: false, responses: 0, users: 0, lastAt: 0, source: '' };
   var postTimer = 0;
+  var pulseTimer = 0;
   var queue = [];
 
   function apiUrl(u) {
@@ -53,10 +54,24 @@
     return { source: source, me: me };
   }
 
+  /* 1.5.22：X 有响应但这次没解析出用户（分页里全是已存账号、或响应结构
+   * 暂时对不上）时，也要告诉桥接层「X 还在翻页」，否则会被误判成扫描结束。
+   * 心跳只带计数与时间戳，不含响应内容、不含任何凭证，500ms 合并一次。 */
+  function pulse() {
+    if (pulseTimer) return;
+    pulseTimer = setTimeout(function () {
+      pulseTimer = 0;
+      try {
+        window.postMessage({ __tapeFollow: true, type: 'TAPEFOLLOW_PULSE',
+          stats: Object.assign({}, stats) }, '*');
+      } catch (e) {}
+    }, 500);
+  }
+
   function emit(users, info) {
-    if (!users.length) return;
-    stats.users += users.length;
     stats.lastAt = Date.now();
+    if (!users.length) { pulse(); return; }
+    stats.users += users.length;
     queue.push({ source: info.source, me: info.me, users: users });
     if (postTimer) return;
     // 60ms 合并一次，避免同一屏分页产生大量小消息
@@ -94,7 +109,7 @@
     stats.responses++;
     stats.source = info.source;
     var users;
-    try { users = Core.pickUsers(text); } catch (e) { return; }
+    try { users = Core.pickUsers(text); } catch (e) { pulse(); return; }
     emit(users, info);
   }
 

@@ -516,7 +516,7 @@ bind('openPanel', () => {
   try { chrome.tabs.create({ url: chrome.runtime.getURL('panel.html') }); }
   catch (e) { grokStatus('打开生态面板失败：' + String(e && e.message || e), false); }
 });
-// 1.5.21：弹窗顶部「👥 互关管理」主入口 → X 关注关系分析面板（未回关统计 / 分类明细 / 限速批量取关）
+// 1.5.22：弹窗顶部「👥 互关管理」主入口 → X 关注关系分析面板（未回关统计 / 分类明细 / 限速批量取关）
 bind('openFollow', () => {
   try { chrome.tabs.create({ url: chrome.runtime.getURL('follow.html') }); }
   catch (e) { grokStatus('打开关注分析面板失败：' + String(e && e.message || e), false); }
@@ -899,7 +899,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.21 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.22 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

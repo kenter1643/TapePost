@@ -1,4 +1,4 @@
-/* TapePost 1.5.21 · X 关注关系分析 / X 页面内扫描浮层专项自检
+/* TapePost 1.5.22 · X 关注关系分析 / X 页面内扫描浮层专项自检
  *
  * 覆盖：接线与版本、合规资料、通用用户提取器、集合 / 分类、白名单与预演、
  * 安全不变量（不主动发请求 / 不读凭证 / 取关需确认 / 定位失败自动停机）、
@@ -53,8 +53,8 @@ const OVERLAY_FILES = ['follow-overlay.js', 'follow-overlay.css'];
 
 // ---------------------------------------------------------------- 1. 版本与接线
 console.log('== 1. 版本与接线 ==');
-eq('manifest 版本', manifest.version, '1.5.21');
-eq('listing 版本', listing.version, '1.5.21');
+eq('manifest 版本', manifest.version, '1.5.22');
+eq('listing 版本', listing.version, '1.5.22');
 ok('manifest.description ≤132 且含关注分析', manifest.description.length <= 132 &&
   /关注互关分析/.test(manifest.description));
 ok('listing.summary_132 ≤132 且含关注分析', listing.summary_132.length <= 132 &&
@@ -124,9 +124,9 @@ ok('README / 教程 / 上架资料 / 隐私政策口径同步为「互关管理�
 ok('popup.js 打开 follow.html', /getURL\('follow\.html'\)/.test(popJs));
 ok('follow.html 先引 core 再引面板脚本',
   followHtml.indexOf('<script src="follow-core.js"></script>') < followHtml.indexOf('<script src="follow.js"></script>'));
-ok('follow.html 版本兜底 v1.5.21', /v1\.5\.21/.test(followHtml));
-ok('四处 UI 兜底统一 v1.5.21', /v1\.5\.21/.test(popHtml) && /v1\.5\.21/.test(panelHtml) &&
-  /v1\.5\.21/.test(contentJs) && /v1\.5\.21/.test(popJs));
+ok('follow.html 版本兜底 v1.5.22', /v1\.5\.22/.test(followHtml));
+ok('四处 UI 兜底统一 v1.5.22', /v1\.5\.22/.test(popHtml) && /v1\.5\.22/.test(panelHtml) &&
+  /v1\.5\.22/.test(contentJs) && /v1\.5\.22/.test(popJs));
 ok('两段 Dashboard justification 仍 ≤1000 且 en_chars 对得上',
   listing.dashboard_permission_justifications.fields.every((f) =>
     f.en.length <= 1000 && f.en_chars === f.en.length));
@@ -135,57 +135,73 @@ ok('consistency_note 已说明 follow-capture.js 是静态 MAIN world 脚本',
 
 // ---------------------------------------------------------------- 2. 合规资料
 console.log('== 2. 合规资料与文档 ==');
-ok('详细描述首条为 1.5.21，第二条保留 1.5.20 / 第三条 1.5.19',
-  String(listing.detailed_description[0]).startsWith('【1.5.21') &&
-  String(listing.detailed_description[1]).startsWith('【1.5.20') &&
-  String(listing.detailed_description[2]).startsWith('【1.5.19'));
+ok('详细描述首条为 1.5.22，依次保留 1.5.21 / 1.5.20 / 1.5.19 历史说明',
+  String(listing.detailed_description[0]).startsWith('【1.5.22') &&
+  String(listing.detailed_description[1]).startsWith('【1.5.21') &&
+  String(listing.detailed_description[2]).startsWith('【1.5.20') &&
+  String(listing.detailed_description[3]).startsWith('【1.5.19'));
 ok('详细描述含「不主动发任何请求 / 不读取登录凭证 / 只存本机」',
   /不主动发任何请求/.test(listing.detailed_description[0]) &&
   /不读取 Authorization/.test(listing.detailed_description[0]) &&
   /只存本机/.test(listing.detailed_description[0]));
-ok('single_purpose 增列 1.5.21', /1\.5\.21/.test(listing.single_purpose));
-ok('主机访问理由以 1.5.21 补充开头且仍写 34 条 / 9 项',
-  listing.host_access_justification.startsWith('【1.5.21 补充') &&
+ok('single_purpose 增列 1.5.22', /1\.5\.22/.test(listing.single_purpose));
+ok('主机访问理由以 1.5.22 补充开头且仍写 34 条 / 9 项',
+  listing.host_access_justification.startsWith('【1.5.22 补充') &&
   /仍 34 条/.test(listing.host_access_justification) &&
   /仍 9 项/.test(listing.host_access_justification));
-ok('逐项权限理由（storage / host_permissions）同步 1.5.21',
-  /1\.5\.21/.test(listing.permission_justifications.storage) &&
-  /1\.5\.21/.test(listing.permission_justifications.host_permissions));
-ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.21',
-  /1\.5\.21/.test(listing.data_use_disclosure.what_is_transmitted) &&
-  /1\.5\.21/.test(listing.data_use_disclosure.what_is_not_transmitted));
-ok('第三方接收方明确「无新增」', /【1\.5\.21】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
+ok('逐项权限理由（storage / host_permissions）同步 1.5.22',
+  /1\.5\.22/.test(listing.permission_justifications.storage) &&
+  /1\.5\.22/.test(listing.permission_justifications.host_permissions));
+ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.22',
+  /1\.5\.22/.test(listing.data_use_disclosure.what_is_transmitted) &&
+  /1\.5\.22/.test(listing.data_use_disclosure.what_is_not_transmitted));
+ok('第三方接收方明确「无新增」', /【1\.5\.22】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
 ok('credential_handling_note 说明 follow-capture / follow-overlay 不读凭证',
   /follow-capture\.js/.test(listing.credential_handling_note) &&
   /follow-overlay\.js/.test(listing.credential_handling_note) &&
   /不读取任何请求头/.test(listing.credential_handling_note));
-ok('data_usage_form_answers 以 1.5.21 补充开头', listing.data_usage_form_answers.startsWith('【1.5.21 补充】'));
-ok('发布清单指向 1.5.21 包 / 35 文件', listing.pre_submit_checklist.some((x) =>
-  /TapePost_1\.5\.21_store\.zip（35 文件/.test(x)));
+ok('data_usage_form_answers 以 1.5.22 补充开头', listing.data_usage_form_answers.startsWith('【1.5.22 补充】'));
+ok('发布清单指向 1.5.22 包 / 35 文件', listing.pre_submit_checklist.some((x) =>
+  /TapePost_1\.5\.22_store\.zip（35 文件/.test(x)));
 ok('发布清单新增页面扫描浮层核对项', listing.pre_submit_checklist.some((x) =>
   /页面内扫描浮层/.test(x) && /绝不自动取关/.test(x)));
 ok('发布清单新增关注分析核对项', listing.pre_submit_checklist.some((x) =>
   /只被动读取/.test(x) && /先预演后确认/.test(x)));
+ok('上架资料说明 1.5.22 多信号判定与响应心跳，且不新增权限 / 接收方',
+  /scanVerdict\(\)/.test(listing.detailed_description[0]) &&
+  /TAPEFOLLOW_PULSE/.test(listing.detailed_description[0]) &&
+  /不新增权限/.test(listing.detailed_description[0]) &&
+  /第三方数据接收方/.test(listing.detailed_description[0]));
+ok('发布清单新增「扫描不会提前结束」核对项', listing.pre_submit_checklist.some((x) =>
+  /扫描不会提前结束/.test(x) && /标「中断」/.test(x)));
 privs.forEach((html, i) => {
-  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.21', /适用版本：1\.5\.21/.test(html));
-  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.21 页面扫描浮层段',
-    /1\.5\.21 X 页面内中文扫描浮层/.test(html) && /不主动发起任何请求/.test(html));
-  ok('隐私政策副本 ' + (i + 1) + ' 保留 1.5.20 实时落盘段', /1\.5\.20 X 关注关系分析/.test(html));
-  ok('隐私政策副本 ' + (i + 1) + ' 页脚日期已更新', /Last updated: 2026-11-19/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.22', /适用版本：1\.5\.22/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.22 扫描结束判定段',
+    /1\.5\.22 扫描结束判定/.test(html) && /TAPEFOLLOW_PULSE/.test(html) &&
+    /只含响应计数与时间戳/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 保留 1.5.21 浮层段与 1.5.20 实时落盘段',
+    /1\.5\.21 X 页面内中文扫描浮层/.test(html) && /1\.5\.20 X 关注关系分析/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 页脚日期已更新', /Last updated: 2026-11-20/.test(html));
 });
-ok('README 有 1.5.21 浮层章节、1.5.20 修复章节、1.5.19 功能章节与 35 文件说明',
+ok('README 有 1.5.22 扫描修复章节、1.5.21 / 1.5.20 / 1.5.19 历史章节与 35 文件说明',
+  /### 1\.5\.22：修复「扫描没扫完就停了」/.test(readme) &&
   /### 1\.5\.21：X 页面内中文/.test(readme) &&
   /### 1\.5\.20：修复关注名单丢失/.test(readme) &&
   /### 1\.5\.19：新增 X 关注关系分析/.test(readme) && /35 个文件/.test(readme));
+ok('README 说明多信号判定 / 响应心跳 / 上限标中断',
+  /scanVerdict\(\)/.test(readme) && /TAPEFOLLOW_PULSE/.test(readme) &&
+  /上限绝不冒充完成/.test(readme));
 ok('README 说明取关只点原生按钮、不调用写接口',
   /不调用 X 任何私有 \/ 公开写接口/.test(readme));
 if (tutorial) {
-  ok('Obsidian 教程版本同步 1.5.21', /version: 1\.5\.21/.test(tutorial) &&
-    /适用版本：\*\*v1\.5\.21\*\*/.test(tutorial));
+  ok('Obsidian 教程版本同步 1.5.22', /version: 1\.5\.22/.test(tutorial) &&
+    /适用版本：\*\*v1\.5\.22\*\*/.test(tutorial));
   ok('Obsidian 教程新增关注分析章节与 FAQ',
     /## 十二、进阶：X 关注关系分析/.test(tutorial) && /怎么看谁没回关我/.test(tutorial));
-  ok('Obsidian 教程新增页面扫描浮层章节与 FAQ',
+  ok('Obsidian 教程保留 1.5.21 页面扫描浮层章节与 FAQ',
     /### 1\.5\.21 新玩法/.test(tutorial) && /别的扩展的 Scan 面板全是英文/.test(tutorial));
+  ok('Obsidian 教程新增 1.5.22 扫描修复小节与 FAQ',
+    /#### 1\.5\.22 修复/.test(tutorial) && /扫描没扫完就停了/.test(tutorial));
 } else {
   console.log('  （未找到 Obsidian 教程，跳过 3 条）');
 }
@@ -409,11 +425,11 @@ ok('任务状态兜底不会露出英文 phase', /\|\| '任务状态'/.test(foll
 ok('采集完成提示用中文，不再直接输出 following / followers',
   /'采集完成：' \+ \(src === 'followers' \? '粉丝' : '关注中'\)/.test(bridge) &&
   !/'采集完成：' \+ src/.test(bridge));
-ok('品牌名与版本号作为专有名词保留', /v1\.5\.21/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
+ok('品牌名与版本号作为专有名词保留', /v1\.5\.22/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
 
 // ---------------------------------------------------------------- 7. 商店包
 console.log('== 7. 商店包 ==');
-const zipPath = path.join(DIR, 'store', 'TapePost_1.5.21_store.zip');
+const zipPath = path.join(DIR, 'store', 'TapePost_1.5.22_store.zip');
 if (fs.existsSync(zipPath)) {
   // 极简 zip 中央目录解析（沿用 test-tapeup-removed.js 的做法）
   const buf = fs.readFileSync(zipPath);
@@ -439,7 +455,7 @@ if (fs.existsSync(zipPath)) {
     const text = manEntry.method === 8
       ? zlib.inflateRawSync(manEntry.data).toString('utf8')
       : manEntry.data.toString('utf8');
-    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.21');
+    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.22');
   }
   ok('包内文件与工作区逐字节一致', NEW_FILES.concat(OVERLAY_FILES).every((f) => {
     const e = entries[f];
@@ -463,7 +479,7 @@ async function persistenceChecks() {
     const listeners = [];
     const runtime = {
       lastError: null,
-      getManifest: () => ({ version: '1.5.21' }),
+      getManifest: () => ({ version: '1.5.22' }),
       onMessage: { addListener() {} }
     };
     let failNext = 0;
@@ -851,11 +867,220 @@ async function overlayChecks() {
   ok('面板消费待选草稿但绝不自动确认取关',
     /async function adoptDraft/.test(followJs) && /state\.selected\[k\] = true/.test(followJs) &&
     /protectedReasons/.test(followJs) && /id="draftHint"/.test(followHtml));
-  ok('面板版本与提示同步 1.5.21',
-    /v1\.5\.21/.test(followHtml) && /页面内扫描浮层/.test(followHtml));
+  ok('面板版本与提示同步 1.5.22',
+    /v1\.5\.22/.test(followHtml) && /页面内扫描浮层/.test(followHtml));
 }
 
-persistenceChecks().then(overlayChecks).then(function () {
+
+// ---------------------------------------------------------------- 10. 扫描结束判定
+// 用户反馈「扫描不对，没扫完就停了」。用可控时钟 + 真实 follow-bridge.js 源码
+// 离线复现 X 慢分页 / 全量重扫（人数不涨）/ 加载指示器常驻等场景。
+function makeScanBridge(opts) {
+  opts = opts || {};
+  const T0 = 1800000000000;
+  let fakeNow = T0;
+  const RealDate = Date;
+  const FakeDate = new Proxy(RealDate, {
+    construct(t, a) { return a.length ? new t(...a) : new t(fakeNow); },
+    get(t, p) { return p === 'now' ? () => fakeNow : Reflect.get(t, p); }
+  });
+  const seed = opts.seed || [];
+  const following = {};
+  seed.forEach((h) => { following[h] = { handle: h, name: h }; });
+  const db = Object.assign(Object.create(null), {
+    followData: {
+      me: 'alice', following: following, followers: {},
+      updatedAt: { following: 0, followers: 0 }, savedAt: 0, version: 1, source: 'passive'
+    },
+    followCapture: Object.assign({
+      status: 'running', target: 'following', me: 'alice', mode: 'full',
+      startedAt: T0, scrolls: 0, idle: 0, count: seed.length,
+      lastCount: seed.length, lastTickAt: T0, savedAt: 0, message: ''
+    }, opts.capture || {})
+  });
+  const state = { height: 3000, bottom: opts.bottom !== false, spinner: !!opts.loading };
+  const col = { querySelector: () => (state.spinner ? {} : null) };
+  const sent = [];
+  const msgListeners = [];
+  let tickFn = null;
+  const sandbox = {
+    console: console, Promise: Promise, Object: Object, Array: Array,
+    String: String, Number: Number, RegExp: RegExp, JSON: JSON, Math: Math,
+    Date: FakeDate,
+    setTimeout: () => 0, clearTimeout: () => {},
+    setInterval: (fn, ms) => { if (ms === 1500) tickFn = fn; return 0; },
+    location: { pathname: '/alice/following' },
+    document: {
+      querySelector: (sel) => (sel === '[data-testid="primaryColumn"]' ? col : null),
+      querySelectorAll: () => [],
+      body: { get scrollHeight() { return state.height; } },
+      documentElement: { get scrollHeight() { return state.height; } },
+      addEventListener() {}
+    },
+    scrollY: 0, innerHeight: 800,
+    addEventListener: (t, fn) => { if (t === 'message') msgListeners.push(fn); },
+    postMessage: (m) => sent.push(m),
+    scrollTo: (x, y) => { if (state.bottom) sandbox.scrollY = y; },
+    scrollBy: () => {},
+    chrome: {
+      storage: {
+        local: {
+          get(keys, cb) {
+            const out = {};
+            (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in db) out[k] = db[k]; });
+            cb(out);
+          },
+          set(obj, cb) { Object.keys(obj).forEach((k) => { db[k] = obj[k]; }); cb(); },
+          remove(keys, cb) {
+            (Array.isArray(keys) ? keys : [keys]).forEach((k) => delete db[k]);
+            if (cb) cb();
+          }
+        },
+        onChanged: { addListener() {} }
+      },
+      runtime: { lastError: null, onMessage: { addListener() {} },
+        getManifest: () => ({ version: '1.5.22' }) }
+    }
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  sandbox.FollowCore = Core;
+  vm.createContext(sandbox);
+  vm.runInContext(bridge, sandbox, { filename: 'follow-bridge.js' });
+  const innerWindow = vm.runInContext('window', sandbox);
+  const fire = (data) => msgListeners.forEach((fn) => fn({ source: innerWindow, data: data }));
+  const settle = async () => {
+    for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r));
+  };
+  return {
+    db: db, sent: sent,
+    cap: () => db.followCapture || {},
+    async tick(ms) { fakeNow += (ms == null ? 1500 : ms); if (tickFn) await tickFn(); },
+    async emit(users) {
+      fire({ __tapeFollow: true, type: 'TAPEFOLLOW_DATA',
+        batches: [{ source: 'following', me: 'alice', users: users }] });
+      await settle();
+    },
+    pulse() { fire({ __tapeFollow: true, type: 'TAPEFOLLOW_PULSE', stats: { responses: 1 } }); },
+    grow(px) { state.height += (px || 400); },
+    setSpinner(v) { state.spinner = !!v; }
+  };
+}
+
+async function scanChecks() {
+  console.log('== 10. 扫描结束判定（慢分页 / 全量重扫不再误停） ==');
+  const D = Core.DEFAULTS;
+  const T0 = 1800000000000;
+  const base = (o) => Object.assign({
+    now: T0 + 90000, startedAt: T0, scrolls: 60, idle: 12,
+    atBottom: true, bottomStable: 6,
+    lastResponseAt: T0 + 1000, lastGainAt: T0 + 1000, lastHeightAt: T0 + 1000
+  }, o || {});
+
+  ok('判定：真正到底且静默足够久才 done',
+    Core.scanVerdict(base()).action === 'done' && Core.scanVerdict(base()).reason === 'bottom');
+  ok('判定：旧版 6 秒就停的场景现在继续扫描',
+    Core.scanVerdict(base({ now: T0 + 6000, scrolls: 4, idle: 4 })).action === 'continue');
+  ok('判定：X 仍在响应（人数不涨）绝不停',
+    Core.scanVerdict(base({ lastResponseAt: T0 + 89000 })).reason === 'active');
+  ok('判定：名单刚新增 / 页面刚变高，绝不停',
+    Core.scanVerdict(base({ lastGainAt: T0 + 89000 })).reason === 'active' &&
+    Core.scanVerdict(base({ lastHeightAt: T0 + 89000 })).reason === 'active');
+  ok('判定：X 正在加载下一页，绝不停',
+    Core.scanVerdict(base({ loading: true, loadingSince: T0 + 88000 })).reason === 'loading');
+  ok('判定：加载指示器常驻超过宽限不卡死',
+    Core.scanVerdict(base({ loading: true, loadingSince: T0 })).action === 'done');
+  ok('判定：还没到底 / 到底轮数不足，绝不停',
+    Core.scanVerdict(base({ atBottom: false, bottomStable: 0 })).reason === 'notBottom' &&
+    Core.scanVerdict(base({ bottomStable: 1 })).reason === 'bottomUnstable');
+  ok('判定：静默轮数不足，绝不停',
+    Core.scanVerdict(base({ idle: 2 })).reason === 'idleRounds');
+  ok('判定：达到时间 / 滚动上限返回 limit，绝不冒充完成',
+    Core.scanVerdict(base({ now: T0 + D.maxCaptureMs + 1 })).action === 'limit' &&
+    Core.scanVerdict(base({ scrolls: D.maxScroll })).action === 'limit');
+  ok('判定：参数已放宽（滚动 600 次 / 静默 8 轮 / 上限 20 分钟 / 静默 20 秒）',
+    D.maxScroll === 600 && D.idleRounds === 8 && D.maxCaptureMs === 20 * 60 * 1000 &&
+    D.scanIdleMs >= 20000 && D.scanMinMs >= 12000);
+  ok('源码：桥接层已改为 Core.scanVerdict 多信号判定，不再有「4 轮无新增即完成」',
+    /Core\.scanVerdict\(/.test(bridge) && /lastResponseAt/.test(bridge) &&
+    /scanGeometry/.test(bridge) && !/o\.idle >= Core\.DEFAULTS\.idleRounds/.test(bridge));
+  ok('源码：采集器有响应心跳，人数不涨也能证明 X 在翻页',
+    /TAPEFOLLOW_PULSE/.test(read('follow-capture.js')) &&
+    /TAPEFOLLOW_PULSE/.test(bridge));
+  ok('源码：浮层 / 面板不再把中断显示成 100% 完成',
+    /本轮中断，名单已保留/.test(overlayJs) && /正在等待 X 分页加载/.test(followJs));
+
+  // 真实桥接源码 + 可控时钟：X 每 8 秒才返回一批
+  {
+    const h = makeScanBridge({});
+    for (let i = 0; i < 4; i++) await h.tick();
+    ok('慢分页：旧版在 6 秒就会判 done，现在仍在扫描',
+      h.cap().status === 'running');
+    await h.emit([{ handle: 'bob', name: 'bob', followers: 10 }]);
+    for (let i = 0; i < 14; i++) {
+      if (i % 4 === 0) await h.emit([{ handle: 'bob', name: 'bob', followers: 10 }]);
+      await h.tick();
+    }
+    ok('慢分页：X 分页慢时全程保持扫描，不中途停', h.cap().status === 'running');
+    ok('慢分页：已抓到的人实时落盘', Object.keys(h.db.followData.following).length >= 1);
+    ok('慢分页：诊断原因写进本机状态', !!(h.cap().scan && h.cap().scan.reason));
+  }
+
+  // 全量重扫：X 返回的都是已存账号，人数不涨但仍在翻页
+  {
+    const h = makeScanBridge({ seed: ['bob', 'carol'] });
+    for (let i = 0; i < 20; i++) {
+      if (i % 3 === 0) await h.emit([{ handle: 'bob' }, { handle: 'carol' }]);
+      await h.tick();
+    }
+    ok('全量重扫：人数不涨但 X 一直翻页，绝不提前停', h.cap().status === 'running');
+    ok('全量重扫：已存名单没有被删', Object.keys(h.db.followData.following).length === 2);
+  }
+
+  // 只收到心跳、一个用户都没解析出来，也不能误停
+  {
+    const h = makeScanBridge({});
+    for (let i = 0; i < 20; i++) { if (i % 3 === 0) h.pulse(); await h.tick(); }
+    ok('只有响应心跳、没解析出用户时也不误停', h.cap().status === 'running');
+  }
+
+  // 真正到底 + 静默 30 秒后才完成
+  {
+    const h = makeScanBridge({});
+    await h.emit([{ handle: 'bob' }]);
+    for (let i = 0; i < 20; i++) await h.tick();
+    ok('真正到底且静默 30 秒后才判完成', h.cap().status === 'done');
+    ok('完成文案明确「列表已到底」，不再误导', /列表已到底/.test(h.cap().message || ''));
+  }
+
+  // X 加载指示器常驻超过宽限：恢复滚动，不会永久卡住
+  {
+    const h = makeScanBridge({ loading: true });
+    await h.emit([{ handle: 'bob' }]);
+    for (let i = 0; i < 45; i++) await h.tick();
+    ok('加载指示器常驻超过宽限也不会永久卡住', h.cap().status === 'done');
+  }
+
+  // 整轮没有一次 X 分页响应：诚实标中断，不说完成
+  {
+    const h = makeScanBridge({});
+    for (let i = 0; i < 20; i++) await h.tick();
+    ok('整轮没有 X 分页响应：标中断而不是完成', h.cap().status === 'interrupted');
+    ok('无响应时给出刷新页面重试的中文提示',
+      /没有检测到 X 的分页数据/.test(h.cap().message || '') && /增量续扫/.test(h.cap().message || ''));
+  }
+
+  // 达到滚动上限：标中断、名单保留、提示可继续
+  {
+    const h = makeScanBridge({ seed: ['bob'], capture: { scrolls: D.maxScroll - 1 } });
+    await h.tick();
+    ok('达到滚动上限标中断，不冒充完成', h.cap().status === 'interrupted');
+    ok('达上限时名单完整保留', Object.keys(h.db.followData.following).length === 1);
+    ok('达上限提示可继续补', /接着补/.test(h.cap().message || ''));
+  }
+}
+
+persistenceChecks().then(overlayChecks).then(scanChecks).then(function () {
   console.log('\n结果：' + passed + '/' + (passed + failed) +
     (failed ? ' 通过，' + failed + ' 条失败' : ' 全部通过 ✓'));
   process.exit(failed ? 1 : 0);

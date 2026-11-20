@@ -1,5 +1,5 @@
 /*
- * TapePost · 关注关系分析内核（1.5.21）
+ * TapePost · 关注关系分析内核（1.5.22）
  * ---------------------------------------------------------------
  * 纯函数模块，不依赖 DOM / chrome.* / 网络，可同时被三个环境加载：
  *   1) MAIN world     follow-capture.js：从 X 自己加载的 JSON 里提取用户；
@@ -31,9 +31,15 @@
     inactiveDays: 180,         // 超过多少天没发推算「长期不活跃」
     bigFollowers: 10000,       // 粉丝数达到多少算「大 V」
     skipProtected: true,       // 认证 / 大 V / 白名单默认不取关
-    maxScroll: 200,            // 自动滚动最多多少次
-    idleRounds: 4,             // 连续多少轮没有新增就判定采集完成
-    maxCaptureMs: 6 * 60 * 1000
+    maxScroll: 600,            // 自动滚动最多多少次（1.5.22：200 → 600，大名单不再提前撞上限）
+    idleRounds: 8,             // 连续多少轮「完全静默」才允许判定完成（1.5.22：4 → 8）
+    maxCaptureMs: 20 * 60 * 1000, // 单轮最长时间（1.5.22：6 min → 20 min）
+    // 1.5.22 扫描结束判定的时间门槛：旧版只看 4 轮（4×1.5s=6s）人数没涨就结束，
+    // X 分页慢、或全量重扫返回的全是已存账号时都会「没扫完就停」。
+    scanMinMs: 12000,          // 至少扫描这么久才允许判定结束
+    scanIdleMs: 20000,         // 距最后一次 X 响应 / 名单新增 / 页面变高需静默这么久
+    scanBottomRounds: 3,       // 列表到底且页面高度稳定需连续确认的轮数
+    scanLoadingGraceMs: 45000  // 加载指示器最多阻挡多久，避免 X 常驻 progressbar 卡死
   };
 
   function num(v) {
@@ -305,6 +311,50 @@
     return Math.max(3000, s.minDelay + Math.floor(r * s.jitter));
   }
 
+  /* 1.5.22：扫描结束判定（纯函数，不碰 DOM / chrome.*，便于离线模拟）。
+   * 旧版只看「名单人数连续 idleRounds 轮没涨」就判 done。X 分页请求经常
+   * 要十几秒；全量重扫时返回的全是已存账号，人数也不涨，但 X 明明还在
+   * 一页页往下加载 —— 结果就是没扫完就停、采集器被关掉。
+   * 现在必须同时满足：① 已过最短扫描时长；② 距最后一次「X 响应到达 /
+   * 名单新增 / 页面变高」足够久；③ 连续若干轮完全静默；④ 页面确实滚到底；
+   * ⑤ 页面没有加载指示器（且指示器有宽限时间，防常驻 progressbar 卡死）。
+   * 滚动 / 时间上限单独返回 limit：由桥接层标「已中断、名单保留、可继续」，
+   * 绝不冒充「采集完成」。 */
+  function scanVerdict(p) {
+    p = p || {};
+    var now = num(p.now), startedAt = num(p.startedAt), scrolls = num(p.scrolls);
+    var maxScroll = num(p.maxScroll) || DEFAULTS.maxScroll;
+    var maxCaptureMs = num(p.maxCaptureMs) || DEFAULTS.maxCaptureMs;
+    var minMs = num(p.minMs) || DEFAULTS.scanMinMs;
+    var idleMs = num(p.idleMs) || DEFAULTS.scanIdleMs;
+    var bottomRounds = num(p.bottomRounds) || DEFAULTS.scanBottomRounds;
+    var idleRounds = num(p.idleRounds) || DEFAULTS.idleRounds;
+    var graceMs = num(p.loadingGraceMs) || DEFAULTS.scanLoadingGraceMs;
+
+    // 上限优先：宁可说「中断、可继续」，也不把半截名单说成完成
+    if (startedAt && maxCaptureMs && now - startedAt >= maxCaptureMs) {
+      return { action: 'limit', reason: 'time' };
+    }
+    if (scrolls >= maxScroll) return { action: 'limit', reason: 'scrolls' };
+
+    if (!startedAt || now - startedAt < minMs) {
+      return { action: 'continue', reason: 'warming' };
+    }
+    var loadingSince = num(p.loadingSince);
+    if (p.loading && (!loadingSince || now - loadingSince < graceMs)) {
+      return { action: 'continue', reason: 'loading' };
+    }
+    var lastSignalAt = Math.max(num(p.lastResponseAt), num(p.lastGainAt),
+      num(p.lastHeightAt), startedAt);
+    if (now - lastSignalAt < idleMs) return { action: 'continue', reason: 'active' };
+    if (num(p.idle) < idleRounds) return { action: 'continue', reason: 'idleRounds' };
+    if (!p.atBottom) return { action: 'continue', reason: 'notBottom' };
+    if (num(p.bottomStable) < bottomRounds) {
+      return { action: 'continue', reason: 'bottomUnstable' };
+    }
+    return { action: 'done', reason: 'bottom' };
+  }
+
   function csvEscape(v) {
     var s = String(v == null ? '' : v);
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -358,6 +408,7 @@
     isProtected: isProtected,
     buildTask: buildTask,
     delayFor: delayFor,
+    scanVerdict: scanVerdict,
     tagLabel: tagLabel,
     toCsv: toCsv
   };

@@ -1,10 +1,12 @@
 /*
- * TapePost · 关注关系桥接与取关执行器（ISOLATED world，1.5.21）
+ * TapePost · 关注关系桥接与取关执行器（ISOLATED world，1.5.22）
  * ---------------------------------------------------------------
  * 职责：
  *   1) 收 MAIN world 的被动采集结果，合并进本机 chrome.storage.local；
  *   2) 用户点「开始采集」后，只滚动 X 自己的关注中 / 粉丝页，等 X 自己分页
- *      加载完（连续无新增即结束），全程不发额外请求；
+ *      加载完（1.5.22 起按 Core.scanVerdict() 多信号判定：最短时长 + 最后一次
+ *      X 响应 / 名单新增 / 页面变高 + 连续静默 + 到底且高度稳定 + 加载指示器；
+ *      达上限只标「中断、可继续」，绝不冒充完成），全程不发额外请求；
  *   3) 批量取关：只点击 X 页面上「该用户那一行」的原生关注按钮，
  *      两级回退定位 + 文字校验 + 限速 + 暂停/停止 + 单批上限 + 白名单二次校验；
  *   4) 1.5.21 页面内浮层：按 followCapture.mode 决定起始滚动位置，并维护
@@ -41,6 +43,14 @@
   var memAnchor = null; // 增量续扫锚点（按当前 X 账号 / 列表记录上次扫描位置）
   var appliedModeFor = 0;
   var pendingScrollY = null;
+  // 1.5.22 扫描活跃度信号：X 还在翻页就绝不停，人数没涨不等于扫完了
+  var lastResponseAt = 0;   // 最后一次收到 X 被动响应（含 TAPEFOLLOW_PULSE 心跳）
+  var lastGainAt = 0;       // 最后一次本机名单人数增加
+  var lastHeightAt = 0;     // 最后一次页面高度增长（X 渲染出新的行）
+  var lastScrollHeight = 0;
+  var bottomStable = 0;     // 连续到底且高度稳定的轮数
+  var loadingSince = 0;     // 第一次看到 X 加载指示器的时间
+  var scanStartedFor = 0;   // 当前扫描的 startedAt，用于换轮时重置信号
 
   function wrap(key, val) { var o = {}; o[key] = val; return o; }
 
@@ -188,7 +198,11 @@
           if (page && src !== page) return;
           var users = Array.isArray(b.users) ? b.users : [];
           if (!users.length) return;
+          var before = Object.keys(data[src] || {}).length;
           data[src] = Core.mergeSnapshot(data[src], users);
+          // 全量重扫时 X 返回的常常都是已存账号：人数不涨，但响应本身证明
+          // X 还在往下翻页。人数真的涨了才更新 lastGainAt。
+          if (Object.keys(data[src]).length > before) lastGainAt = Date.now();
           data.updatedAt[src] = Date.now();
           if (b.me && !data.me) data.me = Core.lowerHandle(b.me);
           touched = true;
@@ -204,8 +218,14 @@
     var d = event.data;
     if (!d || d[TAG] !== true) return;
     if (d.type === 'TAPEFOLLOW_DATA') {
+      // 1.5.22：只要 X 还在返回响应就是「活跃」，哪怕这批全是已存账号、
+      // 或 pickUsers 一个用户都没提取到。没有这个信号，6 秒就会误停。
+      lastResponseAt = Date.now();
       var batches = Array.isArray(d.batches) ? d.batches : [];
       if (batches.length) ingest(batches);
+    } else if (d.type === 'TAPEFOLLOW_PULSE') {
+      // 采集器在「X 有响应但没解析出用户」时发的轻量心跳，只含计数与时间戳
+      lastResponseAt = Date.now();
     } else if (d.type === 'TAPEFOLLOW_PONG') {
       window.__tapeFollowLastPong = d;
     }
@@ -247,6 +267,27 @@
     return storeSet(wrap(KEY_ANCHOR, a));
   }
 
+  /* 1.5.22：只读取页面几何信息与加载状态，不改 DOM、不发请求。
+   * 页面高度增长说明 X 刚渲染出新的一批行；到底且高度稳定才可能真扫完。 */
+  function scanGeometry() {
+    var g = { height: 0, atBottom: false, growing: false, loading: false };
+    try {
+      var de = document.documentElement;
+      var h = Math.max(document.body ? document.body.scrollHeight : 0,
+        de ? de.scrollHeight : 0);
+      g.height = h;
+      var y = Number(window.scrollY) || 0;
+      var vh = Number(window.innerHeight) || 0;
+      g.atBottom = h > 0 && (y + vh >= h - 240);
+      if (h > lastScrollHeight + 2) { g.growing = true; lastHeightAt = Date.now(); }
+      lastScrollHeight = h;
+      // 只认 X 真正的加载指示器，且限定在列表主列内，避免常驻进度条误判
+      var col = document.querySelector('[data-testid="primaryColumn"]') || document;
+      g.loading = !!(col.querySelector('[data-testid="spinner"], [data-testid="waitSpinner"], [aria-busy="true"]'));
+    } catch (e) {}
+    return g;
+  }
+
   function scrollOnce() {
     if (pendingScrollY != null) {
       try { window.scrollTo(0, pendingScrollY); } catch (e) {}
@@ -277,26 +318,88 @@
         var running = cap.status === 'running' && cap.target && cap.target === src;
         postToMain({ type: 'TAPEFOLLOW_CMD', action: running ? 'start' : 'stop' });
         if (!running) return;
+
+        var now = Date.now();
+        var startedAt = Number(cap.startedAt) || now;
+        // 换了一轮扫描只丢弃「早于本轮开始」的旧信号。注意别一刀切清零：
+        // 用户点开始后 X 可能在第一个 tick 之前就返回响应，抹掉它会被误判成
+        // 「整轮没有 X 分页数据」。
+        if (startedAt !== scanStartedFor) {
+          scanStartedFor = startedAt;
+          if (lastResponseAt < startedAt) lastResponseAt = 0;
+          if (lastGainAt < startedAt) lastGainAt = 0;
+          if (lastHeightAt < startedAt) lastHeightAt = 0;
+          lastScrollHeight = 0; bottomStable = 0; loadingSince = 0;
+        }
+
         var count = Object.keys(data[src] || {}).length;
+        var gained = count > (Number(cap.lastCount) || 0);
+        if (gained) lastGainAt = now;
+        var geo = scanGeometry();
+        if (geo.loading) { if (!loadingSince) loadingSince = now; }
+        else loadingSince = 0;
+        if (geo.atBottom) bottomStable = Math.min(bottomStable + 1, 999);
+        else bottomStable = 0;
+
+        // 只有「没有响应、没有新增、页面也没变高」的轮次才算静默
+        var quiet = !gained && !geo.growing && (now - lastResponseAt >= TICK_MS);
+        var idle = quiet ? (Number(cap.idle) || 0) + 1 : 0;
+
         var o = Object.assign({}, cap);
-        o.scrolls = (cap.scrolls || 0) + 1;
-        o.idle = (count === (cap.lastCount || 0)) ? (cap.idle || 0) + 1 : 0;
+        o.scrolls = (Number(cap.scrolls) || 0) + 1;
+        o.idle = idle;
         o.lastCount = count;
         o.count = count;
-        o.lastTickAt = Date.now();
-        lastTickAt = o.lastTickAt;
+        o.lastTickAt = now;
+        lastTickAt = now;
         o.savedAt = data.savedAt || cap.savedAt || 0;
         if (cap.storageError) o.storageError = cap.storageError;
         o.me = data.me || detectMe() || cap.me || '';
+
         applyScanMode(cap, src);
-        scrollOnce();
-        var tooLong = cap.startedAt && (Date.now() - cap.startedAt > Core.DEFAULTS.maxCaptureMs);
-        if (o.idle >= Core.DEFAULTS.idleRounds || o.scrolls >= Core.DEFAULTS.maxScroll || tooLong) {
-          o.status = 'done';
-          o.finishedAt = Date.now();
-          o.message = '采集完成：' + (src === 'followers' ? '粉丝' : '关注中') +
-            '共 ' + count + ' 人（已实时保存到本机）' +
-            (tooLong ? '（已达时间上限，可再点一次继续）' : '');
+        var verdict = Core.scanVerdict({
+          now: now, startedAt: startedAt, scrolls: o.scrolls,
+          lastResponseAt: lastResponseAt || startedAt,
+          lastGainAt: lastGainAt || startedAt,
+          lastHeightAt: lastHeightAt || startedAt,
+          idle: idle, atBottom: geo.atBottom, bottomStable: bottomStable,
+          loading: geo.loading, loadingSince: loadingSince
+        });
+        // 诊断信息只写本机，供浮层 / 面板告诉用户「在等 X 加载」还是「已到底」
+        o.scan = {
+          reason: verdict.reason, lastResponseAt: lastResponseAt,
+          lastGainAt: lastGainAt, lastHeightAt: lastHeightAt,
+          bottomStable: bottomStable, idle: idle, atBottom: geo.atBottom,
+          loading: geo.loading
+        };
+        window.__tapeFollowLastScan = o.scan;
+
+        // X 正在加载这一页时别再滚，避免每 1.5 秒重复滚到底打断分页；
+        // 但加载指示器常驻超过宽限就必须恢复滚动，否则会一直卡在原地。
+        var loadingBlocks = geo.loading && loadingSince &&
+          (now - loadingSince < Core.DEFAULTS.scanLoadingGraceMs);
+        if (verdict.action === 'continue' && !loadingBlocks) scrollOnce();
+
+        if (verdict.action === 'done') {
+          o.finishedAt = now;
+          if (!lastResponseAt) {
+            // 一轮下来连一次 X 分页响应都没看到，绝不能说「采集完成」
+            o.status = 'interrupted';
+            o.message = '本轮没有检测到 X 的分页数据（可能页面还没加载完、没登录，或 X 改了接口）。' +
+              '已存的 ' + count + ' 人全部保留；请刷新 X 的「关注中 / 粉丝」页后点「增量续扫」重试。';
+          } else {
+            o.status = 'done';
+            o.message = '采集完成：' + (src === 'followers' ? '粉丝' : '关注中') +
+              '共 ' + count + ' 人（列表已到底，X 连续一段时间没有再加载新页，已实时保存到本机）';
+          }
+          postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
+        } else if (verdict.action === 'limit') {
+          // 达上限绝不冒充「完成」：标中断、名单全部保留，用户可继续补
+          o.status = 'interrupted';
+          o.finishedAt = now;
+          o.message = '本轮扫描已达' +
+            (verdict.reason === 'time' ? '时间上限（20 分钟）' : '滚动上限') +
+            '，已抓到 ' + count + ' 人并全部保存在本机。名单没丢，点「增量续扫」或面板里的「继续采集」接着补，已抓到的人不会重复。';
           postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
         }
         return storeSet(wrap(KEY_CAPTURE, o)).then(function () {
@@ -488,6 +591,7 @@
               followers: Object.keys(d.followers || {}).length
             },
             savedAt: d.savedAt || 0, storageError: lastStoreError, lastTickAt: lastTickAt,
+            scan: window.__tapeFollowLastScan || null,
             anchor: memAnchor ? {
               source: memAnchor.source, count: memAnchor.count,
               scrollY: memAnchor.scrollY, savedAt: memAnchor.savedAt

@@ -1,5 +1,5 @@
 /*
- * TapePost · X 关注关系分析面板（1.5.21）
+ * TapePost · X 关注关系分析面板（1.5.22）
  * ---------------------------------------------------------------
  * 只读本机 chrome.storage.local 里的名单，做统计 / 分类 / 明细，并在用户
  * 明确确认后调度 follow-bridge.js 执行限速批量取关。
@@ -215,9 +215,18 @@
       $('saveHint').textContent += ' ｜ ⚠ 本机写入异常：' + c.storageError + '（请检查浏览器存储空间后重试）';
     }
     if (c.status === 'running') {
+      var why = {
+        warming: '正在等待 X 加载第一批分页',
+        loading: 'X 正在加载下一页',
+        active: 'X 仍在返回数据',
+        idleRounds: '正在确认列表是否已到底',
+        notBottom: '正在继续向下滚动',
+        bottomUnstable: '正在确认列表是否已到底'
+      }[(c.scan && c.scan.reason) || ''] || '正在等待 X 分页加载';
       status('capStatus', '正在采集「' + (c.target === 'followers' ? '粉丝' : '关注中') +
         '」… 已滚动 ' + (c.scrolls || 0) + ' 次，当前 ' + (c.count || 0) +
-        ' 人，每批已实时保存。请保持该标签页可见，X 分页加载完会自动停止。', 'warn');
+        ' 人，' + why + '。每批已实时保存；X 分页慢或全是已存账号都不会提前结束，' +
+        '只有列表真正到底才会完成。请保持该标签页可见。', 'warn');
     } else if (c.status === 'done') {
       var zero = (c.count || 0) === 0;
       status('capStatus', (c.message || '采集完成') +
@@ -226,7 +235,8 @@
     } else if (c.status === 'stopped') {
       status('capStatus', '采集已停止，已抓到的名单仍保存在本机。可点「继续采集」接着补。', 'warn');
     } else if (c.status === 'interrupted') {
-      status('capStatus', c.message || '上次采集中断，已保存的名单仍在本机。', 'warn');
+      status('capStatus', (c.message || '上次采集中断，已保存的名单仍在本机。') +
+        ' 点上面的「开始采集」即可从已存名单往下补，已抓到的人不会重复。', 'warn');
     } else {
       status('capStatus', '尚未采集。请先确认已登录 x.com，再点上面两个按钮；采集期间请保持标签页在前台或可见。');
     }

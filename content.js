@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.21';
+  return 'v1.5.22';
 })();
 
 /* ==================== 1.5.11：后台连接自愈 ====================

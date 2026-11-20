@@ -1,5 +1,5 @@
 /*
- * TapePost · X 页面内「互关管理 / 扫描」浮层（ISOLATED world，1.5.21）
+ * TapePost · X 页面内「互关管理 / 扫描」浮层（ISOLATED world，1.5.22）
  * ---------------------------------------------------------------
  * 把 Followback Marker 好用的页面内交互吸收到 TapePost 自己的架构里：
  *   - X 关注中 / 粉丝页右侧一个全中文浮层：全量扫描、增量续扫、停止、进度；
@@ -88,13 +88,28 @@
       return { handles: out, at: now, source: source, from: 'overlay' };
     },
 
+    /* 1.5.22：把桥接层的判定原因翻成中文，让用户知道是「X 还在加载」
+     * 还是「真的到底了」，不再出现扫一半却显示已完成的误导。 */
+    scanReasonText: function (reason) {
+      return {
+        warming: '正在等待 X 加载第一批分页',
+        loading: 'X 正在加载下一页，继续等待',
+        active: 'X 仍在返回数据，继续扫描',
+        idleRounds: '等待确认列表已到底',
+        notBottom: '继续向下滚动找更多账号',
+        bottomUnstable: '正在确认列表是否已到底'
+      }[reason] || '正在扫描';
+    },
     statusText: function (cap, counts) {
       var c = cap || {}, f = (counts && counts.following) || 0, r = (counts && counts.followers) || 0;
       var base = '本机已存 <b>' + (f + r) + '</b> 人（关注中 ' + f + ' / 粉丝 ' + r + '）';
-      if (c.status === 'running') return base + ' · 正在扫描，已滚动 ' + (c.scrolls || 0) + ' 次';
-      if (c.status === 'done') return base + ' · 本轮扫描完成';
+      if (c.status === 'running') {
+        return base + ' · 已滚动 ' + (c.scrolls || 0) + ' 次 · ' +
+          Pure.scanReasonText(c.scan && c.scan.reason);
+      }
+      if (c.status === 'done') return base + ' · 列表已到底，本轮扫描完成';
       if (c.status === 'stopped') return base + ' · 已停止，名单仍在本机';
-      if (c.status === 'interrupted') return base + ' · 上次扫描中断，名单仍在本机';
+      if (c.status === 'interrupted') return base + ' · 本轮中断，名单已保留，可点「增量续扫」继续';
       return base + ' · 尚未扫描';
     }
   };
@@ -175,7 +190,8 @@
     var tail = anchor && anchor.savedAt
       ? '上次扫描停在 ' + (anchor.count || 0) + ' 人，可点「增量续扫」接着补。'
       : '开启「列表里标红未回关」可在 X 列表里直接看到标记。';
-    hint('两个名单都已保存。' + tail + '扫描只补齐名单，不会删除已存的人。');
+    hint('两个名单都已保存。' + tail +
+      '扫描只补齐名单，不会删除已存的人；X 分页慢时会一直等到列表真正到底，不会几秒没数据就提前结束。');
   }
 
   var HTML =
@@ -260,7 +276,10 @@
     if (stat) stat.innerHTML = Pure.statusText(cap, counts);
     var bar = $('tpfBar');
     if (bar && bar.style) {
-      var w = cap.status === 'running' ? Math.min(96, 8 + (cap.scrolls || 0) * 2) : (cap.status === 'done' ? 100 : 0);
+      // 中断 / 停止绝不显示 100%，避免把半截名单说成扫完了
+      var w = cap.status === 'done' ? 100
+        : (cap.status === 'running' || cap.status === 'interrupted'
+          ? Math.min(92, 8 + (cap.scrolls || 0) * 2) : 0);
       bar.style.width = w + '%';
     }
     ['tpfFull', 'tpfResume'].forEach(function (id) {
