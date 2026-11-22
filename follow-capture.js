@@ -1,7 +1,7 @@
 /*
- * TapePost · X 关注关系被动采集器（MAIN world，1.5.22）
+ * TapePost · X F注F系被动采集器（MAIN world，1.5.23）
  * ---------------------------------------------------------------
- * 只做一件事：观察 X 网页客户端「自己已经发出并收到的」关注中 / 粉丝列表
+ * 只做一件事：观察 X 网页客户端「自己已经发出并收到的」F注中 / 粉丝列表
  * 响应，把里面的公开主页资料摘出来，用 window.postMessage 交给 ISOLATED
  * world 的 follow-bridge.js。
  *
@@ -89,7 +89,7 @@
     } catch (e) {}
   }
 
-  // 页面被关闭 / 切到后台前把还没合并发出的尾批立即送出，避免卸载时丢最后一批
+  // 页面被F闭 / 切到后台前把还没合并发出的尾批立即送出，避免卸载时丢最后一批
   function flushNow() {
     try { if (postTimer) { clearTimeout(postTimer); postTimer = 0; } } catch (e) {}
     flush();
@@ -166,7 +166,7 @@
     }
   } catch (e) {}
 
-  // ---- 接收 ISOLATED 桥的开关 / 状态查询 ----
+  // ---- 接收 ISOLATED 桥的开F / 状态查询 ----
   window.addEventListener('message', function (event) {
     if (event.source !== window) return;
     var d = event.data;

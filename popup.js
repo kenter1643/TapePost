@@ -1,6 +1,6 @@
 'use strict';
 
-// 已取消「需去水印作者 UID」列表；图片/视频都改由全局开关控制。
+// 已取消「需去水印作者 UID」列表；图片/视频都改由全局开F控制。
 // 换用新 key，让旧版保存的 alwaysInpaint / watermarkUids 自动失效，避免旧设置盖掉新默认值。
 const PAGE_DEFAULTS = (typeof TapeAI !== 'undefined' && TapeAI.PAGE_MODE_DEFAULTS)
   ? TapeAI.PAGE_MODE_DEFAULTS : {};
@@ -20,15 +20,15 @@ const DEFAULTS = Object.assign({
   enabledSites: {},
   grokModeMigrated141: false, // 1.4.1：旧 page 设置只自动升级一次
   // 1.4.3：临时文件策略
-  autoDownloadBackup: false,  // 转发时自动下载图片备份（默认关）
+  autoDownloadBackup: false,  // 转发时自动下载图片备份（默认F）
   tmpCleanup: true,           // 到期自动清理
   tmpKeepMinutes: 30,         // 0 = 不自动清理
-  // 1.4.5：AI 评论末尾的生态推广尾巴（默认关闭，用户显式勾选才生效）
+  // 1.4.5：AI 评论末尾的生态推广尾巴（默认F闭，用户显式勾选才生效）
   promoEnabled: false,
   promoTarget: 'both',        // both | tapeout | bem
   promoCustomTapeOut: '',     // 每行一句；留空用内置话术
   promoCustomBEM: '',
-  // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无关，默认开启）
+  // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无F，默认开启）
   promoQuickButtons: true,
   promoQuickCount: 4,            // 兼容旧配置，1.4.8 起不再使用
   // 1.4.11
@@ -50,7 +50,7 @@ const GROK_SECRET_DEFAULTS = {
   grokBaseUrl: 'https://api.x.ai/v1',
   grokModel: 'grok-4.3',
   grokTemperature: 0.7,
-  // 1.5.3：DeepSeek 与 xAI 的密钥 / 模型 / 网关完全分开存，互不覆盖
+  // 1.5.3：DeepSeek 与 xAI 的密钥 / 模型 / 网F完全分开存，互不覆盖
   deepseekApiKey: '',
   deepseekModel: 'deepseek-v4-flash',
   deepseekBaseUrl: 'https://api.deepseek.com',
@@ -71,7 +71,7 @@ const SITE_LIST = (typeof SITE_PROFILES !== 'undefined')
 /*
  * 1.4.4：统一发消息通道，消除 chrome://extensions 里的
  * "Unchecked runtime.lastError: The message port closed before a response was received"。
- * popup 随时可能被用户关掉；若端口在后台 sendResponse 之前关闭，回调里
+ * popup 随时可能被用户F掉；若端口在后台 sendResponse 之前F闭，回调里
  * 不读取 chrome.runtime.lastError 就会被 Chrome 记成扩展错误。
  * 所有发往后台的消息都走这里，并在回调第一行同步读取 lastError。
  */
@@ -139,7 +139,10 @@ function readGrokSecrets() {
 function saveGrokSecrets() {
   return new Promise((resolve) => {
     const secrets = readGrokSecrets();
-    try { chrome.storage.local.set(secrets, () => resolve(secrets)); }
+    try { chrome.storage.local.set(secrets, () => {
+      void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+      resolve(secrets);
+    }); }
     catch (e) { resolve(secrets); }
   });
 }
@@ -169,6 +172,7 @@ function grokStatus(text, good) {
 
 function load() {
   chrome.storage.sync.get(DEFAULTS, (s) => {
+    void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
     document.getElementById('hash').value = s.hashMode || 'truncate';
     document.getElementById('imgWm').checked = !!s.inpaintImages;
     const hd4k = document.getElementById('hd4k');
@@ -213,7 +217,7 @@ function load() {
     renderPrompt('verifyPrompt', s.verifyPrompt);
     const mode = document.getElementById('grokMode');
     /* 1.4.1：旧版把「X 站内 Grok」存成显式 page，导致 1.4.0 的直连链路
-     * 一次都没被走到。只要用户没主动关掉「优先站内直连」，就在打开设置时
+     * 一次都没被走到。只要用户没主动F掉「优先站内直连」，就在打开设置时
      * 自动纠正为 auto（只写必要的键，不覆盖其它设置）；用户之后手动改回
      * page 会被 save() 打标记，不再被自动改。 */
     const legacyPage = String(s.grokMode || '').toLowerCase() === 'page' &&
@@ -224,7 +228,9 @@ function load() {
     if (fixNote) fixNote.hidden = !legacyPage;
     if (legacyPage) {
       try {
-        chrome.storage.sync.set({ grokMode: 'auto', grokModeMigrated141: true });
+        chrome.storage.sync.set({ grokMode: 'auto', grokModeMigrated141: true }, function () {
+          void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+        });
       } catch (e) {}
     }
     const extra = document.getElementById('pagePromptExtra');
@@ -246,6 +252,7 @@ function load() {
     });
   });
   chrome.storage.local.get(GROK_SECRET_DEFAULTS, (g) => {
+    void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('grokKey', g.grokApiKey || '');
     set('grokProtocol', g.grokProtocol || 'chat');
@@ -281,7 +288,7 @@ function save() {
       return isFinite(n) ? Math.max(1, Math.min(10, n)) : 5;
     })(),
     promoCopyOnly: !!(document.getElementById('promoCopyOnly') || {}).checked,
-    // 1.4.5：推广开关与话术
+    // 1.4.5：推广开F与话术
     promoEnabled: !!(document.getElementById('promoEnabled') || {}).checked,
     promoTarget: (document.getElementById('promoTarget') || {}).value || 'both',
     promoCustomTapeOut: (document.getElementById('promoCustomTapeOut') || {}).value || '',
@@ -318,11 +325,12 @@ function save() {
     data[id] = !!(el && el.checked);
   });
   chrome.storage.sync.set(data, () => {
+    void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
     const ok = document.getElementById('ok');
     ok.style.display = 'block';
     setTimeout(() => { ok.style.display = 'none'; }, 1500);
   });
-  saveGrokSecrets();
+  saveGrokSecrets().catch(() => {});
 }
 
 function testGrok() {
@@ -425,16 +433,18 @@ function openGrokPage() {
   let url = String((el && el.value) || PAGE_DEFAULTS.grokPageUrl || 'https://x.com/i/grok').trim();
   if (!/^https:\/\/(?:x\.com|twitter\.com)\//i.test(url)) url = 'https://x.com/i/grok';
   try {
-    chrome.tabs.create({ url, active: true });
+    chrome.tabs.create({ url, active: true }, function () {
+      void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+    });
     grokStatus('已打开 ' + url + '。页面模式会优先复用这个标签；若账号没登录或 Grok 不可用，请先在这里登录。', true);
   } catch (e) {
     grokStatus('打开 Grok 页面失败：' + String(e && e.message || e), false);
   }
 }
 
-/* 自定义网关不是默认 host_permissions，用户主动点一下才申请该域名访问权 */
+/* 自定义网F不是默认 host_permissions，用户主动点一下才申请该域名访问权 */
 function grantOrigin() {
-  // 1.5.3：按当前运行模式申请对应服务商 / 网关的域名权限
+  // 1.5.3：按当前运行模式申请对应服务商 / 网F的域名权限
   const isDs = String((document.getElementById('grokMode') || {}).value || '') === 'deepseek';
   const base = (document.getElementById(isDs ? 'deepseekBaseUrl' : 'grokBaseUrl') || {}).value ||
     (isDs ? GROK_SECRET_DEFAULTS.deepseekBaseUrl : GROK_SECRET_DEFAULTS.grokBaseUrl);
@@ -442,7 +452,7 @@ function grantOrigin() {
   try { origin = new URL(String(base).trim()).origin; }
   catch (e) { grokStatus('接口地址不是合法 URL，请检查后再点。', false); return; }
   if (!chrome.permissions || !chrome.permissions.request) {
-    grokStatus('当前 Chrome 不支持动态权限申请；请用官方默认地址，或让网关允许跨域。', false);
+    grokStatus('当前 Chrome 不支持动态权限申请；请用官方默认地址，或让网F允许跨域。', false);
     return;
   }
   chrome.permissions.request({ origins: [origin + '/*'] }, (granted) => {
@@ -513,14 +523,39 @@ const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.ad
 bind('save', save);
 bind('check', runDiagnostics);
 bind('openPanel', () => {
-  try { chrome.tabs.create({ url: chrome.runtime.getURL('panel.html') }); }
+  try { chrome.tabs.create({ url: chrome.runtime.getURL('panel.html') }, function () {
+    void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+  }); }
   catch (e) { grokStatus('打开生态面板失败：' + String(e && e.message || e), false); }
 });
-// 1.5.22：弹窗顶部「👥 互关管理」主入口 → X 关注关系分析面板（未回关统计 / 分类明细 / 限速批量取关）
+// 1.5.22：弹窗顶部「👥 互F管理」主入口 → X F注F系分析面板（未回F统计 / 分类明细 / 限速批量取F）
 bind('openFollow', () => {
-  try { chrome.tabs.create({ url: chrome.runtime.getURL('follow.html') }); }
-  catch (e) { grokStatus('打开关注分析面板失败：' + String(e && e.message || e), false); }
+  try { chrome.tabs.create({ url: chrome.runtime.getURL('follow.html') }, function () {
+    void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+  }); }
+  catch (e) { grokStatus('打开F注分析面板失败：' + String(e && e.message || e), false); }
 });
+// 1.5.26：增长计划统计卡 → 详情页（40 发推 / 1000 评论进度、明细、大 V 推荐清单）
+bind('openGrowth', () => {
+  try { chrome.tabs.create({ url: chrome.runtime.getURL('growth.html') }, function () {
+    void (chrome.runtime && chrome.runtime.lastError);
+  }); }
+  catch (e) { grokStatus('打开增长计划面板失败：' + String(e && e.message || e), false); }
+});
+function loadGrowth() {
+  sendBg({ type: 'GROWTH_STATE' }, (r) => {
+    const s = r && r.summary;
+    if (!s) return;
+    const setBar = (bar, txt, v, goal) => {
+      const el = document.getElementById(bar), t = document.getElementById(txt);
+      if (el) el.style.width = Math.min(100, goal ? (v * 100 / goal) : 0) + '%';
+      if (t) t.textContent = v.toLocaleString('zh-CN') + '/' + goal.toLocaleString('zh-CN');
+    };
+    setBar('grPostBar', 'grPostText', s.post, s.postGoal);
+    setBar('grCommentBar', 'grCommentText', s.comment, s.commentGoal);
+  });
+}
+loadGrowth();
 bind('testGrok', testGrok);
 const modeSel = document.getElementById('grokMode');
 if (modeSel) modeSel.addEventListener('change', syncDeepseekPanel);
@@ -599,7 +634,7 @@ const INFO = {
   promo: {
     title: '评论末尾推广',
     lines: [
-      '两种用法，互不依赖：T 按钮（默认开）与 AI 候选自动附加（默认关）。',
+      '两种用法，互不依赖：T 按钮（默认开）与 AI 候选自动附加（默认F）。',
       '全页只出现一个 T 按钮，跟着你正在编辑的回复框走；多个回复框时先点进要写的那个。',
       '自己写完评论后点一下 T，随机带入一句推广；再点换一句，不会重复也不会叠加。',
       '右键点 T 可去掉末尾推广句，只留你自己写的正文；手工删掉后再点会重新带入。',
@@ -662,7 +697,7 @@ bind('infoOk', closeInfo);
 
 // 1.4.3：临时文件状态与立即清理
 // 1.4.4：状态直接读 storage.local —— popup 打开时不再发 runtime 消息，
-// 避免弹窗被快速关闭时留下 "message port closed before a response" 错误。
+// 避免弹窗被快速F闭时留下 "message port closed before a response" 错误。
 function refreshTmpStatus() {
   const el = document.getElementById('tmpStatus');
   if (!el) return;
@@ -698,7 +733,7 @@ refreshTmpStatus();
 /* =====================================================================
  * 1.4.13：面板顶端行情卡片 + 价格上下限提醒设置
  * 价格抓取 / 判定 / 通知全在后台，popup 只负责展示与读写设置，
- * 这样关掉弹窗也不会影响后台定时提醒。
+ * 这样F掉弹窗也不会影响后台定时提醒。
  * ===================================================================== */
 const PRICE_SET_KEY = 'priceSettings';
 const PRICE_BOUND_IDS = {
@@ -885,7 +920,9 @@ if (priceApi) {
   document.querySelectorAll('[data-price-key]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const key = btn.getAttribute('data-price-key');
-      try { chrome.tabs.create({ url: priceApi.linkFor(key), active: true }); }
+      try { chrome.tabs.create({ url: priceApi.linkFor(key), active: true }, function () {
+        void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+      }); }
       catch (e) { priceStatus('打开交易所失败：' + String(e && e.message || e), false); }
     });
   });
@@ -899,7 +936,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.22 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.26 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;
@@ -1262,7 +1299,9 @@ if (voteApi) {
   });
   bind('voteOpen', () => {
     const url = (voteSummary && voteSummary.publicPage) || voteApi.publicPage(voteApi.DEFAULT_LEDGER);
-    try { chrome.tabs.create({ url: url, active: true }); } catch (e) {}
+    try { chrome.tabs.create({ url: url, active: true }, function () {
+      void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+    }); } catch (e) {}
   });
   bind('voteProfileSave', () => saveProfile());
   bind('voteAvatarToggle', () => {
@@ -1299,7 +1338,9 @@ if (voteApi) {
   });
   bind('votePostX', () => {
     if (!currentPostUrl) { wbxStatus('voteStatus', '先打卡支持，才会生成可发布的话语。', true); return; }
-    try { chrome.tabs.create({ url: currentPostUrl, active: true }); } catch (e) {}
+    try { chrome.tabs.create({ url: currentPostUrl, active: true }, function () {
+      void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+    }); } catch (e) {}
   });
   loadVote();
 }

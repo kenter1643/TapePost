@@ -193,7 +193,7 @@
       <div class="sec-head">
         <div class="kicker">7 platforms</div>
         <h2>一个按钮，覆盖常看的内容站</h2>
-        <p>每个站点都有独立的选择器、图床域名、防盗链 Referer 与水印策略，可在设置里逐个开关；未知网站不注入任何界面。</p>
+        <p>每个站点都有独立的选择器、图床域名、防盗链 Referer 与水印策略，可在设置里逐个开F；未知网站不注入任何界面。</p>
       </div>
       <div class="sites">
         <div class="chip">微博 <span>九宫格 · 去水印</span></div>
@@ -224,7 +224,7 @@
         <div class="card">
           <div class="num">02</div>
           <h3>🛡 TapeOut 生态面板：绿标只给白名单</h3>
-          <p>独立面板内置 <strong>295 条 TapeOut.link 生态导航收录 + DeWeb 索引链接</strong>，分三档给绿标：5 条项目方官方、56 条导航收录、234 条链上容器已索引。清单是本地静态数据，精确比对域名与路径；网关域名不会通配放行，未索引容器与形近域名拿不到绿标。面板还带链接真伪查询，Grok 按设定提示词给出解释与仿冒风险。</p>
+          <p>独立面板内置 <strong>295 条 TapeOut.link 生态导航收录 + DeWeb 索引链接</strong>，分三档给绿标：5 条项目方官方、56 条导航收录、234 条链上容器已索引。清单是本地静态数据，精确比对域名与路径；网F域名不会通配放行，未索引容器与形近域名拿不到绿标。面板还带链接真伪查询，Grok 按设定提示词给出解释与仿冒风险。</p>
           <p style="margin-top:12px"><strong>模型不能给钓鱼站发绿标</strong> —— 结论以本地白名单为准，两者冲突时明确标红提示；即使 Grok 不可用，本地判定依然有效。</p>
         </div>
       </div>
@@ -237,7 +237,7 @@
       <div class="card" style="margin-top:18px">
         <div class="num">04</div>
         <h3>⏳ 1.3.2：等待看得见，结果不造假</h3>
-        <p>点「AI 评论」立刻弹出等待浮层：转圈动画、随耗时推进的阶段提示（连接 Grok → 等待回答 → 接近超时）、耗时秒数，直到结果回来或明确报错才关闭。同时修复了网页 Grok 的三处链路问题：<strong>提示词只写进输入框、不再把整页文字粘进去</strong>；读回时切掉用户提示词与侧栏按钮文字；解析不出 3 条候选就报错，<strong>绝不把 History / Usage / Share 这类页面文字伪装成评论</strong>。候选面板顶部还会显示「是否真的读到 Grok 回答」。</p>
+        <p>点「AI 评论」立刻弹出等待浮层：转圈动画、随耗时推进的阶段提示（连接 Grok → 等待回答 → 接近超时）、耗时秒数，直到结果回来或明确报错才F闭。同时修复了网页 Grok 的三处链路问题：<strong>提示词只写进输入框、不再把整页文字粘进去</strong>；读回时切掉用户提示词与侧栏按钮文字；解析不出 3 条候选就报错，<strong>绝不把 History / Usage / Share 这类页面文字伪装成评论</strong>。候选面板顶部还会显示「是否真的读到 Grok 回答」。</p>
         <p style="margin-top:12px">网页版 Grok 实测会输出不带方括号的 <code>"…", "…", "…"</code> 裸引号列表，1.3.2 也能正确解析成 3 条候选。该版本回归测试 151 个场景，含真机事故回放。</p>
       </div>
       <div class="card" style="margin-top:18px">
@@ -290,8 +290,8 @@
       </div>
       <div class="shots" style="margin-top:38px">
         <figure class="shot-card">
-          <img src="assets/screenshots/02_sites_1280x800.png" alt="站点设置面板示意图：7 个站点开关与去水印选项" loading="lazy">
-          <div class="cap"><strong>站点开关</strong>：按需启用，关闭后该站点不会再注入界面。</div>
+          <img src="assets/screenshots/02_sites_1280x800.png" alt="站点设置面板示意图：7 个站点开F与去水印选项" loading="lazy">
+          <div class="cap"><strong>站点开F</strong>：按需启用，F闭后该站点不会再注入界面。</div>
         </figure>
         <figure class="shot-card">
           <img src="assets/screenshots/03_gallery_1280x800.png" alt="多图托盘示意图：干净图列表与复制、拼图、下载操作" loading="lazy">
@@ -310,7 +310,7 @@
           <ul>
             <li>没有自有服务器、没有账号体系、没有统计与遥测</li>
             <li>「一键转发」的文字提取、去水印、剪贴板与下载全在本机完成</li>
-            <li>API 模式：仅在你主动点「AI 评论」/「核验链接」并填了 Key 时，才把文字或链接发给 xAI（或自填网关）</li>
+            <li>API 模式：仅在你主动点「AI 评论」/「核验链接」并填了 Key 时，才把文字或链接发给 xAI（或自填网F）</li>
             <li>X 站内 Grok 模式（默认、免 Key）：扩展不向任何 AI 服务发请求，只把提示词填进你已登录的 Grok 页面并读回回答文本；对话由 X 提供并受 X 条款约束</li>
             <li>API Key 只存本机 <code>chrome.storage.local</code>，不同步、不上传给开发者；无远程代码</li>
           </ul>
@@ -363,11 +363,11 @@ WBX_VERBOSE=1 node test-harness.js</code></pre>
       </div>
       <details open><summary>它会自动替我发推或评论吗？</summary><p>不会。转发只预填文字、把干净图片写入剪贴板或下载到本机；AI 评论只生成 3 条候选并把选中那条写进当前 X 回复框（按钮就在回复填写区右侧）。扩展不调用任何发布接口，最后一步必须你手动点「回复」。</p></details>
       <details><summary>AI 评论和链接核验需要什么？会上传什么？</summary><p>默认不需要 Key：用「X 站内 Grok」模式，扩展把提示词填进你已登录的 x.com Grok 页面，由 X 完成对话，插件只读回回答文本在本机解析，不向 xAI 发任何请求。若切到 API 模式，才需要你自己的 xAI Key（只存本机），点击时发送推文正文（最多 1200 字符）或待核验链接 + 本地结论、清单摘要与提示词。两种模式都不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容。调用费用只在 API 模式产生。</p></details>
-      <details><summary>绿标是怎么判定的？Grok 会不会把假站判成认可？</summary><p>绿标由扩展内置的 295 条收录清单精确比对得出：5 条项目方官方、56 条导航站编辑收录、234 条链上容器已索引，三档都算导航认可但界面分级显示（链上容器不代表项目方背书）。只有少数独立官网允许同域任意路径，网关域名按精确地址比对。Grok 只负责解释理由和识别形近域名、Punycode、短链等风险；即使模型误判，本地未命中也不会给绿标，界面还会标红提示冲突。</p></details>
+      <details><summary>绿标是怎么判定的？Grok 会不会把假站判成认可？</summary><p>绿标由扩展内置的 295 条收录清单精确比对得出：5 条项目方官方、56 条导航站编辑收录、234 条链上容器已索引，三档都算导航认可但界面分级显示（链上容器不代表项目方背书）。只有少数独立官网允许同域任意路径，网F域名按精确地址比对。Grok 只负责解释理由和识别形近域名、Punycode、短链等风险；即使模型误判，本地未命中也不会给绿标，界面还会标红提示冲突。</p></details>
       <details><summary>视频能去水印吗？</summary><p>微博视频会尝试通过公开接口取高清地址；X 视频通常是 HLS / blob 流，暂不能导出干净 mp4。其余站点只能取页面中出现的直链。</p></details>
       <details><summary>为什么有些图片没有变化？</summary><p>去水印是「先检测、后重建」：只有检测到底部白色水印才处理，检测不到时原图保留，避免把正常图片抹坏。各站水印样式不同，效果会有差异。</p></details>
       <details><summary>小红书图片偶尔下载失败？</summary><p>它的图片地址带时效签名，过期后刷新来源页面再点一次即可。其它图床的防盗链由扩展自动注入对应 Referer 处理。</p></details>
-      <details><summary>转载别人的内容需要注意什么？</summary><p>内容权利属于原作者，转载或二创前请自行确认授权，建议开启设置里的「附原推链接」标注来源。TapePost 与 X 及上述任何站点均无官方关联。</p></details>
+      <details><summary>转载别人的内容需要注意什么？</summary><p>内容权利属于原作者，转载或二创前请自行确认授权，建议开启设置里的「附原推链接」标注来源。TapePost 与 X 及上述任何站点均无官方F联。</p></details>
     </div>
   </section>
 </main>
@@ -386,7 +386,7 @@ WBX_VERBOSE=1 node test-harness.js</code></pre>
       <a href="https://github.com/kenter1643/TapePost/issues">反馈问题</a>
     </div>
   </div>
-  <div class="fine">TapeOut 社区 · 昆哥　｜　版本 1.4.2　｜　本页面为功能示意，截图仅作说明之用。TapePost 与 X、xAI、微博及上述任何站点均无官方关联；生态面板的清单来自 TapeOut.link 公开收录与 web.tapeout.link 索引，绿标不代表项目方背书或投资建议。</div>
+  <div class="fine">TapeOut 社区 · 昆哥　｜　版本 1.4.2　｜　本页面为功能示意，截图仅作说明之用。TapePost 与 X、xAI、微博及上述任何站点均无官方F联；生态面板的清单来自 TapeOut.link 公开收录与 web.tapeout.link 索引，绿标不代表项目方背书或投资建议。</div>
 </footer>
 </body>
 </html>

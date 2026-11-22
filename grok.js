@@ -13,7 +13,7 @@
  *   2. 清单分三档 tier：official（项目方官方 OFFICIAL 标记）/ listed（导航站
  *      编辑收录）/ deweb（web.tapeout.link 已索引的链上容器）。三者都算「导航认可」
  *      并给绿标，但 UI 必须区分等级，避免把社区容器误读成项目方背书。
- *   3. 只有少数独立品牌官网允许「同域任意路径 / 子域」命中；网关域名
+ *   3. 只有少数独立品牌官网允许「同域任意路径 / 子域」命中；网F域名
  *      （tapekit.org 等）一律按精确地址比对，否则任何人部署的容器都会拿到绿标。
  *
  * 清单由 `node tools/refresh-sites.mjs` 从导航站公开数据文件生成，见 GENERATED 区块。
@@ -44,7 +44,7 @@ var TapeAI = (function () {
     {"name":"TapeOut","url":"https://tapeout.net/","category":"官方入口","desc":"链上流片协议官方入口：mint NAND / LATCH 元件，在画布上连线设计电路，确认后流片为电路 NFT。","tier":"official","badges":["OFFICIAL"],"scope":"domain","added":"2026-09-12","source":"nav"},
     {"name":"Blonskr · X","url":"https://x.com/blonskr","category":"官方入口","desc":"TapeOut 发起人的账号。协议公告、功能上线与重要决定基本由这里首发——从宣布链上 CPU、开源协议，到放弃交易市场与挖矿合约的管理权。","tier":"official","badges":["OFFICIAL"],"scope":"exact","added":"2026-09-13","source":"nav"},
     {"name":"TapeHub.ai","url":"https://tapehub.ai/","category":"官方入口","desc":"TapeOut 生态的发射平台：任何人都能创建矿币项目（底池币可选 BEM / BNB / USD1），用底池币 Mint 晶体管，满额或创建满 6 小时且过半即毕业；毕业后…","tier":"official","badges":["OFFICIAL","HOT"],"scope":"domain","added":"2026-09-16","source":"nav"},
-    {"name":"TapeKit","url":"https://tapekit.org/","category":"官方入口","desc":"tape:// 的公共网关：网站存进 TapeOut 电路容器后，用它就能在普通浏览器里打开。首页输入链上地址（电路编号 + 处理器编号，写法如 4246.0、#4246@0…","tier":"official","badges":["OFFICIAL"],"scope":"exact","added":"2026-09-16","source":"nav"},
+    {"name":"TapeKit","url":"https://tapekit.org/","category":"官方入口","desc":"tape:// 的公共网F：网站存进 TapeOut 电路容器后，用它就能在普通浏览器里打开。首页输入链上地址（电路编号 + 处理器编号，写法如 4246.0、#4246@0…","tier":"official","badges":["OFFICIAL"],"scope":"exact","added":"2026-09-16","source":"nav"},
     {"name":"TapeCode.ai","url":"https://tapecode.ai/","category":"官方入口","desc":"TapeOut 官方的 AI 应用生成器：用一句自然语言（例如「发一个代币，任何人都能领 1 枚」）生成合约与前端，10 分钟一键发布到线上运营。生成的合约由你的 TapeO…","tier":"official","badges":["OFFICIAL","NEW"],"scope":"domain","added":"2026-10-11","source":"nav"},
     {"name":"TapeOut Protocol 数据","url":"https://tapeout.work/","category":"链上数据","desc":"TapeOut 协议数据面板（TapeOut Labs）：处理器与电路数量、铸造进度、BEM 成交、空投领取、活动热力图与时间序列，并直接读链上 Linux 的机器状态。与官…","tier":"listed","badges":[],"scope":"exact","added":"2026-09-18","source":"nav"},
     {"name":"TapeOut VIP","url":"https://tapeout.vip/","category":"链上数据","desc":"全网矿机实时看板：矿工数与已验证 / 未验证权重、BEM 已挖出量与每日 7,200 BEM 产出、BEM 价格，中英韩三语。另含榜单、流片与开矿辅助（收编自某生态盘点：此前…","tier":"listed","badges":[],"scope":"exact","added":"2026-09-13","source":"nav"},
@@ -104,7 +104,7 @@ var TapeAI = (function () {
     {"name":"TapeOut.link 生态导航","url":"https://tapeout.link/","category":"清单来源","desc":"TapeOut 生态导航站本体：官方认定的收录清单即取自本站 data/sites.js。","tier":"listed","badges":[],"scope":"domain","added":"","source":"nav"},
   ];
 
-  // web.tapeout.link 扫描索引到的链上容器（官方网关精确子域）；同属导航认可，标记层级不同。
+  // web.tapeout.link 扫描索引到的链上容器（官方网F精确子域）；同属导航认可，标记层级不同。
   var DEWEB_SITES = [
     {"name":"BEMD · 快速容器钱包","url":"https://1-2-210.tapekit.org/","category":"链上容器 · XLayer","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"1.210.tape","chain":"xlayer","source":"deweb"},
     {"name":"1.217.tape","url":"https://1-2-217.tapekit.org/","category":"链上容器 · XLayer","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"1.217.tape","chain":"xlayer","source":"deweb"},
@@ -129,7 +129,7 @@ var TapeAI = (function () {
     {"name":"捕鱼达人 · BEM 争霸赛","url":"https://1-2-319.tapekit.org/","category":"链上容器 · XLayer","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"1.319.tape","chain":"xlayer","source":"deweb"},
     {"name":"Arcade Chips · 芯片街机","url":"https://1-2-304.tapekit.org/","category":"链上容器 · XLayer","desc":"Arcade Chips: pixel arcade, TapeOut payout circuit and cont…","tier":"deweb","badges":[],"scope":"exact","tape":"1.304.tape","chain":"xlayer","source":"deweb"},
     {"name":"钓鱼达人 V6.0 · 鱼饵选择与虚拟钓场","url":"https://2-2-206.tapekit.org/","category":"链上容器 · XLayer","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"2.206.tape","chain":"xlayer","source":"deweb"},
-    {"name":"还好吗 · 让关心成为习惯","url":"https://1-2-335.tapekit.org/","category":"链上容器 · XLayer","desc":"还好吗 —— 每日签到、树洞倾诉、时光胶囊，一个温柔的关怀与数字记忆平台。","tier":"deweb","badges":[],"scope":"exact","tape":"1.335.tape","chain":"xlayer","source":"deweb"},
+    {"name":"还好吗 · 让F心成为习惯","url":"https://1-2-335.tapekit.org/","category":"链上容器 · XLayer","desc":"还好吗 —— 每日签到、树洞倾诉、时光胶囊，一个温柔的F怀与数字记忆平台。","tier":"deweb","badges":[],"scope":"exact","tape":"1.335.tape","chain":"xlayer","source":"deweb"},
     {"name":"星空守卫 · 太空塔防射击","url":"https://1-2-2.tapekit.org/","category":"链上容器 · XLayer","desc":"星空守卫 · 太空塔防射击：按住屏幕瞄准自动连发，守住只有 5 格血的城市。散射、速射、修复、全屏清除四种道具，每 5…","tier":"deweb","badges":[],"scope":"exact","tape":"1.2.tape","chain":"xlayer","source":"deweb"},
     {"name":"意识永生｜把重要的思想留在链上","url":"https://1-2-336.tapekit.org/","category":"链上容器 · XLayer","desc":"从X公开表达生成你的人格芯片，并持续保存思想、知识、经历与作品。","tier":"deweb","badges":[],"scope":"exact","tape":"1.336.tape","chain":"xlayer","source":"deweb"},
     {"name":"TapeOut DeWeb 外贸企业网站生成器 V1.5.1 STABILIT…","url":"https://111-2-222.tapekit.org/","category":"链上容器 · XLayer","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"111.222.tape","chain":"xlayer","source":"deweb"},
@@ -221,11 +221,11 @@ var TapeAI = (function () {
     {"name":"BEM 销毁看板 · BSC","url":"https://16267-30.tapekit.org/","category":"链上容器 · BNB 主网","desc":"BNB Smart Chain 上 BEM 代币黑洞销毁数量，数据直接读取链上合约。","tier":"deweb","badges":[],"scope":"exact","tape":"16267.30.tape","chain":"bsc","source":"deweb"},
     {"name":"喵喵彩票","url":"https://2-1031.tapekit.org/","category":"链上容器 · BNB 主网","desc":"喵喵彩票：用 BEM 买注（每期每人最多 100 注），每 30 分钟、每天、每月 1 号各开一期，每期开出一注，奖池…","tier":"deweb","badges":[],"scope":"exact","tape":"2.1031.tape","chain":"bsc","source":"deweb"},
     {"name":"BITMAP Runtime V0.2.2","url":"https://335-0.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"335.0.tape","chain":"bsc","source":"deweb"},
-    {"name":"小孩哥 · 电路远征 99 | V0.0.3","url":"https://16-68.tapekit.org/","category":"链上容器 · BNB 主网","desc":"小孩哥·电路远征：TapeOut生态元素原创横版闯关游戏，9大主题、99关、9位Boss。","tier":"deweb","badges":[],"scope":"exact","tape":"16.68.tape","chain":"bsc","source":"deweb"},
+    {"name":"小孩哥 · 电路远征 99 | V0.0.3","url":"https://16-68.tapekit.org/","category":"链上容器 · BNB 主网","desc":"小孩哥·电路远征：TapeOut生态元素原创横版闯F游戏，9大主题、99F、9位Boss。","tier":"deweb","badges":[],"scope":"exact","tape":"16.68.tape","chain":"bsc","source":"deweb"},
     {"name":"C Kingdom","url":"https://10341-0.tapekit.org/","category":"链上容器 · BNB 主网","desc":"Design a kingdom from pure NAND logic. Trade or raid for 20…","tier":"deweb","badges":[],"scope":"exact","tape":"10341.0.tape","chain":"bsc","source":"deweb"},
     {"name":"Blocivo · 晶体管交易","url":"https://10354-0.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"10354.0.tape","chain":"bsc","source":"deweb"},
     {"name":"BEM 消消乐 · 链上矩阵 | V0.0.5","url":"https://4-446.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"4.446.tape","chain":"bsc","source":"deweb"},
-    {"name":"體素三國 — Voxel Three Kingdoms","url":"https://16-165.tapekit.org/","category":"链上容器 · BNB 主网","desc":"浏览器即玩的体素三国割草动作游戏：赵云、关羽、张飞、诸葛亮、吕布，各有招式与无双；长坂坡、虎牢关、赤壁三处战场，一人独…","tier":"deweb","badges":[],"scope":"exact","tape":"16.165.tape","chain":"bsc","source":"deweb"},
+    {"name":"體素三國 — Voxel Three Kingdoms","url":"https://16-165.tapekit.org/","category":"链上容器 · BNB 主网","desc":"浏览器即玩的体素三国割草动作游戏：赵云、F羽、张飞、诸葛亮、吕布，各有招式与无双；长坂坡、虎牢F、赤壁三处战场，一人独…","tier":"deweb","badges":[],"scope":"exact","tape":"16.165.tape","chain":"bsc","source":"deweb"},
     {"name":"TapeOut 社区留言板｜TapeOut Daily","url":"https://3-888.tapekit.org/","category":"链上容器 · BNB 主网","desc":"分享 TapeOut 进展、问题和容器地址。匿名即可留言。","tier":"deweb","badges":[],"scope":"exact","tape":"3.888.tape","chain":"bsc","source":"deweb"},
     {"name":"迷因麻將 | Meme Mahjong","url":"https://188-1.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"188.1.tape","chain":"bsc","source":"deweb"},
     {"name":"TapeNow BSC acceptance","url":"https://42-865.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"42.865.tape","chain":"bsc","source":"deweb"},
@@ -282,7 +282,7 @@ var TapeAI = (function () {
     {"name":"TSD","url":"https://1-1243.tapekit.org/","category":"链上容器 · BNB 主网","desc":"Payback estimates, mining pool and market data for TapeOut …","tier":"deweb","badges":[],"scope":"exact","tape":"1.1243.tape","chain":"bsc","source":"deweb"},
     {"name":"懿德木器工程有限公司 · 防火門 · 訂製傢俬 · 室內裝修","url":"https://1-1244.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"1.1244.tape","chain":"bsc","source":"deweb"},
     {"name":"TapeMX","url":"https://8081-30.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"8081.30.tape","chain":"bsc","source":"deweb"},
-    {"name":"TapeOne · 1U only","url":"https://1037-0.tapekit.org/","category":"链上容器 · BNB 主网","desc":"TapeOne：任意两个地址之间，一次转出、一次转入，每笔固定 1U，链上封存这段关系。","tier":"deweb","badges":[],"scope":"exact","tape":"1037.0.tape","chain":"bsc","source":"deweb"},
+    {"name":"TapeOne · 1U only","url":"https://1037-0.tapekit.org/","category":"链上容器 · BNB 主网","desc":"TapeOne：任意两个地址之间，一次转出、一次转入，每笔固定 1U，链上封存这段F系。","tier":"deweb","badges":[],"scope":"exact","tape":"1037.0.tape","chain":"bsc","source":"deweb"},
     {"name":"TapeMonkey · 222 张公开 mint","url":"https://10100-30.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"10100.30.tape","chain":"bsc","source":"deweb"},
     {"name":"存疑录 · 独立思考","url":"https://7777-0.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"7777.0.tape","chain":"bsc","source":"deweb"},
     {"name":"TapeOut Life — Conway's Game of Life MVP","url":"https://1-1247.tapekit.org/","category":"链上容器 · BNB 主网","desc":"TapeOut Life: an experimental browser MVP. Build 8x8 cellul…","tier":"deweb","badges":[],"scope":"exact","tape":"1.1247.tape","chain":"bsc","source":"deweb"},
@@ -299,7 +299,7 @@ var TapeAI = (function () {
     {"name":"BEM 水龙头 · 免费领取 BEM","url":"https://25-20.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"25.20.tape","chain":"bsc","source":"deweb"},
     {"name":"Tape 掷地有声","url":"https://3-30.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"3.30.tape","chain":"bsc","source":"deweb"},
     {"name":"复盘记录","url":"https://16551-30.tapekit.org/","category":"链上容器 · BNB 主网","desc":"离线交易日记：记录每笔合约交易、按风险算仓位和爆仓价、统计胜率盈亏比和回撤。数据只存在你自己的设备上。","tier":"deweb","badges":[],"scope":"exact","tape":"16551.30.tape","chain":"bsc","source":"deweb"},
-    {"name":"小孩哥 XHG · 一个关于 TapeOut 创始人 @Blonskr 的故事…","url":"https://92-2.tapekit.org/","category":"链上容器 · BNB 主网","desc":"小孩哥 XHG：十亿枚，在 four.meme 上按 four 的合约公平发射——曲线定价、零预留、零白名单，募满自动…","tier":"deweb","badges":[],"scope":"exact","tape":"92.2.tape","chain":"bsc","source":"deweb"},
+    {"name":"小孩哥 XHG · 一个F于 TapeOut 创始人 @Blonskr 的故事…","url":"https://92-2.tapekit.org/","category":"链上容器 · BNB 主网","desc":"小孩哥 XHG：十亿枚，在 four.meme 上按 four 的合约公平发射——曲线定价、零预留、零白名单，募满自动…","tier":"deweb","badges":[],"scope":"exact","tape":"92.2.tape","chain":"bsc","source":"deweb"},
     {"name":"Tapestry","url":"https://11648-0.tapekit.org/","category":"链上容器 · BNB 主网","desc":"Fully on-chain social: posts, bottles, wishes, time capsule…","tier":"deweb","badges":[],"scope":"exact","tape":"11648.0.tape","chain":"bsc","source":"deweb"},
     {"name":"修真联盟 · 万宗同修","url":"https://9708-30.tapekit.org/","category":"链上容器 · BNB 主网","desc":"修真联盟：万宗同修、论道传经。宗门群聊、悟道心得、藏经阁古籍，与同门共参。","tier":"deweb","badges":[],"scope":"exact","tape":"9708.30.tape","chain":"bsc","source":"deweb"},
     {"name":"BEM剁手保护器 2.0","url":"https://1244-888.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"1244.888.tape","chain":"bsc","source":"deweb"},
@@ -342,7 +342,7 @@ var TapeAI = (function () {
     {"name":"YUN·云极 讲解视频","url":"https://1-1481.tapekit.org/","category":"链上容器 · BNB 主网","desc":"","tier":"deweb","badges":[],"scope":"exact","tape":"1.1481.tape","chain":"bsc","source":"deweb"},
   ];
 
-  // 第三方网关：同一链上容器也能通过这些域名打开，命中索引时会提示改用官方网关。
+  // 第三方网F：同一链上容器也能通过这些域名打开，命中索引时会提示改用官方网F。
   var DEWEB_GATEWAYS = ['tapeout.site', 'tapeoutscan.io', 'bem.city', 'gw.tapeseek.ai'];
 
   // 未被导航站收录、但社区里常被问到的地址：明确不给绿标。
@@ -452,7 +452,7 @@ var TapeAI = (function () {
     '【本地权威结论】',
     '{LOCAL_RESULT}',
     '',
-    '【官方 / 收录清单摘要】（完整清单共数百条，这里只列与本次判定相关的部分）',
+    '【官方 / 收录清单摘要】（完整清单共数百条，这里只列与本次判定相F的部分）',
     '{OFFICIAL_LIST}',
     '',
     '请结合上面的权威结论，判断这条待核验链接是否属于 TapeOut 生态导航认可的平台，并识别仿冒风险。',
@@ -485,7 +485,7 @@ var TapeAI = (function () {
    */
   var PAGE_MODE_DEFAULTS = {
     // 1.4.0：auto 在 X 页面里优先走「站内直连」（直接调 X 自带 Grok 接口）；
-    // 关掉 grokPreferNative 后 auto 恢复成「有 Key 走 API、没 Key 走页面」。
+    // F掉 grokPreferNative 后 auto 恢复成「有 Key 走 API、没 Key 走页面」。
     grokMode: 'auto',
     grokPreferNative: true,
     grokPageUrl: 'https://x.com/i/grok',
@@ -495,7 +495,7 @@ var TapeAI = (function () {
     grokPageAnswerSel: 'button[aria-label="Copy"]',
     grokPageQuietMs: 1500,               // 文本静止多久算回答完成
     grokPageTimeoutMs: 60000,            // 单次最长等待
-    grokPageAutoSubmit: true,            // 关掉 = 只填词，由用户自己按发送
+    grokPageAutoSubmit: true,            // F掉 = 只填词，由用户自己按发送
     grokPageNewChat: true,               // 每次新开对话，避免上一轮上下文污染
     grokPageMaxChars: 8000,              // 回传文本上限，防止把整页 HTML 塞给后台
     pagePromptExtra: ''                  // 追加到页面模式提示词末尾的自定义要求
@@ -540,7 +540,7 @@ var TapeAI = (function () {
     var noKey = String((cfg && cfg.grokApiKey) || '').trim() === '';
     /* 1.4.1：显式 page 多半是 1.3.x 存下来的旧设置。用户选它的本意是
      * 「免 API Key 用 X 站内 Grok」，但页面模式在 X 改版后写入校验经常失败；
-     * 只要没关掉「优先站内直连」、没填 Key、且当前在 X 标签里，一律优先直连。
+     * 只要没F掉「优先站内直连」、没填 Key、且当前在 X 标签里，一律优先直连。
      * page 退为直连失败后的兜底 / 手动调试选项；非 X 标签仍保持页面模式。 */
     if (preferNative && noKey && opts && opts.inXTab) return 'native';
     if (mode === 'auto') return noKey ? 'page' : 'api';
@@ -738,7 +738,7 @@ var TapeAI = (function () {
         if (!exist) domainHosts.push({ host: n.host, site: s, path: n.path });
         else if (n.path.length < exist.path.length) { exist.site = s; exist.path = n.path; }
       }
-      // 链上容器在官方网关上的精确子域，用于识别「同一个容器走第三方网关」的情形
+      // 链上容器在官方网F上的精确子域，用于识别「同一个容器走第三方网F」的情形
       var m = n.host.match(/^([a-z0-9-]+)\.tapekit\.org$/i);
       if (m && s.tier === 'deweb') gatewayPrefix[m[1].toLowerCase()] = s;
     });
@@ -773,7 +773,7 @@ var TapeAI = (function () {
       }
     }
 
-    // 同一个链上容器用第三方网关打开：仍算已索引，但提示改用官方网关
+    // 同一个链上容器用第三方网F打开：仍算已索引，但提示改用官方网F
     if (!site) {
       for (var g = 0; g < DEWEB_GATEWAYS.length; g++) {
         var gw = DEWEB_GATEWAYS[g];
@@ -792,7 +792,7 @@ var TapeAI = (function () {
     if (site) {
       var risks = spoofSignals(n, list);
       if (viaGateway) {
-        risks.unshift('当前使用的是第三方网关域名；同一个链上容器也可以通过官方网关打开：' + viaGateway + '。建议改用官方网关地址。');
+        risks.unshift('当前使用的是第三方网F域名；同一个链上容器也可以通过官方网F打开：' + viaGateway + '。建议改用官方网F地址。');
       }
       return {
         status: 'official',
@@ -850,7 +850,7 @@ var TapeAI = (function () {
       return host === d.host || host.slice(-(d.host.length + 1)) === '.' + d.host;
     });
     if (brandHit && !isListed) {
-      risks.push('域名含 TapeOut 相关品牌词，但不在导航收录清单里 —— 高度疑似仿冒');
+      risks.push('域名含 TapeOut 相F品牌词，但不在导航收录清单里 —— 高度疑似仿冒');
     }
     // 去掉连字符/点后与「常规站点主域」比较，抓 tapeout-net.com / tapeoutnet.io 这类。
     // 只比较常规站点（排除 *.tapekit.org 之类的容器子域），避免把合法容器互相误报。
@@ -888,7 +888,7 @@ var TapeAI = (function () {
       return (i + 1) + '. [' + tierLabel(s.tier) + '] ' + s.name + ' — ' + s.url;
     });
     rows.push('');
-    rows.push('另有 ' + DEWEB_SITES.length + ' 个链上容器已被 web.tapeout.link 索引，按官方网关精确子域比对。');
+    rows.push('另有 ' + DEWEB_SITES.length + ' 个链上容器已被 web.tapeout.link 索引，按官方网F精确子域比对。');
     rows.push('参考（导航站未收录，不得判 official）：');
     REFERENCE_SITES.forEach(function (s) { rows.push('- ' + s.name + ' — ' + s.url + '（' + s.kind + '）'); });
     return rows.join('\n');
@@ -918,7 +918,7 @@ var TapeAI = (function () {
         arr.filter(function (s) { return s.tier === 'official'; }).length + ' / 导航站收录 ' +
         arr.filter(function (s) { return s.tier === 'listed'; }).length + ' / 链上容器已索引 ' +
         arr.filter(function (s) { return s.tier === 'deweb'; }).length + '）。',
-      '以下为与本次判定相关的条目：'
+      '以下为与本次判定相F的条目：'
     ];
     picked.forEach(function (s) { rows.push('- [' + tierLabel(s.tier) + '] ' + s.name + ' — ' + s.url); });
     return rows.join('\n');
@@ -930,7 +930,7 @@ var TapeAI = (function () {
     if (r.status === 'official') {
       return '已命中本地白名单 → 给绿标；等级：' + tierLabel(r.tier) +
         '；命中条目：' + r.site.name + ' — ' + r.site.url +
-        (r.viaGateway ? '；当前为第三方网关，官方网关地址 ' + r.viaGateway : '') +
+        (r.viaGateway ? '；当前为第三方网F，官方网F地址 ' + r.viaGateway : '') +
         (r.risks.length ? '；风险提示：' + r.risks.join(' / ') : '；无额外风险');
     }
     if (r.status === 'community') return '未命中收录清单，但命中「参考链接」→ 不给绿标；' + r.site.name;
@@ -943,7 +943,7 @@ var TapeAI = (function () {
     Object.keys(vars || {}).forEach(function (k) {
       t = t.split(k).join(String(vars[k] == null ? '' : vars[k]));
     });
-    // 用户自定义提示词可能删掉占位符，兜底把关键内容追加到末尾
+    // 用户自定义提示词可能删掉占位符，兜底把F键内容追加到末尾
     var missing = [];
     Object.keys(vars || {}).forEach(function (k) { if (String(tpl || '').indexOf(k) === -1) missing.push(k); });
     if (missing.length && tail) t = t + '\n\n' + tail;

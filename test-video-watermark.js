@@ -160,7 +160,7 @@ console.log('\n[2] 手动框：每帧无条件生效');
   ok(wm.mode === 'auto', 'manual 但没给有效框时自动退回 auto，避免静默失效');
 }
 
-console.log('\n[3] 关闭去水印');
+console.log('\n[3] F闭去水印');
 {
   const W = 640, H = 360;
   const box = { x0: 0.5, y0: 0.8, x1: 0.99, y1: 0.99 };

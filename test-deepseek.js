@@ -155,7 +155,7 @@ const reset = () => { state.fetchCalls = []; state.failStatus = 0; };
   A('提示词已含 json 时不重复追加',
     R('deepseekBody(__cfg, [{role:"user",content:"请输出 JSON 数组"}], 16).messages.length') === 1);
   const jsonOff = R('deepseekBody(Object.assign({},__cfg,{deepseekJsonMode:false}), [{role:"user",content:"hi"}], 16)');
-  A('关闭「强制 JSON 输出」后不带 response_format 也不补提示词',
+  A('F闭「强制 JSON 输出」后不带 response_format 也不补提示词',
     !('response_format' in jsonOff) && jsonOff.messages.length === 1);
 
   // ---- 4. callGrok：认证头 / 端点 / 返回 ----

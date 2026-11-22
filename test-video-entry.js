@@ -229,7 +229,7 @@ A('每条视频内容各一个入口，卡片内没有残留', barsInCard().leng
 A('入口含「一键转发」与「视频剪辑」',
   bars.every((b) => b.querySelectorAll('.wbx-fwd-btn').length === 1 &&
                     b.querySelectorAll('.wbx-clip-btn').length === 1));
-A('MAP 关联的正是视频内容单元', R('VIDEO_BARS.size') === 2 &&
+A('MAP F联的正是视频内容单元', R('VIDEO_BARS.size') === 2 &&
   R('VIDEO_BARS.has(__article) && VIDEO_BARS.has(__grid)'));
 const barA = R('VIDEO_BARS.get(__article)');
 A('固定条按卡片 rect 定位到右上角',

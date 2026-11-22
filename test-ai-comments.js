@@ -89,7 +89,7 @@ function makeChrome() {
   const base = {
     storage: { local: area('local'), sync: area('sync'), session: area('local') },
     runtime: {
-      getManifest: () => ({ version: '1.5.22' }), getURL: (p) => 'chrome-extension://fake/' + p,
+      getManifest: () => ({ version: '1.5.26' }), getURL: (p) => 'chrome-extension://fake/' + p,
       sendMessage: () => Promise.resolve({}), onMessage: { addListener: () => {} },
       onInstalled: { addListener: () => {} }, onStartup: { addListener: () => {} }, lastError: null
     },
@@ -215,7 +215,7 @@ vm.runInContext(helpers + '\n' + busyBody + '\n' + pickerBody, uiCtx, { filename
   const busyText = busy._all().map((n) => n.textContent).join(' | ');
   ok('等待浮层标题写 DeepSeek 与 5 条', /DeepSeek 正在生成 5 条回复候选/.test(busyText), busyText);
   ok('等待浮层阶段不再写 Grok', /正在连接 DeepSeek/.test(busyText) && !/Grok/.test(busyText));
-  ok('等待浮层保留 spinner / 阶段 / 耗时 / 关闭按钮',
+  ok('等待浮层保留 spinner / 阶段 / 耗时 / F闭按钮',
     busy._all().some((n) => n.className === 'wbx-busy-spin') &&
     busy._all().some((n) => n.className === 'wbx-busy-stage') &&
     busy._all().some((n) => n.className === 'wbx-busy-time') &&

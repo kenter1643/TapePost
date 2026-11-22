@@ -1,8 +1,8 @@
 /*
- * TapePost · X 关注关系分析面板（1.5.22）
+ * TapePost · X F注F系分析面板（1.5.23）
  * ---------------------------------------------------------------
  * 只读本机 chrome.storage.local 里的名单，做统计 / 分类 / 明细，并在用户
- * 明确确认后调度 follow-bridge.js 执行限速批量取关。
+ * 明确确认后调度 follow-bridge.js 执行限速批量取F。
  * 本文件不接触 X 页面 DOM，不读取登录态，不上传任何数据。
  */
 (function () {
@@ -45,15 +45,28 @@
   };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
+  function swallow() {} // 1.5.23：事件 / 定时器里的 Promise 一律不留未处理 rejection
+  function safe(fn) {   // 包一层：async 事件回调抛错时只吞异常，不改业务逻辑
+    return function () {
+      try { var p = fn.apply(this, arguments); if (p && typeof p.catch === 'function') p.catch(swallow); }
+      catch (e) {}
+    };
+  }
   function get(keys) {
     return new Promise(function (resolve) {
-      try { chrome.storage.local.get(keys, function (r) { resolve(r || {}); }); }
+      try { chrome.storage.local.get(keys, function (r) {
+        void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+        resolve(r || {});
+      }); }
       catch (e) { resolve({}); }
     });
   }
   function set(obj) {
     return new Promise(function (resolve) {
-      try { chrome.storage.local.set(obj, function () { resolve(true); }); }
+      try { chrome.storage.local.set(obj, function () {
+        var err = chrome.runtime && chrome.runtime.lastError;
+        resolve(!err);
+      }); }
       catch (e) { resolve(false); }
     });
   }
@@ -73,7 +86,7 @@
     };
   }
   // 任何写 followData 都必须「先读最新再合并」：面板内存里的旧快照不能覆盖
-  // 桥接层在面板关闭期间实时落盘的新用户（1.5.20 修复数据丢失的关键）。
+  // 桥接层在面板F闭期间实时落盘的新用户（1.5.20 修复数据丢失的F键）。
   async function writeData(patch) {
     var r = await get([K.data]);
     var d = normalizeData(r[K.data]);
@@ -87,13 +100,19 @@
 
   function tabsQuery(q) {
     return new Promise(function (resolve) {
-      try { chrome.tabs.query(q, function (t) { resolve(t || []); }); }
+      try { chrome.tabs.query(q, function (t) {
+        void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+        resolve(t || []);
+      }); }
       catch (e) { resolve([]); }
     });
   }
   function tabsCreate(url) {
     return new Promise(function (resolve) {
-      try { chrome.tabs.create({ url: url }, function (t) { resolve(t || null); }); }
+      try { chrome.tabs.create({ url: url }, function (t) {
+        void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+        resolve(t || null);
+      }); }
       catch (e) { resolve(null); }
     });
   }
@@ -140,13 +159,13 @@
     c.status = 'interrupted';
     c.finishedAt = Date.now();
     c.message = '上次采集中断，本机已保留 ' + kept + ' 人。点「继续采集」从已保存的名单往下补，' +
-      '已抓到的人不会重复；关闭面板不会丢失数据。';
+      '已抓到的人不会重复；F闭面板不会丢失数据。';
     var w = {}; w[K.capture] = c;
     await set(w);
     state.capture = c;
   }
 
-  /* 1.5.21：接收 X 页面内中文扫描浮层「从当前位置选未回关」带入的账号。
+  /* 1.5.21：接收 X 页面内中文扫描浮层「从当前位置选未回F」带入的账号。
    * 安全边界：这里只把它们放进 state.selected（等同用户手动勾选），
    * 绝不写 followTask、绝不设置 confirmed；用户仍须点「预演」再「我确认」，
    * 由 follow-bridge.js 执行。草稿一次性消费，过期 / 受保护的账号不勾选。 */
@@ -170,8 +189,8 @@
     var el = $('draftHint');
     if (!el) return;
     el.textContent = n
-      ? '已从 X 页面内扫描浮层带入 ' + n + ' 位待选账号（当前可见的未回关）。' +
-        '这里只是帮你勾选，仍需点「预演」并确认后才会执行取关。'
+      ? '已从 X 页面内扫描浮层带入 ' + n + ' 位待选账号（当前可见的未回F）。' +
+        '这里只是帮你勾选，仍需点「预演」并确认后才会执行取F。'
       : '页面浮层带入的账号已过期或属于受保护名单，未自动勾选；请在下方手动选择。';
     el.className = 'hint ' + (n ? 'draft-ok' : 'draft-warn');
   }
@@ -207,9 +226,9 @@
     $('whenFollowing').textContent = when(d.updatedAt.following);
     $('whenFollowers').textContent = when(d.updatedAt.followers);
     var lastWrite = d.savedAt || Math.max(d.updatedAt.following, d.updatedAt.followers);
-    $('saveHint').textContent = '实时保存：本机已存 ' + fmt(nf + nr) + ' 人（关注中 ' + fmt(nf) +
+    $('saveHint').textContent = '实时保存：本机已存 ' + fmt(nf + nr) + ' 人（F注中 ' + fmt(nf) +
       ' / 粉丝 ' + fmt(nr) + '）· 最后写入 ' + when(lastWrite) +
-      ' · 每批数据立即写盘，关闭面板或中途停止都不会丢，下次打开自动恢复';
+      ' · 每批数据立即写盘，F闭面板或中途停止都不会丢，下次打开自动恢复';
     var c = state.capture || {};
     if (c.storageError) {
       $('saveHint').textContent += ' ｜ ⚠ 本机写入异常：' + c.storageError + '（请检查浏览器存储空间后重试）';
@@ -223,7 +242,7 @@
         notBottom: '正在继续向下滚动',
         bottomUnstable: '正在确认列表是否已到底'
       }[(c.scan && c.scan.reason) || ''] || '正在等待 X 分页加载';
-      status('capStatus', '正在采集「' + (c.target === 'followers' ? '粉丝' : '关注中') +
+      status('capStatus', '正在采集「' + (c.target === 'followers' ? '粉丝' : 'F注中') +
         '」… 已滚动 ' + (c.scrolls || 0) + ' 次，当前 ' + (c.count || 0) +
         ' 人，' + why + '。每批已实时保存；X 分页慢或全是已存账号都不会提前结束，' +
         '只有列表真正到底才会完成。请保持该标签页可见。', 'warn');
@@ -251,8 +270,8 @@
       mutual: s.mutual.length, following: s.followingCount, followers: s.followerCount
     };
     var descs = {
-      notBack: '我关注了、对方没关注我', toFollowBack: '对方关注了我、我没回关',
-      mutual: '双向关注', following: '我关注的所有人', followers: '关注我的所有人'
+      notBack: '我F注了、对方没F注我', toFollowBack: '对方F注了我、我没回F',
+      mutual: '双向F注', following: '我F注的所有人', followers: 'F注我的所有人'
     };
     $('cards').innerHTML = Core.GROUPS.map(function (g) {
       return '<button type="button" class="card ' + g.tone + (state.group === g.id ? ' active' : '') +
@@ -268,8 +287,8 @@
         renderCards(); renderList();
       });
     });
-    $('rateLine').textContent = '互关率 ' + s.mutualRate + '%（互关 / 我关注的人）· ' +
-      '回关率 ' + s.backRate + '%（互关 / 我的粉丝）· 数据截至 ' +
+    $('rateLine').textContent = '互F率 ' + s.mutualRate + '%（互F / 我F注的人）· ' +
+      '回F率 ' + s.backRate + '%（互F / 我的粉丝）· 数据截至 ' +
       (when(Math.max(state.data.updatedAt.following, state.data.updatedAt.followers)));
   }
 
@@ -341,6 +360,11 @@
 
   function renderList() {
     var list = filtered();
+    // 1.5.23：粉丝名单齐备时，标出「我F注了但对方没F注我」的行
+    var nbSet = Object.create(null);
+    if (Object.keys(state.data.followers || {}).length) {
+      sets().notBack.forEach(function (n) { nbSet[Core.lowerHandle(n.handle)] = true; });
+    }
     var pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
     if (state.page > pages) state.page = pages;
     var start = (state.page - 1) * PAGE_SIZE;
@@ -361,7 +385,8 @@
       var safeAvatar = /^https:\/\//i.test(u.avatar || '') ? esc(u.avatar) : '';
       var checked = !!state.selected[u.handle];
       var wl = state.whitelist.indexOf(u.handle) !== -1;
-      return '<div class="item">' +
+      var notback = !!nbSet[u.handle];
+      return '<div class="item' + (notback ? ' item-notback' : '') + '">' +
         '<input type="checkbox" data-pick="' + esc(u.handle) + '"' + (checked ? ' checked' : '') +
         (u.reasons.length ? ' disabled title="受保护账号不能勾选"' : '') + ' aria-label="选择 ' + esc(u.handle) + '" />' +
         (safeAvatar ? '<img class="av" src="' + safeAvatar + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'" />'
@@ -369,12 +394,15 @@
         '<div class="main"><div class="line1">' +
         '<span class="nm">' + esc(u.name || u.handle) + '</span>' +
         '<a class="hd" href="https://x.com/' + esc(u.handle) + '" target="_blank" rel="noopener noreferrer">@' + esc(u.handle) + '</a>' +
+        (notback ? '<span class="tag nb-badge">🚫 未互F</span>' : '') +
         tagHtml(u) + '</div>' +
-        '<div class="meta">粉丝 ' + fmt(u.followers) + ' · 关注 ' + fmt(u.friends) +
+        '<div class="meta">粉丝 ' + fmt(u.followers) + ' · F注 ' + fmt(u.friends) +
         ' · 推文 ' + fmt(u.tweets) + ' · 粉丝量 ' + esc(BAND_LABELS[u.band] || '未分类') +
         (u.lastTweetAt ? ' · 最后发推 ' + esc(String(u.lastTweetAt).slice(0, 16)) : '') + '</div>' +
         (u.bio ? '<div class="bio" title="' + esc(u.bio) + '">' + esc(u.bio) + '</div>' : '') +
         '</div><div class="ops">' +
+        (notback ? '<button type="button" class="mini btn-unfollow" data-unf="' + esc(u.handle) + '"' +
+          (u.reasons.length ? ' disabled title="受保护账号不能取F"' : '') + '>🎯 取F</button>' : '') +
         '<button type="button" class="mini ghost" data-wl="' + esc(u.handle) + '">' +
         (wl ? '移出白名单' : '🛡 加入白名单') + '</button>' +
         '</div></div>';
@@ -387,8 +415,21 @@
         syncHeadCheck(page);
       });
     });
+    // 1.5.23：行内「🎯 取F」只把账号加入待选并引导到预演区，绝不直接取F
+    Array.prototype.forEach.call($('list').querySelectorAll('[data-unf]'), function (b) {
+      b.addEventListener('click', safe(function () {
+        var h = b.getAttribute('data-unf');
+        if (!h) return;
+        var u = (list || []).filter(function (x) { return x.handle === h; })[0];
+        if (u && u.reasons.length) return; // 受保护账号不勾选
+        state.selected[h] = true;
+        renderList();
+        status('taskStatus', '已把 @' + h + ' 选入待取F名单，请点「预演：查看将取F名单」核对后由你确认；这里不会直接取F。', 'warn');
+        try { var sec = $('secUnfollow'); if (sec && sec.scrollIntoView) sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+      }));
+    });
     Array.prototype.forEach.call($('list').querySelectorAll('[data-wl]'), function (b) {
-      b.addEventListener('click', async function () {
+      b.addEventListener('click', safe(async function () {
         var h = b.getAttribute('data-wl');
         var wl = (state.whitelist || []).slice();
         var i = wl.indexOf(h);
@@ -397,7 +438,7 @@
         await set((function () { var o = {}; o[K.whitelist] = wl; return o; })());
         state.whitelist = wl;
         renderList(); renderWhitelist();
-      });
+      }));
     });
     syncHeadCheck(page);
   }
@@ -416,12 +457,12 @@
         esc(h) + ' ×</button>';
     }).join('');
     Array.prototype.forEach.call(box.querySelectorAll('[data-unwl]'), function (b) {
-      b.addEventListener('click', async function () {
+      b.addEventListener('click', safe(async function () {
         var h = b.getAttribute('data-unwl');
         state.whitelist = state.whitelist.filter(function (x) { return x !== h; });
         await set((function () { var o = {}; o[K.whitelist] = state.whitelist; return o; })());
         renderWhitelist(); renderList();
-      });
+      }));
     });
   }
 
@@ -465,7 +506,7 @@
   async function startCapture(target) {
     var me = meHandle();
     if (!me) return;
-    // 从最新缓存起步：面板关闭期间桥接层实时写入的人也算进来，实现断点续采
+    // 从最新缓存起步：面板F闭期间桥接层实时写入的人也算进来，实现断点续采
     var fresh = await get([K.data]);
     var d = normalizeData(fresh[K.data]);
     state.data = d;
@@ -503,7 +544,7 @@
       }
     }
     status('capStatus', (had ? '继续采集（已从本机缓存恢复 ' + had + ' 人）' : '已开始采集') +
-      '：正在自动滚动「' + (target === 'followers' ? '粉丝' : '关注中') +
+      '：正在自动滚动「' + (target === 'followers' ? '粉丝' : 'F注中') +
       '」页，每批数据立即存到本机；X 分页加载完（连续几轮没有新增）会自动结束。', 'warn');
   }
 
@@ -540,7 +581,7 @@
 
   async function dryRun() {
     var sel = Object.keys(state.selected);
-    if (!sel.length) { status('taskStatus', '请先在上方的明细清单里勾选要取关的账号。', 'warn'); return; }
+    if (!sel.length) { status('taskStatus', '请先在上方的明细清单里勾选要取F的账号。', 'warn'); return; }
     var users = Core.mapToList(state.data.following);
     var o = settingsFromUi();
     var task = Core.buildTask(sel, users, o);
@@ -550,7 +591,7 @@
       return;
     }
     var lines = [];
-    lines.push('将取关 ' + task.handles.length + ' 个账号（单批上限 ' + task.settings.batchLimit + '）：');
+    lines.push('将取F ' + task.handles.length + ' 个账号（单批上限 ' + task.settings.batchLimit + '）：');
     lines.push(task.handles.map(function (h) { return '@' + h; }).join('  '));
     if (task.skipped.length) {
       lines.push('', '已跳过 ' + task.skipped.length + ' 个受保护账号：');
@@ -559,12 +600,12 @@
     lines.push('', '节奏：每次间隔 ' + task.settings.minDelay + '～' +
       (task.settings.minDelay + task.settings.jitter) + ' 毫秒；预计耗时约 ' +
       Math.ceil(task.handles.length * (task.settings.minDelay + task.settings.jitter / 2) / 60000) + ' 分钟。');
-    lines.push('执行时会打开/定位你自己的「关注中」页，只点击对应行的原生按钮，找不到就跳过。');
-    openModal('批量取关预演（不会执行任何操作）',
-      '<b>请逐行核对名单。</b>X 对自动化批量操作有风控，短时间大量取关可能被临时限制账号；' +
+    lines.push('执行时会打开/定位你自己的「F注中」页，只点击对应行的原生按钮，找不到就跳过。');
+    openModal('批量取F预演（不会执行任何操作）',
+      '<b>请逐行核对名单。</b>X 对自动化批量操作有风控，短时间大量取F可能被临时限制账号；' +
       '本批默认 ≥5 秒间隔、最多 50 人、可随时暂停或停止。',
-      lines.join('\n'), executeTask);
-    status('taskStatus', '预演已生成：' + task.handles.length + ' 个账号待确认，尚未执行任何取关。', 'warn');
+      lines.join('\n'), safe(executeTask));
+    status('taskStatus', '预演已生成：' + task.handles.length + ' 个账号待确认，尚未执行任何取F。', 'warn');
   }
 
   async function executeTask() {
@@ -581,10 +622,10 @@
     var url = 'https://x.com/' + me + '/following';
     var tab = await findXTab('/following');
     if (!tab) { tab = await tabsCreate(url); await sleep(3000); }
-    if (!tab || tab.id == null) { status('taskStatus', '没能打开 X 的「关注中」页，任务未启动。', 'err'); return; }
+    if (!tab || tab.id == null) { status('taskStatus', '没能打开 X 的「F注中」页，任务未启动。', 'err'); return; }
     var pong = await sendToTab(tab.id, { type: 'FOLLOW_PING' });
     if (!pong || !pong.ok || pong.source !== 'following') {
-      status('taskStatus', '请刷新 X 的「关注中」标签页，确认页面停留在自己的关注列表页后' +
+      status('taskStatus', '请刷新 X 的「F注中」标签页，确认页面停留在自己的F注列表页后' +
         '再点一次执行（安全起见未启动任务）。', 'err');
       return;
     }
@@ -600,7 +641,7 @@
     // 不等回调：任务可能跑几分钟，进度统一通过 storage.onChanged 回流
     sendToTab(tab.id, { type: 'FOLLOW_TASK_START' }).then(function (r) {
       if (r && r.ok === false) status('taskStatus', '任务未能启动：' + (r.error || '未知原因'), 'err');
-    });
+    }).catch(swallow);
   }
 
   async function setPhase(phase) {
@@ -623,7 +664,7 @@
     var blob = new Blob(['\ufeff' + Core.toCsv(list)], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'TapePost关注关系名单-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.download = 'TapePostF注F系名单-' + new Date().toISOString().slice(0, 10) + '.csv';
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -632,24 +673,24 @@
   // ---------------------------------------------------------------- 绑定
   function bind() {
     try { $('followVer').textContent = 'v' + chrome.runtime.getManifest().version; } catch (e) {}
-    $('detectMe').addEventListener('click', detectMe);
-    $('saveMe').addEventListener('click', async function () {
+    $('detectMe').addEventListener('click', safe(detectMe));
+    $('saveMe').addEventListener('click', safe(async function () {
       var me = meHandle();
       if (!me) return;
       await writeData({ me: me });
       status('capStatus', '已保存 @' + me + '。现在可以开始采集，之前采集到的名单仍在。', 'ok');
-    });
-    $('capFollowing').addEventListener('click', function () { startCapture('following'); });
-    $('capFollowers').addEventListener('click', function () { startCapture('followers'); });
-    $('stopCapture').addEventListener('click', async function () {
+    }));
+    $('capFollowing').addEventListener('click', function () { startCapture('following').catch(swallow); });
+    $('capFollowers').addEventListener('click', function () { startCapture('followers').catch(swallow); });
+    $('stopCapture').addEventListener('click', safe(async function () {
       var c = Object.assign({}, state.capture || {}, { status: 'stopped', finishedAt: Date.now() });
       var w = {}; w[K.capture] = c;
       await set(w); state.capture = c; renderCapture();
       status('capStatus', '采集已停止。已经抓到的名单已实时保存在本机，不会丢失。', 'warn');
-    });
+    }));
     $('clearData').addEventListener('click', function () {
-      openModal('清空本机名单', '<b>只会删除本机的关注/粉丝快照与任务记录</b>，白名单和设置会保留，X 上的关注关系不会有任何变化。',
-        '确定要清空吗？清空后需要重新执行两步采集。', async function () {
+      openModal('清空本机名单', '<b>只会删除本机的F注/粉丝快照与任务记录</b>，白名单和设置会保留，X 上的F注F系不会有任何变化。',
+        '确定要清空吗？清空后需要重新执行两步采集。', safe(async function () {
           // 覆盖式写入（不用 remove）：面板与桥接层都能看到一次明确的「已清空」状态
           await writeData({ me: $('meHandle').value, following: {}, followers: {},
             updatedAt: { following: 0, followers: 0 }, savedAt: 0 });
@@ -657,7 +698,7 @@
           await set(w);
           state.capture = {}; state.task = {}; state.selected = Object.create(null);
           renderAll();
-        });
+        }));
     });
     $('search').addEventListener('input', function (e) { state.search = e.target.value; state.page = 1; renderList(); });
     $('sortBy').addEventListener('change', function (e) { state.sort = e.target.value; state.page = 1; renderList(); });
@@ -680,10 +721,10 @@
     $('exportCsv').addEventListener('click', exportCsv);
     $('prevPage').addEventListener('click', function () { if (state.page > 1) { state.page--; renderList(); } });
     $('nextPage').addEventListener('click', function () { state.page++; renderList(); });
-    $('dryRun').addEventListener('click', dryRun);
-    $('pauseTask').addEventListener('click', function () { setPhase('paused'); });
-    $('resumeTask').addEventListener('click', function () { setPhase('running'); });
-    $('stopTask').addEventListener('click', function () { setPhase('stopped'); });
+    $('dryRun').addEventListener('click', safe(dryRun));
+    $('pauseTask').addEventListener('click', function () { setPhase('paused').catch(swallow); });
+    $('resumeTask').addEventListener('click', function () { setPhase('running').catch(swallow); });
+    $('stopTask').addEventListener('click', function () { setPhase('stopped').catch(swallow); });
     $('modal').addEventListener('click', function (e) {
       if (e.target === $('modal')) $('modal').classList.remove('show');
     });
@@ -707,5 +748,5 @@
   }
 
   bind();
-  refresh();
+  refresh().catch(swallow);
 })();

@@ -1,21 +1,21 @@
 /*
- * TapePost · 关注关系桥接与取关执行器（ISOLATED world，1.5.22）
+ * TapePost · F注F系桥接与取F执行器（ISOLATED world，1.5.23）
  * ---------------------------------------------------------------
  * 职责：
  *   1) 收 MAIN world 的被动采集结果，合并进本机 chrome.storage.local；
- *   2) 用户点「开始采集」后，只滚动 X 自己的关注中 / 粉丝页，等 X 自己分页
+ *   2) 用户点「开始采集」后，只滚动 X 自己的F注中 / 粉丝页，等 X 自己分页
  *      加载完（1.5.22 起按 Core.scanVerdict() 多信号判定：最短时长 + 最后一次
  *      X 响应 / 名单新增 / 页面变高 + 连续静默 + 到底且高度稳定 + 加载指示器；
  *      达上限只标「中断、可继续」，绝不冒充完成），全程不发额外请求；
- *   3) 批量取关：只点击 X 页面上「该用户那一行」的原生关注按钮，
+ *   3) 批量取F：只点击 X 页面上「该用户那一行」的原生F注按钮，
  *      两级回退定位 + 文字校验 + 限速 + 暂停/停止 + 单批上限 + 白名单二次校验；
  *   4) 1.5.21 页面内浮层：按 followCapture.mode 决定起始滚动位置，并维护
  *      followScanAnchor 供「增量续扫」回到上次位置（名单始终不清空）。
  *
  * 安全不变量（任何改动都不能破）：
  *   - 不调用 X 的任何私有/公开写接口，不 fetch、不重放请求；
- *   - 取关必须 task.confirmed === true 且 task.dryRun === false；
- *   - 找不到目标行 / 找不到按钮 / 状态没变成「关注」一律记失败，绝不盲点；
+ *   - 取F必须 task.confirmed === true 且 task.dryRun === false；
+ *   - 找不到目标行 / 找不到按钮 / 状态没变成「F注」一律记失败，绝不盲点；
  *   - 连续 3 次定位失败自动停机，防止 X 改版后误点别的按钮；
  *   - 保护名单在桥接层再校验一次，不信任面板层；
  *   - 只在本机存储公开主页资料，不上传任何服务器。
@@ -28,6 +28,23 @@
 
   var Core = window.FollowCore;
   if (!Core) return;
+  /* 1.5.23：chrome://extensions「错误」面板三类红字统一兜底：
+   *   1) 回调式 chrome.* API 未同步读取 lastError → Unchecked runtime.lastError；
+   *   2) 面板在长任务（取F / 读名单）完成前F闭，异步 sendResponse 端口已F
+   *      → Error handling response / Unchecked lastError；
+   *   3) async 事件回调里未 catch 的 Promise → Uncaught (in promise)。
+   * 这里只加防护，不改变采集 / 取F逻辑与安全不变量。 */
+  function guardedResponse(sendResponse) {
+    var raw = sendResponse;
+    var done = false;
+    return function (payload) {
+      if (done) return;
+      done = true;
+      try { raw(payload); } catch (e) {}
+      try { void (chrome.runtime && chrome.runtime.lastError); } catch (e) {}
+    };
+  }
+  function swallow() {}
   var TAG = '__tapeFollow';
   var KEY_DATA = 'followData';
   var KEY_CAPTURE = 'followCapture';
@@ -56,7 +73,10 @@
 
   var storeGet = function (keys) {
     return new Promise(function (resolve) {
-      try { chrome.storage.local.get(keys, function (r) { resolve(r || {}); }); }
+      try { chrome.storage.local.get(keys, function (r) {
+        void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+        resolve(r || {});
+      }); }
       catch (e) { resolve({}); }
     });
   };
@@ -77,7 +97,7 @@
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var txt = function (el) { return String((el && (el.innerText || el.textContent)) || '').trim(); };
 
-  // 串行化所有「读-改-写」，避免采集与取关进度互相覆盖
+  // 串行化所有「读-改-写」，避免采集与取F进度互相覆盖
   var chain = Promise.resolve();
   function serial(fn) {
     var next = chain.then(fn, fn);
@@ -120,7 +140,7 @@
   }
 
   /* 实时落盘（1.5.20 修复）：旧版只在 cap.status === 'running' 且来源等于
-   * cap.target 时才写，采集一旦自动结束、或用户关掉面板让状态卡住，后续批次
+   * cap.target 时才写，采集一旦自动结束、或用户F掉面板让状态卡住，后续批次
    * 就被整批丢弃，重新打开面板只剩「上次抓到的一部分」。现在每批到达立即
    * merge 并写入 chrome.storage.local，与采集状态完全解耦；写入失败保留内存
    * 副本，下一批继续补写，并把失败原因暴露给面板。 */
@@ -222,7 +242,7 @@
       // 或 pickUsers 一个用户都没提取到。没有这个信号，6 秒就会误停。
       lastResponseAt = Date.now();
       var batches = Array.isArray(d.batches) ? d.batches : [];
-      if (batches.length) ingest(batches);
+      if (batches.length) ingest(batches).catch(swallow);
     } else if (d.type === 'TAPEFOLLOW_PULSE') {
       // 采集器在「X 有响应但没解析出用户」时发的轻量心跳，只含计数与时间戳
       lastResponseAt = Date.now();
@@ -386,10 +406,10 @@
             // 一轮下来连一次 X 分页响应都没看到，绝不能说「采集完成」
             o.status = 'interrupted';
             o.message = '本轮没有检测到 X 的分页数据（可能页面还没加载完、没登录，或 X 改了接口）。' +
-              '已存的 ' + count + ' 人全部保留；请刷新 X 的「关注中 / 粉丝」页后点「增量续扫」重试。';
+              '已存的 ' + count + ' 人全部保留；请刷新 X 的「F注中 / 粉丝」页后点「增量续扫」重试。';
           } else {
             o.status = 'done';
-            o.message = '采集完成：' + (src === 'followers' ? '粉丝' : '关注中') +
+            o.message = '采集完成：' + (src === 'followers' ? '粉丝' : 'F注中') +
               '共 ' + count + ' 人（列表已到底，X 连续一段时间没有再加载新页，已实时保存到本机）';
           }
           postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
@@ -410,7 +430,7 @@
   }
   setInterval(captureTick, TICK_MS);
 
-  // ---------------------------------------------------------------- 2. 取关定位
+  // ---------------------------------------------------------------- 2. 取F定位
   function cellHandle(cell) {
     var links = cell.querySelectorAll('a[href^="/"]');
     for (var i = 0; i < links.length; i++) {
@@ -474,12 +494,12 @@
   }
 
   async function unfollowOne(handle) {
-    if (pageSource() !== 'following') return { ok: false, reason: '不在「关注中」页面' };
+    if (pageSource() !== 'following') return { ok: false, reason: '不在「F注中」页面' };
     var cell = findCell(handle);
     if (!cell) return { ok: false, reason: '没找到这一行（列表未加载或页面结构变化）' };
     if (cellHandle(cell) !== handle) return { ok: false, reason: '行与目标账号不匹配，已跳过' };
     var btn = findUnfollowButton(cell);
-    if (!btn) return { ok: false, reason: '没找到「正在关注」按钮，可能已取关' };
+    if (!btn) return { ok: false, reason: '没找到「正在F注」按钮，可能已取F' };
     try { btn.click(); } catch (e) { return { ok: false, reason: '点击失败：' + (e && e.message || e) }; }
     await sleep(350);
     var confirm = findConfirm();
@@ -489,8 +509,8 @@
     } else {
       await sleep(300);
     }
-    if (!looksUnfollowed(cell)) return { ok: false, reason: '按钮状态未变成「关注」，未确认成功' };
-    return { ok: true, reason: '已取关' };
+    if (!looksUnfollowed(cell)) return { ok: false, reason: '按钮状态未变成「F注」，未确认成功' };
+    return { ok: true, reason: '已取F' };
   }
 
   // ---------------------------------------------------------------- 3. 任务执行
@@ -527,7 +547,7 @@
         return { ok: false, error: '未经确认或仍是预演，拒绝执行（安全不变量）' };
       }
       if (pageSource() !== 'following') {
-        return { ok: false, error: '请停留在自己的「关注中」页面再执行' };
+        return { ok: false, error: '请停留在自己的「F注中」页面再执行' };
       }
       var handles = (t.handles || []).slice(0, t.settings ? t.settings.batchLimit : Core.DEFAULTS.batchLimit);
       var byHandle = {};
@@ -582,6 +602,7 @@
   if (chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       if (!msg || String(msg.type || '').indexOf('FOLLOW_') !== 0) return false;
+      sendResponse = guardedResponse(sendResponse); // 1.5.23：端口F闭时不再留未检查错误
       if (msg.type === 'FOLLOW_PING') {
         readData().then(function (d) {
           sendResponse({ ok: true, source: pageSource(), me: detectMe(),
@@ -596,6 +617,8 @@
               source: memAnchor.source, count: memAnchor.count,
               scrollY: memAnchor.scrollY, savedAt: memAnchor.savedAt
             } : null });
+        }).catch(function () {
+          sendResponse({ ok: false, source: pageSource(), busy: taskBusy });
         });
         return true;
       }
@@ -604,7 +627,10 @@
         return false;
       }
       if (msg.type === 'FOLLOW_TASK_START') {
-        runTask().then(sendResponse);
+        // 批量取F可能跑几分钟，面板F掉后端口已失效；无论成功失败都只回一次包
+        runTask().then(function (r) { sendResponse(r); }, function (e) {
+          sendResponse({ ok: false, error: String(e && e.message || e) });
+        }).catch(swallow);
         return true;
       }
       return false;
@@ -630,7 +656,7 @@
     });
   }
 
-  // 首帧问一次 MAIN 状态，并按已保存的采集状态立刻补发开关（页面刷新后也能续上）
+  // 首帧问一次 MAIN 状态，并按已保存的采集状态立刻补发开F（页面刷新后也能续上）
   setTimeout(function () {
     postToMain({ type: 'TAPEFOLLOW_CMD', action: 'ping' });
     storeGet([KEY_CAPTURE, KEY_ANCHOR]).then(function (r) {
@@ -638,7 +664,7 @@
       var c = r[KEY_CAPTURE] || {};
       var on = c.status === 'running' && c.target && c.target === pageSource();
       postToMain({ type: 'TAPEFOLLOW_CMD', action: on ? 'start' : 'stop' });
-    });
+    }).catch(swallow);
   }, 800);
   setTimeout(captureTick, 600);
 })();

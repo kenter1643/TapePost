@@ -67,7 +67,7 @@
       cursor: 'pointer', fontSize: '13px', padding: '0 2px', lineHeight: '1'
     });
     close.setAttribute('type', 'button');
-    close.setAttribute('aria-label', '关闭提醒');
+    close.setAttribute('aria-label', 'F闭提醒');
     close.addEventListener('click', function (e) {
       e.stopPropagation();
       if (card.parentNode) card.parentNode.removeChild(card);
@@ -88,7 +88,7 @@
     card.addEventListener('click', function () {
       try {
         chrome.runtime.sendMessage({ type: 'OPEN_PRICE_LINK', url: alert.url }, function () {
-          // 必须同步读取，避免弹窗/端口提前关闭留下 Unchecked runtime.lastError
+          // 必须同步读取，避免弹窗/端口提前F闭留下 Unchecked runtime.lastError
           void (chrome.runtime && chrome.runtime.lastError);
         });
       } catch (e) {}

@@ -113,7 +113,7 @@ const TRANSIENT = () => Promise.reject(new Error('Could not establish connection
     ok('业务错误不重试', env.calls.length === 1, '实际 ' + env.calls.length);
   }
 
-  // ③ 端口关闭意味着后台可能已收到，重发会有副作用 —— 不重试
+  // ③ 端口F闭意味着后台可能已收到，重发会有副作用 —— 不重试
   {
     const env = makeEnv(() => Promise.reject(new Error('The message port closed before a response was received.')));
     try { await env.api.bgSend({ type: 'VIDEO_RESOLVE' }); } catch (e) {}
@@ -181,9 +181,9 @@ const TRANSIENT = () => Promise.reject(new Error('Could not establish connection
     const html = fs.readFileSync(path.join(__dirname, 'popup.html'), 'utf8');
     const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
     const listing = JSON.parse(fs.readFileSync(path.join(__dirname, 'store', 'listing.json'), 'utf8'));
-    ok('版本号统一 1.5.22', manifest.version === '1.5.22' && listing.version === '1.5.22' &&
-      /appVersion">v1\.5\.22</.test(html) && /return 'v1\.5\.22';/.test(SRC));
-    ok('描述首条为 1.5.22', String(listing.detailed_description[0]).startsWith('【1.5.22'));
+    ok('版本号统一 1.5.26', manifest.version === '1.5.26' && listing.version === '1.5.26' &&
+      /appVersion">v1\.5\.26</.test(html) && /return 'v1\.5\.26';/.test(SRC));
+    ok('描述首条为 1.5.26', String(listing.detailed_description[0]).startsWith('【1.5.26'));
   }
 
   console.log('\n结果：' + passed + '/' + (passed + failed) + ' 通过，' + failed + ' 条失败');

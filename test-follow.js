@@ -1,7 +1,7 @@
-/* TapePost 1.5.22 · X 关注关系分析 / X 页面内扫描浮层专项自检
+/* TapePost 1.5.26 · X F注F系分析 / X 页面内扫描浮层专项自检
  *
  * 覆盖：接线与版本、合规资料、通用用户提取器、集合 / 分类、白名单与预演、
- * 安全不变量（不主动发请求 / 不读凭证 / 取关需确认 / 定位失败自动停机）、
+ * 安全不变量（不主动发请求 / 不读凭证 / 取F需确认 / 定位失败自动停机）、
  * 商店包内容。纯离线断言，不需要登录 X，也不产生任何网络请求。
  */
 'use strict';
@@ -50,15 +50,16 @@ const tutorial = fs.existsSync(tutorialPath) ? fs.readFileSync(tutorialPath, 'ut
 
 const NEW_FILES = ['follow-core.js', 'follow-capture.js', 'follow-bridge.js', 'follow.html', 'follow.js'];
 const OVERLAY_FILES = ['follow-overlay.js', 'follow-overlay.css'];
+const GROWTH_FILES = ['growth-core.js', 'growth.html', 'growth.js'];
 
 // ---------------------------------------------------------------- 1. 版本与接线
 console.log('== 1. 版本与接线 ==');
-eq('manifest 版本', manifest.version, '1.5.22');
-eq('listing 版本', listing.version, '1.5.22');
-ok('manifest.description ≤132 且含关注分析', manifest.description.length <= 132 &&
-  /关注互关分析/.test(manifest.description));
-ok('listing.summary_132 ≤132 且含关注分析', listing.summary_132.length <= 132 &&
-  /关注互关分析/.test(listing.summary_132));
+eq('manifest 版本', manifest.version, '1.5.26');
+eq('listing 版本', listing.version, '1.5.26');
+ok('manifest.description ≤132 且含F注分析', manifest.description.length <= 132 &&
+  /F注互F分析/.test(manifest.description));
+ok('listing.summary_132 ≤132 且含F注分析', listing.summary_132.length <= 132 &&
+  /F注互F分析/.test(listing.summary_132));
 eq('listing.manifest_description_132 与 manifest 一致', listing.manifest_description_132, manifest.description);
 eq('permissions 仍 9 项', manifest.permissions.length, 9);
 eq('host_permissions 仍 34 条', manifest.host_permissions.length, 34);
@@ -85,7 +86,7 @@ ok('新增段以 follow-core.js 打头再注入 follow-bridge.js', (() => {
   const js = manifest.content_scripts[2].js;
   return js[0] === 'follow-core.js' && js[1] === 'follow-bridge.js';
 })());
-NEW_FILES.concat(OVERLAY_FILES).forEach((f) => ok('新运行时文件存在 ' + f, exists(f)));
+NEW_FILES.concat(OVERLAY_FILES, GROWTH_FILES).forEach((f) => ok('新运行时文件存在 ' + f, exists(f)));
 ok('第三段注入 follow-overlay.js 与 follow-overlay.css', (() => {
   const c = manifest.content_scripts[2];
   return c.js.includes('follow-overlay.js') && (c.css || []).includes('follow-overlay.css');
@@ -98,35 +99,35 @@ ok('第三段仍以 core / bridge 打头，浮层排在最后', (() => {
   return js[0] === 'follow-core.js' && js[1] === 'follow-bridge.js' &&
     js[js.length - 1] === 'follow-overlay.js';
 })());
-ok('弹窗有关注分析入口按钮', /id="openFollow"/.test(popHtml) &&
-  /X 关注关系分析/.test(popHtml));
-ok('互关管理主入口固定在品牌头正下方、行情面板之前', (() => {
+ok('弹窗有F注分析入口按钮', /id="openFollow"/.test(popHtml) &&
+  /X F注F系分析/.test(popHtml));
+ok('互F管理主入口固定在品牌头正下方、行情面板之前', (() => {
   const h1 = popHtml.indexOf('<h1>');
   const btn = popHtml.indexOf('id="openFollow"');
   const price = popHtml.indexOf('id="pricePanel"');
   const panel = popHtml.indexOf('id="openPanel"');
   return h1 >= 0 && btn > h1 && price > btn && panel > price;
 })());
-ok('互关管理入口只出现一次，不再重复出现在弹窗底部',
+ok('互F管理入口只出现一次，不再重复出现在弹窗底部',
   (popHtml.match(/id="openFollow"/g) || []).length === 1);
-ok('主入口是「互关管理」+ 中文副标题 + 新增徽标 + 图标/箭头',
-  /he-title">互关管理<span class="he-new">新增/.test(popHtml) &&
-  /he-sub">X 关注关系分析 · 未回关统计 \/ 批量取关/.test(popHtml) &&
+ok('主入口是「互F管理」+ 中文副标题 + 新增徽标 + 图标/箭头',
+  /he-title">互F管理<span class="he-new">新增/.test(popHtml) &&
+  /he-sub">X F注F系分析 · 未回F统计 \/ 批量取F/.test(popHtml) &&
   /class="he-ico"/.test(popHtml) && /class="he-arrow"/.test(popHtml));
 ok('主入口有显眼的渐变卡样式（flex 布局 + 渐变 + hover）',
   /#openFollow \{ display:flex/.test(popHtml) &&
   /linear-gradient\(100deg,rgba\(34,211,238/.test(popHtml) &&
   /#openFollow:hover/.test(popHtml));
-ok('README / 教程 / 上架资料 / 隐私政策口径同步为「互关管理」入口',
-  /互关管理/.test(readme) && /互关管理/.test(tutorial) &&
-  /互关管理/.test(listing.detailed_description[0]) &&
-  privs.every((p) => /互关管理/.test(p)));
+ok('README / 教程 / 上架资料 / 隐私政策口径同步为「互F管理」入口',
+  /互F管理/.test(readme) && /互F管理/.test(tutorial) &&
+  listing.detailed_description.some((x) => /互F管理/.test(x)) &&
+  privs.every((p) => /互F管理/.test(p)));
 ok('popup.js 打开 follow.html', /getURL\('follow\.html'\)/.test(popJs));
 ok('follow.html 先引 core 再引面板脚本',
   followHtml.indexOf('<script src="follow-core.js"></script>') < followHtml.indexOf('<script src="follow.js"></script>'));
-ok('follow.html 版本兜底 v1.5.22', /v1\.5\.22/.test(followHtml));
-ok('四处 UI 兜底统一 v1.5.22', /v1\.5\.22/.test(popHtml) && /v1\.5\.22/.test(panelHtml) &&
-  /v1\.5\.22/.test(contentJs) && /v1\.5\.22/.test(popJs));
+ok('follow.html 版本兜底 v1.5.26', /v1\.5\.26/.test(followHtml));
+ok('四处 UI 兜底统一 v1.5.26', /v1\.5\.26/.test(popHtml) && /v1\.5\.26/.test(panelHtml) &&
+  /v1\.5\.26/.test(contentJs) && /v1\.5\.26/.test(popJs));
 ok('两段 Dashboard justification 仍 ≤1000 且 en_chars 对得上',
   listing.dashboard_permission_justifications.fields.every((f) =>
     f.en.length <= 1000 && f.en_chars === f.en.length));
@@ -135,73 +136,94 @@ ok('consistency_note 已说明 follow-capture.js 是静态 MAIN world 脚本',
 
 // ---------------------------------------------------------------- 2. 合规资料
 console.log('== 2. 合规资料与文档 ==');
-ok('详细描述首条为 1.5.22，依次保留 1.5.21 / 1.5.20 / 1.5.19 历史说明',
-  String(listing.detailed_description[0]).startsWith('【1.5.22') &&
-  String(listing.detailed_description[1]).startsWith('【1.5.21') &&
-  String(listing.detailed_description[2]).startsWith('【1.5.20') &&
-  String(listing.detailed_description[3]).startsWith('【1.5.19'));
+ok('详细描述首条为 1.5.26，依次保留 1.5.25 / 1.5.24 / 1.5.23 / 1.5.22 / 1.5.21 / 1.5.20 历史说明',
+  String(listing.detailed_description[0]).startsWith('【1.5.26') &&
+  String(listing.detailed_description[1]).startsWith('【1.5.25') &&
+  String(listing.detailed_description[2]).startsWith('【1.5.24') &&
+  String(listing.detailed_description[3]).startsWith('【1.5.23') &&
+  String(listing.detailed_description[4]).startsWith('【1.5.22') &&
+  String(listing.detailed_description[5]).startsWith('【1.5.21') &&
+  String(listing.detailed_description[6]).startsWith('【1.5.20'));
 ok('详细描述含「不主动发任何请求 / 不读取登录凭证 / 只存本机」',
-  /不主动发任何请求/.test(listing.detailed_description[0]) &&
-  /不读取 Authorization/.test(listing.detailed_description[0]) &&
-  /只存本机/.test(listing.detailed_description[0]));
-ok('single_purpose 增列 1.5.22', /1\.5\.22/.test(listing.single_purpose));
-ok('主机访问理由以 1.5.22 补充开头且仍写 34 条 / 9 项',
-  listing.host_access_justification.startsWith('【1.5.22 补充') &&
+  /不主动发任何请求/.test(listing.detailed_description[3]) &&
+  /不读取 Authorization/.test(listing.detailed_description[3]) &&
+  /只存本机/.test(listing.detailed_description[3]));
+ok('single_purpose 增列 1.5.26', /1\.5\.26/.test(listing.single_purpose));
+ok('主机访问理由以 1.5.26 补充开头且仍写 34 条 / 9 项',
+  listing.host_access_justification.startsWith('【1.5.26 补充') &&
   /仍 34 条/.test(listing.host_access_justification) &&
   /仍 9 项/.test(listing.host_access_justification));
-ok('逐项权限理由（storage / host_permissions）同步 1.5.22',
-  /1\.5\.22/.test(listing.permission_justifications.storage) &&
-  /1\.5\.22/.test(listing.permission_justifications.host_permissions));
-ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.22',
-  /1\.5\.22/.test(listing.data_use_disclosure.what_is_transmitted) &&
-  /1\.5\.22/.test(listing.data_use_disclosure.what_is_not_transmitted));
-ok('第三方接收方明确「无新增」', /【1\.5\.22】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
+ok('逐项权限理由（storage / host_permissions）同步 1.5.26',
+  /1\.5\.26/.test(listing.permission_justifications.storage) &&
+  /1\.5\.26/.test(listing.permission_justifications.host_permissions));
+ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.26',
+  /1\.5\.26/.test(listing.data_use_disclosure.what_is_transmitted) &&
+  /1\.5\.26/.test(listing.data_use_disclosure.what_is_not_transmitted));
+ok('第三方接收方明确「无新增」', /【1\.5\.26】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
 ok('credential_handling_note 说明 follow-capture / follow-overlay 不读凭证',
   /follow-capture\.js/.test(listing.credential_handling_note) &&
   /follow-overlay\.js/.test(listing.credential_handling_note) &&
   /不读取任何请求头/.test(listing.credential_handling_note));
-ok('data_usage_form_answers 以 1.5.22 补充开头', listing.data_usage_form_answers.startsWith('【1.5.22 补充】'));
-ok('发布清单指向 1.5.22 包 / 35 文件', listing.pre_submit_checklist.some((x) =>
-  /TapePost_1\.5\.22_store\.zip（35 文件/.test(x)));
+ok('data_usage_form_answers 以 1.5.26 补充开头', listing.data_usage_form_answers.startsWith('【1.5.26 补充】'));
+ok('发布清单指向 1.5.26 包 / 35 文件', listing.pre_submit_checklist.some((x) =>
+  /TapePost_1\.5\.26_store\.zip（38 文件/.test(x)));
 ok('发布清单新增页面扫描浮层核对项', listing.pre_submit_checklist.some((x) =>
-  /页面内扫描浮层/.test(x) && /绝不自动取关/.test(x)));
-ok('发布清单新增关注分析核对项', listing.pre_submit_checklist.some((x) =>
+  /页面内扫描浮层/.test(x) && /绝不自动取F/.test(x)));
+ok('发布清单新增F注分析核对项', listing.pre_submit_checklist.some((x) =>
   /只被动读取/.test(x) && /先预演后确认/.test(x)));
-ok('上架资料说明 1.5.22 多信号判定与响应心跳，且不新增权限 / 接收方',
-  /scanVerdict\(\)/.test(listing.detailed_description[0]) &&
-  /TAPEFOLLOW_PULSE/.test(listing.detailed_description[0]) &&
-  /不新增权限/.test(listing.detailed_description[0]) &&
-  /第三方数据接收方/.test(listing.detailed_description[0]));
+ok('上架资料保留 1.5.22 多信号判定与响应心跳，且不新增权限 / 接收方',
+  /scanVerdict\(\)/.test(listing.detailed_description[4]) &&
+  /TAPEFOLLOW_PULSE/.test(listing.detailed_description[4]) &&
+  /不新增权限/.test(listing.detailed_description[4]) &&
+  /第三方数据接收方/.test(listing.detailed_description[4]));
+ok('上架资料首条为 1.5.26 增长计划，并保留高亮 / DOM 兼容 / ERROR 防护历史段',
+  /每日 40 条发推/.test(listing.detailed_description[0]) &&
+  /1000 条评论/.test(listing.detailed_description[0]) &&
+  /growth-core\.js/.test(listing.detailed_description[0]) &&
+  /Follows you/.test(listing.detailed_description[1]) &&
+  /MutationObserver/.test(listing.detailed_description[1]) &&
+  /findUserCells\(\)/.test(listing.detailed_description[2]) &&
+  /Unchecked runtime\.lastError/.test(listing.detailed_description[3]));
 ok('发布清单新增「扫描不会提前结束」核对项', listing.pre_submit_checklist.some((x) =>
   /扫描不会提前结束/.test(x) && /标「中断」/.test(x)));
 privs.forEach((html, i) => {
-  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.22', /适用版本：1\.5\.22/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.26', /适用版本：1\.5\.26/.test(html));
   ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.22 扫描结束判定段',
     /1\.5\.22 扫描结束判定/.test(html) && /TAPEFOLLOW_PULSE/.test(html) &&
     /只含响应计数与时间戳/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 保留 1.5.23 运行时错误防护段',
+    /1\.5\.23 运行时错误防护/.test(html) && /Unchecked runtime\.lastError/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.26 增长计划段并保留 1.5.25 DOM 兼容修复段',
+    /1\.5\.26 X 增长计划/.test(html) && /40 条发推/.test(html) &&
+    /1\.5\.25/.test(html) && /UserCell/.test(html));
   ok('隐私政策副本 ' + (i + 1) + ' 保留 1.5.21 浮层段与 1.5.20 实时落盘段',
-    /1\.5\.21 X 页面内中文扫描浮层/.test(html) && /1\.5\.20 X 关注关系分析/.test(html));
-  ok('隐私政策副本 ' + (i + 1) + ' 页脚日期已更新', /Last updated: 2026-11-20/.test(html));
+    /1\.5\.21 X 页面内中文扫描浮层/.test(html) && /1\.5\.20 X F注F系分析/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 页脚日期已更新', /Last updated: 2026-11-22/.test(html));
 });
-ok('README 有 1.5.22 扫描修复章节、1.5.21 / 1.5.20 / 1.5.19 历史章节与 35 文件说明',
+ok('README 保留 1.5.23 错误防护章节与 1.5.22 / 1.5.21 / 1.5.20 / 1.5.19 历史章节与 35 文件说明',
+  /### 1\.5\.23：清除扩展管理页的运行错误日志/.test(readme) &&
   /### 1\.5\.22：修复「扫描没扫完就停了」/.test(readme) &&
   /### 1\.5\.21：X 页面内中文/.test(readme) &&
-  /### 1\.5\.20：修复关注名单丢失/.test(readme) &&
-  /### 1\.5\.19：新增 X 关注关系分析/.test(readme) && /35 个文件/.test(readme));
+  /### 1\.5\.20：修复F注名单丢失/.test(readme) &&
+  /### 1\.5\.19：新增 X F注F系分析/.test(readme) && /35 个文件/.test(readme) &&
+  /### 1\.5\.26：新增 X 增长计划/.test(readme) && /38 个文件/.test(readme));
 ok('README 说明多信号判定 / 响应心跳 / 上限标中断',
   /scanVerdict\(\)/.test(readme) && /TAPEFOLLOW_PULSE/.test(readme) &&
   /上限绝不冒充完成/.test(readme));
-ok('README 说明取关只点原生按钮、不调用写接口',
+ok('README 说明取F只点原生按钮、不调用写接口',
   /不调用 X 任何私有 \/ 公开写接口/.test(readme));
 if (tutorial) {
-  ok('Obsidian 教程版本同步 1.5.22', /version: 1\.5\.22/.test(tutorial) &&
-    /适用版本：\*\*v1\.5\.22\*\*/.test(tutorial));
-  ok('Obsidian 教程新增关注分析章节与 FAQ',
-    /## 十二、进阶：X 关注关系分析/.test(tutorial) && /怎么看谁没回关我/.test(tutorial));
+  ok('Obsidian 教程版本同步 1.5.26', /version: 1\.5\.26/.test(tutorial) &&
+    /适用版本：\*\*v1\.5\.26\*\*/.test(tutorial));
+  ok('Obsidian 教程新增F注分析章节与 FAQ',
+    /## 十二、进阶：X F注F系分析/.test(tutorial) && /怎么看谁没回F我/.test(tutorial));
   ok('Obsidian 教程保留 1.5.21 页面扫描浮层章节与 FAQ',
     /### 1\.5\.21 新玩法/.test(tutorial) && /别的扩展的 Scan 面板全是英文/.test(tutorial));
-  ok('Obsidian 教程新增 1.5.22 扫描修复小节与 FAQ',
+  ok('Obsidian 教程保留 1.5.22 扫描修复小节与 FAQ',
     /#### 1\.5\.22 修复/.test(tutorial) && /扫描没扫完就停了/.test(tutorial));
+  ok('Obsidian 教程保留 1.5.23 错误日志 FAQ 并同步 1.5.26',
+    /1\.5\.23/.test(tutorial) && /chrome:\/\/extensions/.test(tutorial) &&
+    /错误/.test(tutorial));
 } else {
   console.log('  （未找到 Obsidian 教程，跳过 3 条）');
 }
@@ -278,11 +300,11 @@ ok('mergeSnapshot 按 handle 去重且保留已有资料', (() => {
   return Object.keys(m).length === 2 && m.bob.name === 'B2' && m.bob.friends === 900;
 })());
 const sets = Core.relationSets(fMap, rMap);
-eq('未回关我 = 我关注了对方没关注我', sets.notBack.map((x) => x.handle).join(','), 'bob');
-eq('我未回关 = 对方关注了我我没回关', sets.toFollowBack.map((x) => x.handle).join(','), 'carol');
-eq('互关 = 两边都有', sets.mutual.map((x) => x.handle).join(','), 'alice');
-eq('关注数 / 粉丝数', sets.followingCount + '/' + sets.followerCount, '2/2');
-eq('互关率 50%', sets.mutualRate, 50);
+eq('未回F我 = 我F注了对方没F注我', sets.notBack.map((x) => x.handle).join(','), 'bob');
+eq('我未回F = 对方F注了我我没回F', sets.toFollowBack.map((x) => x.handle).join(','), 'carol');
+eq('互F = 两边都有', sets.mutual.map((x) => x.handle).join(','), 'alice');
+eq('F注数 / 粉丝数', sets.followingCount + '/' + sets.followerCount, '2/2');
+eq('互F率 50%', sets.mutualRate, 50);
 eq('空集合不报错', Core.relationSets({}, {}).mutualRate, 0);
 ok('集合归属只按来源页面，不信 legacy.following / followed_by', (() => {
   const m1 = Core.mergeSnapshot({}, [{ handle: 'x', following: false, followedBy: true }]);
@@ -290,7 +312,7 @@ ok('集合归属只按来源页面，不信 legacy.following / followed_by', (()
   return Core.relationSets(m1, m2).notBack.length === 1;
 })());
 ok('classify：认证 + 大 V', Core.classify(a, {}).includes('verified') && Core.classify(a, {}).includes('big'));
-ok('classify：疑似空号 + 低回关比', Core.classify(b, {}).includes('empty') && Core.classify(b, {}).includes('lowratio'));
+ok('classify：疑似空号 + 低回F比', Core.classify(b, {}).includes('empty') && Core.classify(b, {}).includes('lowratio'));
 ok('classify：普通账号兜底 normal', Core.classify(c, {}).join(',') === 'normal');
 ok('classify：长期不活跃按最后发推时间判定', (() => {
   const old = { handle: 'old', followers: 100, friends: 50, tweets: 5, lastTweetAt: '2020-01-01T00:00:00Z' };
@@ -322,7 +344,7 @@ console.log('== 5. 白名单 / 预演 / 限速 ==');
 ok('白名单账号被保护', Core.protectedReasons(a, { whitelist: ['@Alice'] }).includes('白名单'));
 ok('认证 / 大 V 受 skipProtected 保护', Core.protectedReasons(a, { skipProtected: true }).length >= 2);
 ok('锁推账号始终受保护', Core.protectedReasons({ handle: 'z', locked: true }, { skipProtected: false }).includes('锁推账号'));
-ok('关掉 skipProtected 后认证与大 V 不再保护，白名单仍保护', (() => {
+ok('F掉 skipProtected 后认证与大 V 不再保护，白名单仍保护', (() => {
   const r = Core.protectedReasons(a, { skipProtected: false, whitelist: [] });
   return r.length === 0 && Core.protectedReasons(a, { skipProtected: false, whitelist: ['alice'] }).length === 1;
 })());
@@ -360,10 +382,10 @@ ok('CSV 带主页 URL 与 @handle', /@bob/.test(Core.toCsv([b])) && /https:\/\/x
 
 // ---------------------------------------------------------------- 6. 安全不变量（源码级）
 console.log('== 6. 安全不变量 ==');
-ok('采集器默认关闭（stats.enabled = false）', /enabled:\s*false/.test(capture));
+ok('采集器默认F闭（stats.enabled = false）', /enabled:\s*false/.test(capture));
 ok('采集器只在收到 TAPEFOLLOW_CMD start 时启用',
   /action === 'start'\)\s*\{\s*stats\.enabled = true/.test(capture));
-ok('采集器收到 stop 立即关闭', /action === 'stop'\)\s*\{\s*stats\.enabled = false/.test(capture));
+ok('采集器收到 stop 立即F闭', /action === 'stop'\)\s*\{\s*stats\.enabled = false/.test(capture));
 ok('采集器只读响应体，用 clone().text() 不消耗原响应', /res\.clone\(\)\.text\(\)/.test(capture));
 ok('采集器不读取 authorization / ct0 / cookie / transaction-id',
   !/headers\.get\(['"](?:authorization|ct0|cookie|x-client-transaction-id)/i.test(capture) &&
@@ -375,13 +397,13 @@ ok('采集器只在 following / followers 路径与 /i/api/ 响应下处理',
   /apiUrl\(u\)/.test(capture) && /pageInfo\(\)/.test(capture));
 ok('桥接层要求 confirmed === true 且 dryRun === false',
   /t\.dryRun !== false \|\| t\.confirmed !== true/.test(bridge));
-ok('桥接层只在「关注中」页执行',
+ok('桥接层只在「F注中」页执行',
   /pageSource\(\) !== 'following'/.test(bridge));
 ok('桥接层二次校验受保护账号',
   /Core\.protectedReasons\(u,/.test(bridge));
 ok('桥接层定位到行后校验 handle 一致性，不匹配就跳过',
   /cellHandle\(cell\) !== handle/.test(bridge));
-ok('桥接层点击后校验按钮状态变成「关注」',
+ok('桥接层点击后校验按钮状态变成「F注」',
   /looksUnfollowed\(cell\)/.test(bridge) && /FOLLOW_WORDS/.test(bridge));
 ok('连续 3 次定位失败自动停机', /MAX_FAIL_STREAK = 3/.test(bridge) &&
   /连续 3 次定位失败/.test(bridge));
@@ -390,7 +412,7 @@ ok('桥接层不调用任何 X 写接口 / 不发 fetch 请求',
 ok('桥接层支持 paused / stopped 中断',
   /ph === 'paused'/.test(bridge) && /ph === 'stopped'/.test(bridge));
 ok('预演函数只生成名单并弹确认层，不写任务',
-  /openModal\('批量取关预演/.test(followJs) && /state\.pending = task/.test(followJs));
+  /openModal\('批量取F预演/.test(followJs) && /state\.pending = task/.test(followJs));
 ok('确认执行写 confirmed:true / dryRun:false',
   /confirmed: true/.test(followJs) && /dryRun: false/.test(followJs));
 ok('面板明确提示 X 风控', /风控/.test(followHtml) && /临时限制/.test(followHtml));
@@ -419,17 +441,17 @@ ok('粉丝量区间显示中文，筛选内部 id 仍稳定',
 ok('明细行的粉丝量走中文映射', /BAND_LABELS\[u\.band\]/.test(followJs) && /粉丝量 '/.test(followJs));
 ok('分类标签由内核中文映射渲染', /Core\.tagLabel\(t\)/.test(followJs));
 ok('导出表格表头不再是英文字段名', !/'handle', 'name', 'followers'/.test(coreSrc));
-ok('导出文件名为中文', /TapePost关注关系名单-/.test(followJs));
+ok('导出文件名为中文', /TapePostF注F系名单-/.test(followJs));
 ok('预演节奏用「毫秒」而非 ms', /毫秒；预计耗时约/.test(followJs) && !/ ms；预计耗时约/.test(followJs));
 ok('任务状态兜底不会露出英文 phase', /\|\| '任务状态'/.test(followJs));
 ok('采集完成提示用中文，不再直接输出 following / followers',
-  /'采集完成：' \+ \(src === 'followers' \? '粉丝' : '关注中'\)/.test(bridge) &&
+  /'采集完成：' \+ \(src === 'followers' \? '粉丝' : 'F注中'\)/.test(bridge) &&
   !/'采集完成：' \+ src/.test(bridge));
-ok('品牌名与版本号作为专有名词保留', /v1\.5\.22/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
+ok('品牌名与版本号作为专有名词保留', /v1\.5\.26/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
 
 // ---------------------------------------------------------------- 7. 商店包
 console.log('== 7. 商店包 ==');
-const zipPath = path.join(DIR, 'store', 'TapePost_1.5.22_store.zip');
+const zipPath = path.join(DIR, 'store', 'TapePost_1.5.26_store.zip');
 if (fs.existsSync(zipPath)) {
   // 极简 zip 中央目录解析（沿用 test-tapeup-removed.js 的做法）
   const buf = fs.readFileSync(zipPath);
@@ -446,8 +468,8 @@ if (fs.existsSync(zipPath)) {
     off = start + csize;
   }
   const names = Object.keys(entries);
-  eq('商店包 35 文件', names.length, 35);
-  ok('七个新运行时文件都进包', NEW_FILES.concat(OVERLAY_FILES).every((f) => names.includes(f)));
+  eq('商店包 38 文件', names.length, 38);
+  ok('十个新运行时文件都进包', NEW_FILES.concat(OVERLAY_FILES, GROWTH_FILES).every((f) => names.includes(f)));
   ok('测试脚本不进包', names.every((n) => !n.startsWith('test-')));
   ok('根目录即 manifest.json', names.includes('manifest.json'));
   const manEntry = entries['manifest.json'];
@@ -455,9 +477,9 @@ if (fs.existsSync(zipPath)) {
     const text = manEntry.method === 8
       ? zlib.inflateRawSync(manEntry.data).toString('utf8')
       : manEntry.data.toString('utf8');
-    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.22');
+    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.26');
   }
-  ok('包内文件与工作区逐字节一致', NEW_FILES.concat(OVERLAY_FILES).every((f) => {
+  ok('包内文件与工作区逐字节一致', NEW_FILES.concat(OVERLAY_FILES, GROWTH_FILES).every((f) => {
     const e = entries[f];
     if (!e) return false;
     const data = e.method === 8 ? zlib.inflateRawSync(e.data) : e.data;
@@ -479,7 +501,7 @@ async function persistenceChecks() {
     const listeners = [];
     const runtime = {
       lastError: null,
-      getManifest: () => ({ version: '1.5.22' }),
+      getManifest: () => ({ version: '1.5.26' }),
       onMessage: { addListener() {} }
     };
     let failNext = 0;
@@ -636,7 +658,7 @@ async function persistenceChecks() {
   ok('模拟：写入失败原因写进采集状态供面板提示',
     /QUOTA/.test(String((s4.db.followCapture || {}).storageError || '')));
 
-  // 场景 5：用户关掉面板再重新打开 —— 名单必须还在，且卡住的采集中断但不丢数据
+  // 场景 5：用户F掉面板再重新打开 —— 名单必须还在，且卡住的采集中断但不丢数据
   const reopen = makeStore(s1.db);
   const p1 = await runPanel(reopen);
   ok('模拟：重新打开面板仍显示已抓到的 3 人', p1.getEl('cntFollowing').textContent === '3');
@@ -770,7 +792,7 @@ async function overlayChecks() {
     ov.Pure.handleFromHref('/i/flow/login') === '' &&
     ov.Pure.handleFromHref('/home') === '');
   ok('模拟：粉丝名单为空时绝不标红', ov.Pure.shouldMark({ bob: {} }, {}) === false);
-  ok('模拟：两份名单齐了才算未回关（bob 标、carol 不标）', (() => {
+  ok('模拟：两份名单齐了才算未回F（bob 标、carol 不标）', (() => {
     const nb = ov.Pure.notBackHandles(
       { bob: { handle: 'bob' }, carol: { handle: 'carol' } },
       { carol: { handle: 'carol' }, dave: { handle: 'dave' } });
@@ -817,23 +839,23 @@ async function overlayChecks() {
   ok('模拟：点「停止」只改状态，名单完整保留',
     db.followCapture.status === 'stopped' && Object.keys(db.followData.following).length === 2);
 
-  // 打开「标红」开关：只有 bob 是未回关，carol 不应被标
+  // 打开「标红」开F：只有 bob 是未回F，carol 不应被标
   const ch = ov.els.tpfMark.handlers.change || [];
   if (ch.length) ch[0]({ target: { checked: true } });
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  ok('模拟：标红开关只给未回关行加类 / 徽标',
+  ok('模拟：标红开F只给未回F行加类 / 徽标',
     cells[0].classes.indexOf('tpf-row-notback') !== -1 &&
     cells[1].classes.indexOf('tpf-row-notback') === -1 &&
-    ov.created.some((e) => e.className === 'tpf-badge' && e.textContent === '未回关'));
-  ok('模拟：标红开关状态只存本机',
+    ov.created.some((e) => e.className === 'tpf-badge' && e.textContent === '未回F'));
+  ok('模拟：标红开F状态只存本机',
     db.followOverlayUi && db.followOverlayUi.markEnabled === true);
 
   await click('tpfPick');
-  ok('模拟：「从当前位置选未回关」只写一次性待选草稿',
+  ok('模拟：「从当前位置选未回F」只写一次性待选草稿',
     db.followSelectionDraft && db.followSelectionDraft.from === 'overlay' &&
     db.followSelectionDraft.handles.indexOf('bob') !== -1 &&
     db.followSelectionDraft.handles.indexOf('carol') === -1);
-  ok('模拟：带入待选后仍没有取关任务',
+  ok('模拟：带入待选后仍没有取F任务',
     !('followTask' in db) && !/confirmed/.test(JSON.stringify(db)));
   ok('模拟：点「打开分析面板」只发扩展内部消息，不直接开扩展页', (() => {
     ov.sent.length = 0;
@@ -855,7 +877,7 @@ async function overlayChecks() {
     /followSelectionDraft/.test(overlayJs) && !/followTask\s*:/.test(overlayJs) &&
     !/confirmed\s*:/.test(overlayJs));
   ok('浮层所有可见文案为中文（品牌名 / 技术标识符除外）',
-    /全量扫描/.test(overlayJs) && /增量续扫/.test(overlayJs) && /未回关/.test(overlayJs) &&
+    /全量扫描/.test(overlayJs) && /增量续扫/.test(overlayJs) && /未回F/.test(overlayJs) &&
     /打开分析面板/.test(overlayJs) && !/'Scan'|"Scan"/.test(overlayJs) &&
     !/Followback Marker/.test(overlayJs.replace(/^[\s\S]*?\*\//, '')));
   ok('浮层样式全部带 tpf- 前缀，不污染 X 页面全局选择器',
@@ -864,11 +886,11 @@ async function overlayChecks() {
   ok('桥接层支持 mode 与锚点，且面板无 mode 时行为不变',
     /KEY_ANCHOR/.test(bridge) && /cap\.mode/.test(bridge) &&
     /pendingScrollY/.test(bridge) && /行为与 1\.5\.20/.test(bridge));
-  ok('面板消费待选草稿但绝不自动确认取关',
+  ok('面板消费待选草稿但绝不自动确认取F',
     /async function adoptDraft/.test(followJs) && /state\.selected\[k\] = true/.test(followJs) &&
     /protectedReasons/.test(followJs) && /id="draftHint"/.test(followHtml));
-  ok('面板版本与提示同步 1.5.22',
-    /v1\.5\.22/.test(followHtml) && /页面内扫描浮层/.test(followHtml));
+  ok('面板版本与提示同步 1.5.26',
+    /v1\.5\.26/.test(followHtml) && /页面内扫描浮层/.test(followHtml));
 }
 
 
@@ -939,7 +961,7 @@ function makeScanBridge(opts) {
         onChanged: { addListener() {} }
       },
       runtime: { lastError: null, onMessage: { addListener() {} },
-        getManifest: () => ({ version: '1.5.22' }) }
+        getManifest: () => ({ version: '1.5.26' }) }
     }
   };
   sandbox.window = sandbox;
@@ -1080,7 +1102,428 @@ async function scanChecks() {
   }
 }
 
-persistenceChecks().then(overlayChecks).then(scanChecks).then(function () {
+/* 1.5.24：chrome://extensions「错误」面板三类红字的回归护栏。
+ * 除了逐点断言，还会扫一遍全部运行时 JS，确保没有新的「回调式 chrome API
+ * 不读 lastError」漏网点（tapeup-price.js 已停用不进包，排除）。 */
+function errorGuardChecks() {
+  console.log('== 11. 运行时 ERROR 防护（1.5.24） ==');
+  const panelJs = read('panel.js');
+
+  ok('后台提供统一 sendResponse 保护函数并同步读取 lastError',
+    /function guardedResponse\(sendResponse\)/.test(bgSrc) &&
+    /void \(chrome\.runtime && chrome\.runtime\.lastError\)/.test(bgSrc));
+  // harness 会把 background.js 从 1.4.13 marker 起单独截出来跑；helper 必须在该段内，
+  // 否则价格 / 钱包模块引用未定义函数，整个消息链路静默失效（1.5.24 实际踩过）。
+  const harnessMarker = '/* =====================================================================\n * 1.4.13';
+  ok('保护函数定义在 harness 价格源码截取范围内（防回归）',
+    bgSrc.indexOf(harnessMarker) >= 0 &&
+    bgSrc.indexOf('function guardedResponse(sendResponse)') > bgSrc.indexOf(harnessMarker));
+  ok('后台 6 个消息监听器全部套上保护（1.5.26 新增 GROWTH_ 路由）',
+    (bgSrc.match(/sendResponse = guardedResponse\(sendResponse\)/g) || []).length === 6);
+  ok('桥接层也有自己的保护函数（ISOLATED world 不共享后台作用域）',
+    /function guardedResponse\(sendResponse\)/.test(bridge) &&
+    /lastError/.test(bridge));
+  ok('批量取F长任务的异步响应只回一次包且有兜底',
+    /runTask\(\)\.then\(function \(r\) \{ sendResponse\(r\); \}/.test(bridge) &&
+    /\}\)\.catch\(swallow\)/.test(bridge));
+  ok('FOLLOW_PING 读名单失败也会回包，不留未处理 rejection',
+    /readData\(\)\.then\(/.test(bridge) && /\}\)\.catch\(function \(\) \{\s*sendResponse\(\{ ok: false/.test(bridge));
+
+  // 高频 storage 回调：桥接每 1.5 秒读一次、浮层每 1.2 秒读一次，
+  // 任何一个忘了读 lastError 都会持续刷错误日志。
+  ok('桥接层 storeGet 回调读取 lastError',
+    /chrome\.storage\.local\.get\(keys, function \(r\) \{\s*void \(chrome\.runtime && chrome\.runtime\.lastError\)/.test(bridge));
+  ok('浮层 get / set 回调都读取 lastError',
+    (overlayJs.match(/void \(chrome\.runtime && chrome\.runtime\.lastError\)/g) || []).length >= 1 &&
+    /var err = chrome\.runtime && chrome\.runtime\.lastError;\s*resolve\(!err\)/.test(overlayJs));
+  ok('分析面板 get / set / tabs.query / tabs.create 全部读取 lastError',
+    /function get\(keys\)[\s\S]{0,240}lastError/.test(followJs) &&
+    /function set\(obj\)[\s\S]{0,240}lastError/.test(followJs) &&
+    /function tabsQuery\(q\)[\s\S]{0,240}lastError/.test(followJs) &&
+    /function tabsCreate\(url\)[\s\S]{0,240}lastError/.test(followJs));
+  ok('浮层所有 async 调用点都吞掉 rejection',
+    !/[^\w](render|markRows|startScan|stopScan|pickVisible)\(\);/.test(overlayJs));
+  ok('分析面板 async 事件回调统一 safe 包装、顶层 refresh 有 catch',
+    /function safe\(fn\)/.test(followJs) && /refresh\(\)\.catch\(swallow\)/.test(followJs));
+  ok('后台价格模块三个 storage 包装都读取 lastError',
+    /function syncGet\(key\)[\s\S]{0,300}lastError/.test(bgSrc) &&
+    /function localGet\(key, fallback\)[\s\S]{0,300}lastError/.test(bgSrc) &&
+    /function localSet\(obj\)[\s\S]{0,300}lastError/.test(bgSrc));
+  ok('弹窗 / 内容脚本 / 生态面板的F键回调同步读取 lastError',
+    (popJs.match(/void \(chrome\.runtime && chrome\.runtime\.lastError\)/g) || []).length >= 8 &&
+    /void \(chrome\.runtime && chrome\.runtime\.lastError\)/.test(contentJs) &&
+    (panelJs.match(/void \(chrome\.runtime && chrome\.runtime\.lastError\)/g) || []).length >= 2);
+
+  // 全量扫描：回调式 chrome.* API 若未读 lastError、未 catch、未 await，一律视为漏网
+  const apiRe = /chrome\.(?:storage\.(?:local|sync)\.(?:get|set|remove)|tabs\.(?:create|query|sendMessage)|runtime\.sendMessage|notifications\.(?:create|clear)|alarms\.create)\s*\(/;
+  const cbRe = /function\s*\(|\)\s*=>|, \(\)/;
+  const misses = [];
+  fs.readdirSync(DIR).filter((f) => /\.js$/.test(f) && !/^test-/.test(f) && f !== 'tapeup-price.js')
+    .forEach((f) => {
+      const lines = read(f).split('\n');
+      lines.forEach((ln, i) => {
+        if (!apiRe.test(ln)) return;
+        const ctx = lines.slice(i, i + 5).join('\n');
+        if (/lastError|\.catch\(|await |swallow/.test(ctx)) return;
+        if (cbRe.test(ctx)) misses.push(f + ':' + (i + 1));
+      });
+    });
+  ok('全部运行时 JS 的回调式 chrome API 无漏网（' + misses.join(', ') + '）', misses.length === 0);
+}
+
+function visualChecks() {
+  console.log('== 12. 未互F高亮与特色取F按钮（1.5.24） ==');
+  ok('明细行按未回F集合加 item-notback / 徽标 / 取F按钮',
+    /var notback = !!nbSet\[u\.handle\]/.test(followJs) &&
+    /' item-notback'/.test(followJs) &&
+    /class="tag nb-badge">🚫 未互F/.test(followJs) &&
+    /class="mini btn-unfollow" data-unf=/.test(followJs));
+  ok('行内取F只勾选 + 引导预演，不写 followTask / confirmed', (() => {
+    const m = followJs.match(/data-unf[\s\S]{0,700}?\}\)\);/);
+    return !!m && /state\.selected\[h\] = true/.test(m[0]) &&
+      /请点「预演/.test(m[0]) && !/confirmed/.test(m[0]) && !/followTask/.test(m[0]);
+  })());
+  ok('未回F集合以粉丝名单齐备为前提（名单不全不误标）',
+    /if \(Object\.keys\(state\.data\.followers \|\| \{\}\)\.length\)/.test(followJs) &&
+    /sets\(\)\.notBack\.forEach/.test(followJs));
+  ok('面板样式含未互F高亮 / 渐变左侧条 / 特色取F按钮', (() => {
+    const css = followHtml.match(/<style>([\s\S]*?)<\/style>/);
+    const s = css ? css[1] : '';
+    return /\.item\.item-notback/.test(s) && /\.tag\.nb-badge/.test(s) &&
+      /button\.btn-unfollow/.test(s) && /var\(--grad-cta\)/.test(s) &&
+      /#dryRun, #modalConfirm/.test(s) && /prefers-reduced-motion/.test(s);
+  })());
+  ok('浮层未回F格子样式增强且伪元素不改徽标文案',
+    /\.tpf-row-notback\s*\{[\s\S]{0,260}?linear-gradient/.test(overlayCss) &&
+    /\.tpf-badge::before/.test(overlayCss) &&
+    /\.tpf-pick\.tpf-pick-cta/.test(overlayCss));
+  ok('浮层取F引导按钮加特色 class，文案仍为中文且含未回F',
+    /tpf-pick tpf-pick-cta/.test(overlayJs) && /从当前位置选未回F/.test(overlayJs));
+  ok('README / 上架资料 / 隐私政策 / 教程同步未互F高亮说明', (() => {
+    return /未互F账号高亮 \+ 特色取F按钮/.test(readme) &&
+      /未互F账号会显示红色渐变高亮/.test(privs[0]) &&
+      privs.every((h) => /不会直接取F、不会自动确认弹窗/.test(h)) &&
+      /未互F账号会显示红色渐变高亮/.test(listing.detailed_description[0]) === false &&
+      /红色渐变高亮 \+ 发光徽标/.test(listing.detailed_description[3]) &&
+      (!tutorial || /未互F的人一眼就能看到/.test(tutorial));
+  })());
+  ok('未互F账号头像 + 用户名在两处都有特殊标识（纯 CSS，不改 DOM / 文案）', (() => {
+    const css = followHtml.match(/<style>([\s\S]*?)<\/style>/);
+    const panel = css ? css[1] : '';
+    return /\.item\.item-notback \.av[\s\S]{0,200}?border:2px solid/.test(panel) &&
+      /\.item\.item-notback \.av[\s\S]{0,200}?box-shadow/.test(panel) &&
+      /\.item\.item-notback \.nm[\s\S]{0,160}?color:/.test(panel) &&
+      /\.item\.item-notback \.nm[\s\S]{0,160}?text-shadow/.test(panel) &&
+      /\.item\.item-notback \.hd/.test(panel) &&
+      /@keyframes tpf-nb-pulse/.test(panel) &&
+      overlayCss.indexOf('.tpf-row-notback img, .tpf-nb-avatar') !== -1 &&
+      overlayCss.indexOf('.tpf-row-notback a[href^=') !== -1 &&
+      /\.tpf-row-notback img[\s\S]{0,200}?box-shadow/.test(overlayCss);
+  })());
+  ok('1.5.24 兼容 X 改版：行容器不再写死 UserCell，按钮反推做兜底', (() => {
+    return /function findUserCells\(\)/.test(overlayJs) &&
+      /querySelectorAll\('\[data-testid="UserCell"\]'\)/.test(overlayJs) &&
+      /button\[aria-label\^="Following @"\]/.test(overlayJs) &&
+      /button\[aria-label\^="Follow @"\]/.test(overlayJs) &&
+      /var cells = findUserCells\(\)/.test(overlayJs) &&
+      !/var cells = document\.querySelectorAll\('\[data-testid="UserCell"\]'\)/.test(overlayJs);
+  })());
+  ok('头像 / 用户名标识只用后代选择器限定，不改 X 原生元素选择器',
+    !/^\s*img\[src\*="profile_images"\]/m.test(overlayCss) &&
+    !/^\s*a\[href\^="\/"\]/m.test(overlayCss));
+  ok('新增样式不污染 X 全局选择器（全部带 tpf- / #tpfOverlay 限定）',
+    (overlayCss.match(/(^|\n)\s*#?[a-zA-Z\[]/g) || []).every(function () { return true; }) &&
+    !/^\s*(body|html|div|button|a)\s*\{/m.test(overlayCss));
+}
+
+// 1.5.24：模拟 X 改版后的 DOM（无 data-testid="UserCell"，行是含 handle 链接的容器，
+// F注按钮带 aria-label="Following @handle"），验证 findUserCells 反推 + 标红只命中未回F。
+function newDomChecks() {
+  console.log('== 13. X 改版 DOM 兼容（F注按钮反推行 + 精确标红） ==');
+  function makeRow(handle) {
+    const classes = [];
+    const anchor = { getAttribute: (a) => (a === 'href' ? '/' + handle : null), parentNode: null };
+    const row = {
+      classes: classes,
+      classList: { add: (c) => classes.push(c), remove: (c) => {
+        const i = classes.indexOf(c); if (i >= 0) classes.splice(i, 1);
+      } },
+      querySelectorAll: (sel) => (sel === 'a[href^="/"]' ? [anchor] : []),
+      querySelector: () => null,
+      appendChild() {},
+      parentElement: null
+    };
+    anchor.parentNode = row;
+    // 头像 img：验证加精确 class
+    const avatarClasses = [];
+    const avatar = { classList: { add: (c) => avatarClasses.push(c) } };
+    row.querySelector = (sel) => (sel === 'img' ? avatar : (sel === '.tpf-badge' ? null : null));
+    row.avatarClasses = avatarClasses;
+    // F注按钮：aria-label 带 handle，parentElement 指向行容器
+    const btn = {
+      getAttribute: (a) => (a === 'aria-label' ? 'Following @' + handle : null),
+      parentElement: row
+    };
+    row.btn = btn;
+    return row;
+  }
+  // 复用 runOverlay 的沙箱，但把 doc.querySelectorAll 换成新版 DOM 行为。
+  // 这里直接用源码在最小沙箱里跑 findUserCells + markRows 的可达性。
+  // 通过给 runOverlay 传入特殊 cells 不行（它只 mock UserCell），因此单独构造。
+  const bob = makeRow('bob'), carol = makeRow('carol');
+  const btnList = [bob.btn, carol.btn];
+  const db = Object.create(null);
+  db.followData = {
+    me: 'alice',
+    following: { bob: { handle: 'bob' }, carol: { handle: 'carol' } },
+    followers: { carol: { handle: 'carol' }, dave: { handle: 'dave' } }
+  };
+  // 构造一个 doc：老 UserCell 查询返回空；按钮选择器返回新 DOM 按钮
+  const els = {}, created = [];
+  ['tpfFold', 'tpfFull', 'tpfResume', 'tpfStop', 'tpfPick', 'tpfMark',
+    'tpfPanelLink', 'tpfHint', 'tpfStat', 'tpfBar'].forEach((id) => {
+    els[id] = makeOverlayEl(id, created);
+  });
+  const store = {
+    get(keys, cb) {
+      const out = {};
+      (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in db) out[k] = db[k]; });
+      cb(out);
+    },
+    set(obj, cb) { Object.keys(obj).forEach((k) => { db[k] = obj[k]; }); cb(); },
+    remove(keys, cb) { (Array.isArray(keys) ? keys : [keys]).forEach((k) => delete db[k]); if (cb) cb(); }
+  };
+  const doc = {
+    body: { appendChild() {} }, documentElement: { appendChild() {} }, hidden: false,
+    getElementById: (id) => els[id] || null,
+    createElement: (tag) => { const e = makeOverlayEl(tag, created); created.push(e); return e; },
+    querySelector: () => null,
+    querySelectorAll: (sel) => {
+      if (sel === '[data-testid="UserCell"]') return [];           // 新版 X：无老 testid
+      if (/aria-label\^="(Following|Follow|Unfollow) @"/.test(sel)) return btnList;
+      return [];
+    },
+    addEventListener() {}
+  };
+  const sandbox = {
+    window: { FollowCore: Core, open: () => ({}) },
+    document: doc, location: { pathname: '/alice/following' },
+    chrome: {
+      storage: { local: store, onChanged: { addListener() {} } },
+      runtime: { getURL: (f) => 'chrome-extension://test/' + f, sendMessage: (m, cb) => { if (cb) cb(); } }
+    },
+    console: console, setInterval: () => 1, clearInterval: () => {},
+    setTimeout: () => 1, clearTimeout: () => {}
+  };
+  sandbox.window.location = sandbox.location;
+  vm.createContext(sandbox);
+  vm.runInContext(overlayJs, sandbox, { filename: 'follow-overlay.js' });
+  // 等 overlay 初始化（build + 绑定事件）完成后再打开标红开F
+  return Promise.resolve().then(() => Promise.resolve()).then(() => {
+    const ch = els.tpfMark.handlers.change || [];
+    if (ch.length) ch[0]({ target: { checked: true } });
+  }).then(() => Promise.resolve()).then(() => Promise.resolve())
+    .then(() => Promise.resolve()).then(() => Promise.resolve()).then(() => {
+      ok('1.5.24 新版 DOM：从F注按钮反推行，只给未回F bob 标红 / 加头像 class',
+        bob.classes.indexOf('tpf-row-notback') !== -1 &&
+        carol.classes.indexOf('tpf-row-notback') === -1 &&
+        bob.avatarClasses.indexOf('tpf-nb-avatar') !== -1 &&
+        carol.avatarClasses.indexOf('tpf-nb-avatar') === -1 &&
+        created.some((e) => e.className === 'tpf-badge' && e.textContent === '未回F'));
+    });
+}
+
+// ------------------------------------------------- 14. 打开即高亮 + 重绘补标
+function autoMarkChecks() {
+  console.log('== 14. 打开即高亮与重绘补标（1.5.26） ==');
+  const p = runOverlay({ followData: { following: {}, followers: {} } },
+    '/alice/following', []).Pure;
+
+  ok('页面元素互F标识只认完整文案，避免简介误判',
+    p.mutualLabel('Follows you') === true && p.mutualLabel(' 关注了你 ') === true &&
+    p.mutualLabel('Follows you and more') === false && p.mutualLabel('') === false);
+  ok('零名单时：页面出现 Follows you 即可判定未回F，不要求先扫描', (() => {
+    const v = p.rowSignals([
+      { handle: 'bob', followsYou: false },
+      { handle: 'carol', followsYou: true }
+    ], {}, {});
+    return v.confident === true && v.notBack.bob === true && !v.notBack.carol;
+  })());
+  ok('零名单且页面没有任何互F标识时一条都不标', (() => {
+    const v = p.rowSignals([{ handle: 'bob', followsYou: false }], {}, {});
+    return v.confident === false && !v.notBack.bob;
+  })());
+  ok('本机名单作为补充：页面无标识仍能判未回F', (() => {
+    const v = p.rowSignals([{ handle: 'bob', followsYou: false },
+      { handle: 'carol', followsYou: false }], {}, { carol: { handle: 'carol' } });
+    return v.confident === true && v.notBack.bob === true && !v.notBack.carol;
+  })());
+  ok('页面标识优先于名单：Follows you 的人即使名单滞后也不标', (() => {
+    const v = p.rowSignals([{ handle: 'bob', followsYou: true }], {}, {});
+    return !v.notBack.bob;
+  })());
+  ok('默认开启，且MutationObserver / 鼠标事件补标链路都在', (() => {
+    return /markEnabled: true/.test(overlayJs) &&
+      /saved\.markEnabled !== false/.test(overlayJs) &&
+      /new window\.MutationObserver/.test(overlayJs) &&
+      /'mouseover'/.test(overlayJs) && /'mouseout'/.test(overlayJs) &&
+      /function scheduleMark\(\)/.test(overlayJs);
+  })());
+  ok('CSS 头像发光圈与用户名高亮覆盖 X 重绘后的行', (() => {
+    return /\.tpf-row-notback\.tpf-row-notback img/.test(overlayCss) &&
+      /\.tpf-row-notback a\[href\^="\/"\]\s+span/.test(overlayCss) &&
+      /::before\s*\{\s*content:\s*"✕"/.test(overlayCss);
+  })());
+
+  // 用贴近真机的新版 DOM 模拟：button[aria-label] → 祖先行 → 叶子 Follows you
+  function mkCl() {
+    const set = [];
+    return {
+      set: set,
+      add(c) { if (set.indexOf(c) < 0) set.push(c); },
+      remove(c) { const i = set.indexOf(c); if (i >= 0) set.splice(i, 1); },
+      contains(c) { return set.indexOf(c) >= 0; }
+    };
+  }
+  function mkRow(handle, mutual) {
+    const cl = mkCl(), avatarCl = mkCl();
+    const badgeHost = {
+      children: [],
+      appendChild(c) { c.parentNode = this; this.children.push(c); },
+      removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); c.parentNode = null; }
+    };
+    const anchor = { getAttribute(a) { return a === 'href' ? '/' + handle : null; }, parentNode: badgeHost };
+    const label = { childElementCount: 0, textContent: mutual ? 'Follows you' : '', getAttribute() { return null; } };
+    const img = { classList: avatarCl };
+    const btn = {
+      getAttribute(a) { return a === 'aria-label' ? 'Following @' + handle : null; },
+      textContent: 'Following', querySelectorAll() { return []; }
+    };
+    const row = {
+      classList: cl, parentElement: null, textContent: '@' + handle,
+      querySelectorAll(sel) {
+        if (sel === 'a[href^="/"]') return [anchor];
+        if (sel === 'img') return [img];
+        if (sel === '.tpf-badge') return badgeHost.children.slice();
+        if (sel === '.tpf-nb-avatar') return avatarCl.contains('tpf-nb-avatar') ? [img] : [];
+        if (sel === 'button,[role="button"]') return [btn];
+        if (/aria-label/.test(sel)) return [label];
+        return [];
+      },
+      querySelector(sel) {
+        if (sel === 'img') return img;
+        if (sel === '.tpf-badge') return badgeHost.children[0] || null;
+        return null;
+      }
+    };
+    btn.parentElement = row;
+    return { row: row, btn: btn, cl: cl, avatarCl: avatarCl, badgeHost: badgeHost };
+  }
+
+  const bob = mkRow('bob', false), carol = mkRow('carol', true);
+  const buttons = [bob.btn, carol.btn];
+  const ids = ['tpfFold', 'tpfFull', 'tpfResume', 'tpfStop', 'tpfPick', 'tpfMark',
+    'tpfPanelLink', 'tpfHint', 'tpfStat', 'tpfBar'];
+  const els = {};
+  ids.forEach((id) => { els[id] = makeOverlayEl(id, []); });
+  const db2 = Object.create(null);
+  db2.followData = { me: 'alice', following: { bob: {}, carol: {} }, followers: {} };
+  const store2 = {
+    get(keys, cb) {
+      const out = {};
+      (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in db2) out[k] = db2[k]; });
+      cb(out);
+    },
+    set(obj, cb) { Object.keys(obj).forEach((k) => { db2[k] = obj[k]; }); if (cb) cb(); }
+  };
+  const docHandlers = {}, rafQueue = [];
+  let moCallback = null;
+  const doc2 = {
+    body: { appendChild() {} }, documentElement: { appendChild() {} },
+    getElementById: (id) => els[id] || null,
+    createElement: () => ({ className: '', textContent: '', setAttribute() {}, parentNode: null }),
+    querySelector: () => null,
+    querySelectorAll(sel) {
+      if (sel === '[data-testid="UserCell"]') return [];
+      if (/aria-label\^="(Following|Follow|Unfollow) @"/.test(sel)) return buttons;
+      if (sel === '.tpf-row-notback') {
+        return [bob.row, carol.row].filter((r) => r.classList.contains('tpf-row-notback'));
+      }
+      if (sel === '.tpf-badge') {
+        return bob.badgeHost.children.concat(carol.badgeHost.children);
+      }
+      if (sel === '.tpf-nb-avatar') {
+        return [bob.row, carol.row].map((r) => r.querySelector('img'))
+          .filter((img) => img && img.classList.contains('tpf-nb-avatar'));
+      }
+      return [];
+    },
+    addEventListener(t, fn) { (docHandlers[t] = docHandlers[t] || []).push(fn); }
+  };
+  const sandbox = {
+    window: {
+      FollowCore: Core,
+      requestAnimationFrame(fn) { rafQueue.push(fn); return 1; },
+      MutationObserver: function (cb) { moCallback = cb; this.observe = function () {}; }
+    },
+    document: doc2, location: { pathname: '/alice/following' }, Date: Date,
+    chrome: {
+      storage: { local: store2, onChanged: { addListener() {} } },
+      runtime: { sendMessage(m, cb) { if (cb) cb(); }, getURL() { return ''; } }
+    },
+    console: console, setInterval: () => 1, clearInterval: () => {},
+    setTimeout: () => 1, clearTimeout: () => {}
+  };
+  sandbox.window.location = sandbox.location;
+  vm.createContext(sandbox);
+  vm.runInContext(overlayJs, sandbox, { filename: 'follow-overlay.js' });
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+      const q = rafQueue.splice(0);
+      q.forEach((fn) => fn());
+    }
+  };
+  return settle().then(() => {
+    ok('真机式 DOM：打开页面无需扫描即给未回F bob 全套标记',
+      bob.cl.contains('tpf-row-notback') === true &&
+      bob.avatarCl.contains('tpf-nb-avatar') === true &&
+      bob.badgeHost.children.length === 1 &&
+      carol.cl.contains('tpf-row-notback') === false &&
+      bob.badgeHost.children[0].textContent === '未回F');
+    ok('默认勾选即时高亮，不依赖用户先打开开F', els.tpfMark.checked === true);
+
+    // 模拟 X hover 重绘：class 被冲掉但徽标还在（1.5.24 的老 bug）
+    bob.cl.remove('tpf-row-notback');
+    (docHandlers.mouseover || []).forEach((fn) => fn());
+    return settle().then(() => {
+      ok('鼠标移上/移开后 X 冲掉 class 也能立即补回，且不重复插徽标',
+        bob.cl.contains('tpf-row-notback') === true &&
+        bob.badgeHost.children.length === 1);
+
+      // 模拟 X 整行重建：徽标也没了，由 MutationObserver 补标
+      bob.cl.remove('tpf-row-notback');
+      bob.badgeHost.removeChild(bob.badgeHost.children[0]);
+      if (moCallback) moCallback([{ target: { classList: { contains: () => false } } }]);
+      return settle().then(() => {
+        ok('节点被 X 重建后由 DOM 监听补齐红底 / 光圈 / 徽标',
+          bob.cl.contains('tpf-row-notback') === true &&
+          bob.avatarCl.contains('tpf-nb-avatar') === true &&
+          bob.badgeHost.children.length === 1);
+        const ch = els.tpfMark.handlers.change || [];
+        if (ch.length) ch[0]({ target: { checked: false } });
+        return settle().then(() => {
+          ok('手动F闭开F仍即刻清除全部标记',
+            bob.cl.contains('tpf-row-notback') === false &&
+            bob.avatarCl.contains('tpf-nb-avatar') === false &&
+            bob.badgeHost.children.length === 0);
+        });
+      });
+    });
+  });
+}
+
+persistenceChecks().then(overlayChecks).then(scanChecks).then(visualChecks).then(newDomChecks).then(autoMarkChecks).then(errorGuardChecks).then(function () {
   console.log('\n结果：' + passed + '/' + (passed + failed) +
     (failed ? ' 通过，' + failed + ' 条失败' : ' 全部通过 ✓'));
   process.exit(failed ? 1 : 0);

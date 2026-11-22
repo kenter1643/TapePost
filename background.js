@@ -21,6 +21,7 @@
  * 不读取页面内容、不新增权限，也不注入任何代码。 */
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (!msg || msg.type !== 'TAPE_WAKE') return false;
+  sendResponse = guardedResponse(sendResponse);
   try {
     const m = chrome.runtime.getManifest ? chrome.runtime.getManifest() : null;
     sendResponse({ ok: true, wake: true, version: m && m.version });
@@ -28,7 +29,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   return false;
 });
 
-/* 1.5.21：X 页面内「互关管理」扫描浮层要打开独立分析面板。
+/* 1.5.21：X 页面内「互F管理」扫描浮层要打开独立分析面板。
  * 内容脚本里 window.open('chrome-extension://…') 会被 Chrome 拦（清单也没有
  * web_accessible_resources），所以改由扩展内部 runtime 消息请后台创建标签页。
  * 只打开扩展自己的 follow.html，不访问任何外部网址、不读取页面内容、
@@ -36,8 +37,10 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
  * 就有接收端。 */
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (!msg || msg.type !== 'TAPEFOLLOW_OPEN_PANEL') return false;
+  sendResponse = guardedResponse(sendResponse);
   try {
-    chrome.tabs.create({ url: chrome.runtime.getURL('follow.html'), active: true });
+    var p = chrome.tabs.create({ url: chrome.runtime.getURL('follow.html'), active: true });
+    if (p && typeof p.catch === 'function') p.catch(function () {});
     sendResponse({ ok: true });
   } catch (e) {
     try { sendResponse({ ok: false, error: String(e && e.message || e) }); } catch (e2) {}
@@ -188,7 +191,7 @@ const GROK_DEFAULTS = {
 };
 
 /* 1.5.3：DeepSeek 官方 OpenAI 兼容接口（https://api-docs.deepseek.com）。
- * 官方 base_url 是 https://api.deepseek.com（也可填 /v1 或自填兼容网关），
+ * 官方 base_url 是 https://api.deepseek.com（也可填 /v1 或自填兼容网F），
  * 模型为 deepseek-v4-flash / deepseek-v4-pro；旧的 deepseek-chat / deepseek-reasoner
  * 已于 2026-07-24 弃用。这些键与 xAI 的 Key 完全分开存，互不覆盖。 */
 const DEEPSEEK_DEFAULTS = {
@@ -196,7 +199,7 @@ const DEEPSEEK_DEFAULTS = {
   deepseekBaseUrl: 'https://api.deepseek.com',
   deepseekModel: 'deepseek-v4-flash',
   deepseekTemperature: 0.7,
-  deepseekJsonMode: true             // 官方模型支持 JSON Output；兼容网关可在设置里关掉
+  deepseekJsonMode: true             // 官方模型支持 JSON Output；兼容网F可在设置里F掉
 };
 let lastGrokError = null;
 
@@ -230,7 +233,7 @@ async function getGrokConfig() {
   /* 1.4.1 双保险：老版本把「X 站内 Grok」存成显式 grokMode="page"，
    * 1.4.0 的 pickGrokMode 遇到非 auto 直接返回，新增的直连链路一次都没走过，
    * 用户一直卡在会报「提示词写入校验失败」的旧 DOM 页面模式上。
-   * 只要用户没关掉「优先站内直连」且没填 API Key，就把 page 按 auto 的
+   * 只要用户没F掉「优先站内直连」且没填 API Key，就把 page 按 auto 的
    * 免 Key 语义处理（auto 在 X 标签里走直连、其它情况仍回退页面模式）。
    * 这是运行时归一化，不依赖 storage 迁移是否成功，重载后必定生效。 */
   if (String(page.grokMode || '').toLowerCase() === 'page' &&
@@ -244,7 +247,7 @@ async function getGrokConfig() {
     commentCount: (typeof TapeAI !== 'undefined' && TapeAI.normalizeCommentCount)
       ? TapeAI.normalizeCommentCount(pref.commentCount, TapeAI.COMMENT_COUNT_DEFAULT || 5) : 5,
     // 1.5.3：只有显式选了 DeepSeek 模式才把供应商切过去；其它模式一律保持 xAI 口径，
-    // 这样用户既有的 xAI Key / 网关设置与 1.5.2 的行为完全一致。
+    // 这样用户既有的 xAI Key / 网F设置与 1.5.2 的行为完全一致。
     aiProvider: String(page.grokMode || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'xai'
   });
 }
@@ -268,7 +271,7 @@ function deepseekBody(cfg, messages, maxTokens) {
   const temp = isFinite(temperature) ? Math.min(1, Math.max(0, temperature)) : 0.7;
   let msgs = messages || [];
   const body = { model, messages: msgs, temperature: temp, max_tokens: maxTokens || 700, stream: false };
-  // 两个 AI 功能都要求 JSON；官方模型支持 response_format，兼容网关可关掉
+  // 两个 AI 功能都要求 JSON；官方模型支持 response_format，兼容网F可F掉
   if (cfg.deepseekJsonMode !== false) {
     body.response_format = { type: 'json_object' };
     /* DeepSeek 官方 JSON Output 要求提示词里出现 "json" 字样，否则可能返回空 content。
@@ -332,7 +335,7 @@ function grokFriendlyError(status, bodyText, isDeepseek) {
 async function callGrok(messages, maxTokens, cfgIn) {
   const cfg = cfgIn || await getGrokConfig();
   /* 1.5.3：同一个函数按 aiProvider 服务两家；选 DeepSeek 时完全不碰 xAI 的
-   * Key / 模型 / 网关，也不降级到 X 页面，错误直接指向 DeepSeek 设置。 */
+   * Key / 模型 / 网F，也不降级到 X 页面，错误直接指向 DeepSeek 设置。 */
   const ds = cfg.aiProvider === 'deepseek';
   const providerName = ds ? 'DeepSeek' : 'xAI';
   const key = String((ds ? cfg.deepseekApiKey : cfg.grokApiKey) || '').trim();
@@ -355,7 +358,7 @@ async function callGrok(messages, maxTokens, cfgIn) {
   } catch (e) {
     throw new Error('无法连接 ' + endpoint + '（' + String(e && e.message || e) + '）。' +
       (ds ? '请检查接口地址与网络；DeepSeek 官方地址是 https://api.deepseek.com。'
-          : '国内网络通常需要代理；也可以在设置里换用兼容网关地址。'));
+          : '国内网络通常需要代理；也可以在设置里换用兼容网F地址。'));
   }
   const raw = await resp.text();
   if (!resp.ok) throw new Error(grokFriendlyError(resp.status, raw, ds));
@@ -363,7 +366,7 @@ async function callGrok(messages, maxTokens, cfgIn) {
   try { data = JSON.parse(raw); } catch (e) { throw new Error('接口返回的不是 JSON：' + raw.slice(0, 120)); }
   const text = grokText(data, protocol);
   if (!text) throw new Error(ds
-    ? 'DeepSeek 返回了空内容。可关掉「强制 JSON 输出」，或换一个模型 ID 后重试。'
+    ? 'DeepSeek 返回了空内容。可F掉「强制 JSON 输出」，或换一个模型 ID 后重试。'
     : '接口返回了空内容，请把「接口协议」切换成另一项后重试。');
   return {
     text,
@@ -394,7 +397,7 @@ function tabError(raw, tabId) {
   const text = String(raw || '');
   const bad = TAB_UNREACHABLE_RE.test(text);
   const e = new Error(bad
-    ? TAB_HINT + '插件已自动尝试刷新 / 新建标签；若仍失败，请刷新所有 X 页面（Cmd+R），或关闭旧的 Grok 对话标签后重试。（原始错误：' + text + '）'
+    ? TAB_HINT + '插件已自动尝试刷新 / 新建标签；若仍失败，请刷新所有 X 页面（Cmd+R），或F闭旧的 Grok 对话标签后重试。（原始错误：' + text + '）'
     : text);
   e.tabUnreachable = bad;
   e.tabId = tabId;
@@ -452,7 +455,7 @@ async function ensurePageTab(cfg, forceFresh) {
           p = await pagePing(grok.id, cfg);
           if (p && p.ok && p.hasInput) return { tabId: grok.id, ping: p, created: false, healed: true };
         }
-        // 1.3.3 关键修复：刷新后仍然不通，绝不再把这个坏标签交给 callGrokPage
+        // 1.3.3 F键修复：刷新后仍然不通，绝不再把这个坏标签交给 callGrokPage
         // （1.3.2 就是在这里把失效标签返回，才冒出 "Receiving end does not exist"）。
         // 直接走第 3 步新建标签 —— 新标签必定注入当前实例的 content script。
       }
@@ -489,7 +492,7 @@ async function callGrokPage(prompt, cfg, action) {
     r = await sendToTab(t.tabId, message);
   } catch (e) {
     if (!e.tabUnreachable) throw e;
-    // 标签脚本在 ensurePageTab 之后才失效（例如用户刚好刷新/关闭了它）：
+    // 标签脚本在 ensurePageTab 之后才失效（例如用户刚好刷新/F闭了它）：
     // 先刷新同一个标签等新脚本注入，救不回来再强制新建标签重试一次。
     console.warn('[bg][grok] 标签脚本失效，尝试刷新恢复：' + t.tabId);
     await reloadTab(t.tabId);
@@ -544,7 +547,7 @@ async function findXTabId(preferredId) {
       // 消息本来就来自这个标签，没有 tabs 权限时 url 可能读不到，别因此丢掉它
       const t = await chrome.tabs.get(preferredId);
       if (t) return t.id;
-    } catch (e) { /* 标签可能已关闭 */ }
+    } catch (e) { /* 标签可能已F闭 */ }
   }
   try {
     const tabs = (await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] })) || [];
@@ -692,7 +695,7 @@ async function handleGrokMessage(msg, sender) {
   let actualMode = mode;
 
   // 1.3.3：一键修复「重新加载扩展后旧 X 标签脚本失效」。
-  // 只刷新已打开的 /i/grok 页面（不关闭用户标签），再强制新开一个干净标签。
+  // 只刷新已打开的 /i/grok 页面（不F闭用户标签），再强制新开一个干净标签。
   if (msg.type === 'GROK_PAGE_RESET') {
     if (mode === 'native') {
       const t = await nativeTab(tabId);
@@ -805,7 +808,7 @@ async function handleGrokMessage(msg, sender) {
             (refusedForced
               ? '。这是提示词被 X 站内 Grok 拒答，1.4.18 已改为极简模板；请在 chrome://extensions 重新加载扩展后再试，也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
               : parseIssueForced
-                ? '。请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+                ? '。请再点一次「AI 评论」，或到 Grok 设置F掉「AI 快速模式」重试；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
                 : '。请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
                   '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。'));
         }
@@ -829,7 +832,7 @@ async function handleGrokMessage(msg, sender) {
           (refusedIssue
             ? '。这是提示词被 X 站内 Grok 拒答（非签名问题），1.4.18 已改为 XVM 式极简模板；请在 chrome://extensions 重新加载扩展后再点一次「AI 评论」；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
             : parseIssue
-              ? '。这是回答解析阶段的问题，签名通常正常；请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+              ? '。这是回答解析阶段的问题，签名通常正常；请再点一次「AI 评论」，或到 Grok 设置F掉「AI 快速模式」重试；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
               : '。签名不可用时请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
                 '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'));
       }
@@ -1018,6 +1021,7 @@ if (chrome.downloads && chrome.downloads.onCreated) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
+  sendResponse = guardedResponse(sendResponse);
   if (msg.type === 'TAPE_WAKE') return false; // 已由文件顶部的早期监听器应答
 
   if (msg.type === 'OFFSCREEN_READY') {
@@ -1226,6 +1230,24 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
  * 所有新 API 都做存在性判断：老版本 Chrome / 测试沙箱缺 API 时静默跳过，
  * 不影响原有的转发与 Grok 链路。
  * ===================================================================== */
+/* 1.5.23：消除 chrome://extensions「错误」面板里的
+ *   "Unchecked runtime.lastError: The message port closed before a response was received"
+ * 弹窗 / 分析面板在后台异步任务（转发、取价、钱包同步、打卡）完成前被F掉时，
+ * 端口已经F闭，后台再调用 sendResponse 会让 Chrome 记一条未检查的 lastError，
+ * 长任务（如批量取F）几乎必然触发。这里把所有消息监听器统一包一层：
+ * 只回一次包、吞掉端口F闭异常、回调后同步读取 lastError。
+ * 只做错误兜底，不改变任何响应内容、不吞掉业务错误。 */
+function guardedResponse(sendResponse) {
+  var raw = sendResponse;
+  var done = false;
+  return function (payload) {
+    if (done) return;
+    done = true;
+    try { raw(payload); } catch (e) {}
+    try { void (chrome.runtime && chrome.runtime.lastError); } catch (e) {}
+  };
+}
+
 (function () {
   'use strict';
   try {
@@ -1242,19 +1264,28 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
 
   function syncGet(key) {
     return new Promise(function (resolve) {
-      try { chrome.storage.sync.get(key, function (o) { resolve(o && o[key] != null ? o[key] : null); }); }
+      try { chrome.storage.sync.get(key, function (o) {
+        void (chrome.runtime && chrome.runtime.lastError); // 1.5.23：杜绝未检查的 lastError
+        resolve(o && o[key] != null ? o[key] : null);
+      }); }
       catch (e) { resolve(null); }
     });
   }
   function localGet(key, fallback) {
     return new Promise(function (resolve) {
-      try { chrome.storage.local.get(key, function (o) { resolve(o && o[key] != null ? o[key] : fallback); }); }
+      try { chrome.storage.local.get(key, function (o) {
+        void (chrome.runtime && chrome.runtime.lastError);
+        resolve(o && o[key] != null ? o[key] : fallback);
+      }); }
       catch (e) { resolve(fallback); }
     });
   }
   function localSet(obj) {
     return new Promise(function (resolve) {
-      try { chrome.storage.local.set(obj, function () { resolve(true); }); }
+      try { chrome.storage.local.set(obj, function () {
+        void (chrome.runtime && chrome.runtime.lastError);
+        resolve(true);
+      }); }
       catch (e) { resolve(false); }
     });
   }
@@ -1312,6 +1343,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     if (!chrome.tabs || !chrome.tabs.query) return;
     try {
       chrome.tabs.query({}, function (tabs) {
+        void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
         (tabs || []).forEach(function (t) {
           if (!t || !t.id || !/^https?:/i.test(t.url || '')) return;
           try {
@@ -1326,7 +1358,11 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
 
   function openLink(url) {
     var u = TapePrice.safeLink(url);
-    try { chrome.tabs.create({ url: u, active: true }); } catch (e) {}
+    try {
+      chrome.tabs.create({ url: u, active: true }, function () {
+        void (chrome.runtime && chrome.runtime.lastError);
+      });
+    } catch (e) {}
   }
 
   if (chrome.notifications && chrome.notifications.onClicked) {
@@ -1345,7 +1381,10 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     // 返回 Promise：保存设置后必须等闹钟真正重注册完再回包，
     // 否则用户改了间隔、面板显示「已保存」，后台却还在按旧周期跑。
     return readSettings().then(function (cfg) {
-      try { chrome.alarms.create(ALARM, { delayInMinutes: 1, periodInMinutes: cfg.pollMinutes }); }
+      try {
+        var ap = chrome.alarms.create(ALARM, { delayInMinutes: 1, periodInMinutes: cfg.pollMinutes });
+        if (ap && typeof ap.catch === 'function') ap.catch(function () {}); // 1.5.23
+      }
       catch (e) { /* Chrome < 120 不允许小于 1 分钟的周期，这里最小也是 1 */ }
     });
   }
@@ -1366,6 +1405,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
   // 独立 listener：不与原有 CROSSPOST / GROK_* 路由耦合，回归风险最低
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || !/^(PRICE_|OPEN_PRICE_LINK|TAPUP_PRICE)/.test(String(msg.type || ''))) return false;
+    sendResponse = guardedResponse(sendResponse);
     (async function () {
       if (msg.type === 'PRICE_GET') {
         var cached = await localGet(SNAP_KEY, null);
@@ -1724,7 +1764,10 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     } catch (e) {}
   }
   function ensureVoteAlarm() {
-    try { chrome.alarms.create(VOTE_ALARM, { delayInMinutes: 1, periodInMinutes: 30 }); } catch (e) {}
+    try {
+      var vp = chrome.alarms.create(VOTE_ALARM, { delayInMinutes: 1, periodInMinutes: 30 });
+      if (vp && typeof vp.catch === 'function') vp.catch(function () {}); // 1.5.23
+    } catch (e) {}
   }
   if (chrome.alarms && chrome.alarms.onAlarm) {
     chrome.alarms.onAlarm.addListener(function (a) {
@@ -1735,7 +1778,11 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
     chrome.notifications.onClicked.addListener(function (id) {
       if (!/^bemvote-/.test(String(id || ''))) return;
       voteState().then(function (s) {
-        try { chrome.tabs.create({ url: Vote.publicPage(s.config.ledgerBase), active: true }); } catch (e) {}
+        try {
+          chrome.tabs.create({ url: Vote.publicPage(s.config.ledgerBase), active: true }, function () {
+            void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
+          });
+        } catch (e) {}
         try { chrome.notifications.clear(id, function () { void (chrome.runtime && chrome.runtime.lastError); }); } catch (e) {}
       });
     });
@@ -1747,6 +1794,7 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
   /* ---------- 消息路由 ---------- */
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || !/^(WALLET_|ASSETS_|VOTE_)/.test(String(msg.type || ''))) return false;
+    sendResponse = guardedResponse(sendResponse);
     (async function () {
       const s = await secrets();
       if (msg.type === 'WALLET_STATUS') {
@@ -1900,5 +1948,152 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
       try { sendResponse({ ok: false, error: String(e && e.message || e) }); } catch (e2) {}
     });
     return true; // 异步回包
+  });
+})();
+
+/* =====================================================================
+ * 1.5.26：X 增长计划（每日 40 发推 / 1000 评论）独立模块
+ * ---------------------------------------------------------------------
+ * 只在本机统计与提醒：辅助动作（打开发推预填 / 写入回复框）触发 +1，
+ * 推荐清单从 followData 里已采到的公开「大 V」资料导入，不新增权限 /
+ * 域名 / 第三方接收方，不发请求、不读凭证、不自动发帖或评论。
+ * 独立 IIFE + 独立 listener，与 WALLET_ / VOTE_ / PRICE_ 路由完全解耦。
+ * ===================================================================== */
+(function growthModule() {
+  if (typeof GrowthCore === 'undefined') {
+    try { if (typeof importScripts === 'function') importScripts('growth-core.js'); } catch (e) {}
+  }
+  if (typeof GrowthCore === 'undefined') return;
+
+  const K_GROWTH = 'tapeGrowthStateV1';
+  const K_FOLLOW = 'followData';
+  const GROWTH_ALARM = 'tapeGrowthDailyCheck';
+
+  function gget(keys) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.local.get(keys, function (o) {
+        void (chrome.runtime && chrome.runtime.lastError);
+        resolve(o || {});
+      }); } catch (e) { resolve({}); }
+    });
+  }
+  function gset(obj) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.local.set(obj, function () {
+        void (chrome.runtime && chrome.runtime.lastError);
+        resolve(true);
+      }); } catch (e) { resolve(false); }
+    });
+  }
+  async function growthState() {
+    const r = await gget([K_GROWTH]);
+    const s = GrowthCore.normalizeState(r[K_GROWTH], Date.now());
+    // 跨天 / 首次加载时把规范后的状态写回，保证历史与今日计数一致
+    if (!r[K_GROWTH] || JSON.stringify(GrowthCore.normalizeState(r[K_GROWTH], Date.now())) !==
+        JSON.stringify(r[K_GROWTH])) {
+      await gset({ [K_GROWTH]: s });
+    }
+    return s;
+  }
+  async function saveState(s) {
+    s.updatedAt = Date.now();
+    await gset({ [K_GROWTH]: s });
+    return GrowthCore.summary(s, Date.now());
+  }
+
+  /* ---------- 监督提醒（北京时间，30 分钟一查，未达标每天只提醒一次） ---------- */
+  async function maybeGrowthRemind() {
+    const s = await growthState();
+    const reasons = GrowthCore.reminderReasons(s, Date.now());
+    if (!reasons.length) return;
+    const day = s.today.day;
+    s.config.reminderLastDay = day;
+    await saveState(s);
+    const text = GrowthCore.reminderText(reasons, GrowthCore.summary(s, Date.now()));
+    try {
+      chrome.notifications.create('tapegrowth-' + day, {
+        type: 'basic', iconUrl: 'icons/icon128.png',
+        title: text.title, message: text.message,
+        contextMessage: text.contextMessage, priority: 1
+      }, function () { void (chrome.runtime && chrome.runtime.lastError); });
+    } catch (e) {}
+  }
+  function ensureGrowthAlarm() {
+    try {
+      var p = chrome.alarms.create(GROWTH_ALARM, { delayInMinutes: 1, periodInMinutes: 30 });
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    } catch (e) {}
+  }
+  if (chrome.alarms && chrome.alarms.onAlarm) {
+    chrome.alarms.onAlarm.addListener(function (a) {
+      if (a && a.name === GROWTH_ALARM) maybeGrowthRemind().catch(function () {});
+    });
+  }
+  if (chrome.notifications && chrome.notifications.onClicked) {
+    chrome.notifications.onClicked.addListener(function (id) {
+      if (!/^tapegrowth-/.test(String(id || ''))) return;
+      try { chrome.tabs.create({ url: chrome.runtime.getURL('growth.html'), active: true }, function () {
+        void (chrome.runtime && chrome.runtime.lastError);
+      }); } catch (e) {}
+      try { chrome.notifications.clear(id, function () { void (chrome.runtime && chrome.runtime.lastError); }); } catch (e) {}
+    });
+  }
+  chrome.runtime.onInstalled.addListener(ensureGrowthAlarm);
+  chrome.runtime.onStartup.addListener(ensureGrowthAlarm);
+  ensureGrowthAlarm();
+
+  /* ---------- 消息路由 ---------- */
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || !/^GROWTH_/.test(String(msg.type || ''))) return false;
+    sendResponse = guardedResponse(sendResponse);
+    (async function () {
+      const t = String(msg.type || '');
+      if (t === 'GROWTH_STATE') {
+        const s = await growthState();
+        sendResponse({ ok: true, summary: GrowthCore.summary(s, Date.now()) });
+      } else if (t === 'GROWTH_RECORD') {
+        const kind = String(msg.kind || '');
+        if (GrowthCore.KINDS.indexOf(kind) < 0) { sendResponse({ ok: false, error: '无效的计数类型' }); return; }
+        const s = await growthState();
+        const r = GrowthCore.record(s, kind, msg.ref, Date.now(), { target: msg.target });
+        const summary = await saveState(r.state);
+        // 用户点「写入回复框」时顺手给对应大 V 记一条，方便清单里看进度
+        if (r.counted && kind === 'comment' && msg.target) {
+          const d = GrowthCore.markTargetDone(r.state, msg.target, Date.now());
+          if (d.ok) await saveState(d.state);
+        }
+        sendResponse({ ok: true, counted: r.counted, reason: r.reason, summary: summary });
+      } else if (t === 'GROWTH_CONFIG') {
+        const s = await growthState();
+        const next = GrowthCore.normalizeConfig(Object.assign({}, s.config, msg.config || {}));
+        // 改了提醒开F / 小时就允许当天重新判断，避免旧的 lastDay 把新设置压住
+        if (next.reminderEnabled !== s.config.reminderEnabled || next.reminderHour !== s.config.reminderHour) {
+          next.reminderLastDay = '';
+        }
+        s.config = next;
+        sendResponse({ ok: true, summary: await saveState(s) });
+      } else if (t === 'GROWTH_IMPORT') {
+        const r = await gget([K_GROWTH, K_FOLLOW]);
+        const s = GrowthCore.normalizeState(r[K_GROWTH], Date.now());
+        const result = GrowthCore.importBigV(s, r[K_FOLLOW], Date.now());
+        const summary = await saveState(result.state);
+        sendResponse({ ok: true, added: result.added, updated: result.updated,
+          total: result.total, summary: summary });
+      } else if (t === 'GROWTH_TARGET_DONE') {
+        const s = await growthState();
+        const d = GrowthCore.markTargetDone(s, msg.handle, Date.now());
+        const summary = await saveState(d.state);
+        sendResponse({ ok: d.ok, summary: summary });
+      } else if (t === 'GROWTH_CLEAR_TARGETS') {
+        const s = await growthState();
+        const summary = await saveState(GrowthCore.clearTargets(s, Date.now()));
+        sendResponse({ ok: true, summary: summary });
+      } else {
+        sendResponse({ ok: false, error: '未知消息类型' });
+      }
+    })().catch(function (e) {
+      try { sendResponse({ ok: false, error: String(e && e.message || e) }); } catch (e2) {}
+    });
+    return true;
   });
 })();

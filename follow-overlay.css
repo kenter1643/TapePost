@@ -1,7 +1,7 @@
-/* TapePost 1.5.21 · X 页面内「互关管理 / 扫描」浮层
+/* TapePost 1.5.21 · X 页面内「互F管理 / 扫描」浮层
  * ---------------------------------------------------------------
- * 所有选择器都带 tpf- 前缀或 #tpfOverlay 限定；只有用户打开「标红」开关后
- * 才会给 X 自己的 UserCell 加 tpf-row-notback，关闭即刻清除。
+ * 所有选择器都带 tpf- 前缀或 #tpfOverlay 限定；只有用户打开「标红」开F后
+ * 才会给 X 自己的 UserCell 加 tpf-row-notback，F闭即刻清除。
  * 浮层用固定深色卡片，保证 X 浅色 / 深色两种主题下都可读。
  */
 #tpfOverlay {
@@ -113,17 +113,69 @@
   outline: 2px solid #ffb08a !important; outline-offset: 2px !important;
 }
 
-/* ---- 列表行内标红：只加 class + 一个徽标，不改 X 的按钮与数据 ---- */
-[data-testid="UserCell"].tpf-row-notback {
-  box-shadow: inset 3px 0 0 rgba(255, 95, 86, .92) !important;
+/* ---- 1.5.25：未回F账号「特殊颜色 + 高亮样式」，只加 class 与徽标，
+ *      不改 X 原生按钮的行为 / 文案 / 数据，不监听其点击。
+ *      打开F注页即自动判定，不需要先扫描；X 重绘后由脚本即时补标。 ---- */
+/* 1.5.24：X 改版后行容器不再带 data-testid="UserCell"，只认我们自己的
+ * .tpf-row-notback 类。双写选择器提高优先级，压过 X hover 时的自身背景，
+ * 鼠标移上 / 移开都不会掉色。 */
+.tpf-row-notback {
+  background: linear-gradient(100deg, rgba(255, 95, 86, .22) 0%, rgba(255, 138, 61, .11) 58%, transparent 100%) !important;
+  border-radius: 12px !important;
+  box-shadow: inset 4px 0 0 #ff5f56, inset 0 0 0 1px rgba(255, 95, 86, .42),
+              0 0 16px rgba(255, 95, 86, .2) !important;
+}
+.tpf-row-notback,
+.tpf-row-notback.tpf-row-notback,
+.tpf-row-notback.tpf-row-notback:hover {
+  background: linear-gradient(100deg, rgba(255, 95, 86, .22) 0%, rgba(255, 138, 61, .11) 58%, transparent 100%) !important;
+  border-radius: 12px !important;
+  box-shadow: inset 4px 0 0 #ff5f56, inset 0 0 0 1px rgba(255, 95, 86, .42),
+              0 0 16px rgba(255, 95, 86, .2) !important;
 }
 .tpf-badge {
-  display: inline-block !important; margin-left: 6px !important; padding: 0 6px !important;
+  display: inline-flex !important; align-items: center !important;
+  margin-left: 6px !important; padding: 1px 8px !important;
   border-radius: 999px !important; vertical-align: middle !important; white-space: nowrap !important;
-  font-size: 10px !important; line-height: 16px !important; font-weight: 700 !important;
-  background: rgba(255, 95, 86, .16) !important; color: #ff6b5e !important;
-  border: 1px solid rgba(255, 95, 86, .45) !important;
+  font-size: 10px !important; line-height: 16px !important; font-weight: 800 !important;
+  letter-spacing: .3px !important;
+  background: linear-gradient(92deg, rgba(255, 95, 86, .32), rgba(255, 138, 61, .22)) !important;
+  color: #ffe3de !important;
+  border: 1px solid rgba(255, 95, 86, .62) !important;
+  box-shadow: 0 0 10px rgba(255, 95, 86, .3) !important;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif !important;
+}
+/* 徽标前面的小标记走伪元素，textContent 仍是「未回F」，测试与读屏不受影响 */
+.tpf-badge::before { content: "✕" !important; margin-right: 3px !important; color: #ff8a7e !important; font-weight: 900 !important; }
+/* ---- 1.5.25：未回F账号的头像发光圈 + 用户名高亮（纯 CSS 后代选择器，
+ *      只命中已标 .tpf-row-notback 的行，不碰 X 原生按钮 / 数据 / 文案） ---- */
+/* 头像：新版 X 头像仍是行内 img，可能是懒加载占位；行容器限定即可，
+ * 不再写死 src 含 profile_images。 */
+.tpf-row-notback img, .tpf-nb-avatar,
+.tpf-row-notback.tpf-row-notback img {
+  border: 2px solid #ff5f56 !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 0 2px rgba(255, 95, 86, .55), 0 0 18px rgba(255, 95, 86, .85) !important;
+}
+.tpf-row-notback a[href^="/"],
+.tpf-row-notback a[href^="/"] span,
+.tpf-row-notback.tpf-row-notback a[href^="/"] {
+  color: #ff8f84 !important;
+  text-shadow: 0 0 10px rgba(255, 95, 86, .55) !important;
+}
+
+/* ---- 1.5.23：「选未回F去取F」做成特色 CTA（渐变 + 发光），文案保留以便识别 ---- */
+.tpf-pick.tpf-pick-cta {
+  display: inline-flex !important; align-items: center !important; gap: 3px !important;
+  padding: 4px 10px !important;
+  border: 1px solid rgba(255, 138, 61, .6) !important; border-radius: 999px !important;
+  background: linear-gradient(92deg, rgba(255, 138, 61, .26), rgba(255, 95, 77, .3)) !important;
+  color: #ffd6bd !important; font-weight: 800 !important;
+  box-shadow: 0 3px 12px rgba(255, 94, 77, .26), inset 0 1px 0 rgba(255, 255, 255, .12) !important;
+}
+.tpf-pick.tpf-pick-cta:hover:not(:disabled) {
+  background: linear-gradient(92deg, rgba(255, 138, 61, .4), rgba(255, 95, 77, .46)) !important;
+  border-color: #ff8a3d !important; color: #fff !important; text-decoration: none !important;
 }
 
 @media (max-width: 900px) {

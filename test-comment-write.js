@@ -353,7 +353,7 @@ function pickerEnv(o) {
   eq('成功写入：不另开 intent', e.g.__opened, 0);
   ok('成功写入：提示可继续手动修改',
     e.toasts.some((t) => t.includes('可继续手动修改')), e.toasts.join(' / '));
-  ok('成功写入：面板自动关闭', !!e.panel.removed);
+  ok('成功写入：面板自动F闭', !!e.panel.removed);
 }
 {
   const e = pickerEnv({ wrote: false, recovered: false });

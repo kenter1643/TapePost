@@ -1,5 +1,5 @@
 /*
- * TapePost · 关注关系分析内核（1.5.22）
+ * TapePost · F注F系分析内核（1.5.23）
  * ---------------------------------------------------------------
  * 纯函数模块，不依赖 DOM / chrome.* / 网络，可同时被三个环境加载：
  *   1) MAIN world     follow-capture.js：从 X 自己加载的 JSON 里提取用户；
@@ -25,12 +25,12 @@
   var DAY_MS = 24 * 60 * 60 * 1000;
 
   var DEFAULTS = {
-    minDelay: 5000,            // 两次取关之间的最小间隔（毫秒）
+    minDelay: 5000,            // 两次取F之间的最小间隔（毫秒）
     jitter: 3000,              // 额外随机抖动上限
     batchLimit: 50,            // 单批最多处理多少人，达到后自动暂停
     inactiveDays: 180,         // 超过多少天没发推算「长期不活跃」
     bigFollowers: 10000,       // 粉丝数达到多少算「大 V」
-    skipProtected: true,       // 认证 / 大 V / 白名单默认不取关
+    skipProtected: true,       // 认证 / 大 V / 白名单默认不取F
     maxScroll: 600,            // 自动滚动最多多少次（1.5.22：200 → 600，大名单不再提前撞上限）
     idleRounds: 8,             // 连续多少轮「完全静默」才允许判定完成（1.5.22：4 → 8）
     maxCaptureMs: 20 * 60 * 1000, // 单轮最长时间（1.5.22：6 min → 20 min）
@@ -214,7 +214,7 @@
     return Math.floor(((now || Date.now()) - t) / DAY_MS);
   }
 
-  /* 分类标签，可多标签并存。用于「点分类看明细」和批量取关的默认保护。 */
+  /* 分类标签，可多标签并存。用于「点分类看明细」和批量取F的默认保护。 */
   function classify(u, opts) {
     var o = Object.assign({}, DEFAULTS, opts || {});
     var tags = [];
@@ -222,9 +222,9 @@
     if (u.followers >= o.bigFollowers) tags.push('big');
     if (u.tweets === 0 || u.defaultAvatar ||
         (u.followers === 0 && u.tweets < 5)) tags.push('empty');
-    /* 只有真正拿到「最后一条推文时间」才判不活跃。X 的关注列表响应常常
+    /* 只有真正拿到「最后一条推文时间」才判不活跃。X 的F注列表响应常常
      * 不带 status，此时账号注册时间再早也不能推断「长期不发推」——否则会把
-     * 大量仍然活跃的老账号误标，进而误导用户勾选取关。宁可这一类为空。 */
+     * 大量仍然活跃的老账号误标，进而误导用户勾选取F。宁可这一类为空。 */
     var idle = u.lastTweetAt ? ageDays(u.lastTweetAt, o.now) : -1;
     if (idle >= o.inactiveDays) tags.push('inactive');
     if (u.friends > u.followers * 5 && u.followers < 100) tags.push('lowratio');
@@ -240,8 +240,8 @@
     return '10w+';
   }
 
-  /* 保护名单：白名单 + 认证/大 V（开关）+ 锁推账号。
-   * 批量取关在面板层和桥接层各校验一次，防止单层漏判。 */
+  /* 保护名单：白名单 + 认证/大 V（开F）+ 锁推账号。
+   * 批量取F在面板层和桥接层各校验一次，防止单层漏判。 */
   function protectedReasons(u, opts) {
     var o = Object.assign({}, DEFAULTS, opts || {});
     var wl = {};
@@ -258,13 +258,13 @@
     return protectedReasons(u, opts).length > 0;
   }
 
-  /* 分组定义：面板顶部的可点击统计卡 + 未回关的细分分类。 */
+  /* 分组定义：面板顶部的可点击统计卡 + 未回F的细分分类。 */
   var GROUPS = [
-    { id: 'notBack', label: '未回关我', hint: '我关注了、对方没关注我', tone: 'warn' },
-    { id: 'toFollowBack', label: '我未回关', hint: '对方关注了我、我没回关', tone: 'info' },
-    { id: 'mutual', label: '互关', hint: '双向关注', tone: 'ok' },
-    { id: 'following', label: '全部关注', hint: '我关注的所有人', tone: 'plain' },
-    { id: 'followers', label: '全部粉丝', hint: '关注我的所有人', tone: 'plain' }
+    { id: 'notBack', label: '未回F我', hint: '我F注了、对方没F注我', tone: 'warn' },
+    { id: 'toFollowBack', label: '我未回F', hint: '对方F注了我、我没回F', tone: 'info' },
+    { id: 'mutual', label: '互F', hint: '双向F注', tone: 'ok' },
+    { id: 'following', label: '全部F注', hint: '我F注的所有人', tone: 'plain' },
+    { id: 'followers', label: '全部粉丝', hint: 'F注我的所有人', tone: 'plain' }
   ];
 
   var FILTERS = [
@@ -273,12 +273,12 @@
     { id: 'inactive', label: '长期不活跃' },
     { id: 'verified', label: '认证账号' },
     { id: 'big', label: '大 V' },
-    { id: 'lowratio', label: '低回关比' },
+    { id: 'lowratio', label: '低回F比' },
     { id: 'normal', label: '普通' },
     { id: 'protected', label: '受保护' }
   ];
 
-  /* 取关任务的最终名单：过滤保护项、去重、限额。纯函数，便于 dry-run 断言。 */
+  /* 取F任务的最终名单：过滤保护项、去重、限额。纯函数，便于 dry-run 断言。 */
   function buildTask(handles, users, opts) {
     var o = Object.assign({}, DEFAULTS, opts || {});
     var byHandle = {};
@@ -314,7 +314,7 @@
   /* 1.5.22：扫描结束判定（纯函数，不碰 DOM / chrome.*，便于离线模拟）。
    * 旧版只看「名单人数连续 idleRounds 轮没涨」就判 done。X 分页请求经常
    * 要十几秒；全量重扫时返回的全是已存账号，人数也不涨，但 X 明明还在
-   * 一页页往下加载 —— 结果就是没扫完就停、采集器被关掉。
+   * 一页页往下加载 —— 结果就是没扫完就停、采集器被F掉。
    * 现在必须同时满足：① 已过最短扫描时长；② 距最后一次「X 响应到达 /
    * 名单新增 / 页面变高」足够久；③ 连续若干轮完全静默；④ 页面确实滚到底；
    * ⑤ 页面没有加载指示器（且指示器有宽限时间，防常驻 progressbar 卡死）。
@@ -364,7 +364,7 @@
    * 但导出表格给用户看时一律翻译成中文。 */
   var TAG_LABELS = {
     verified: '认证账号', big: '大 V', empty: '疑似空号', inactive: '长期不活跃',
-    lowratio: '低回关比', normal: '普通', protected: '受保护'
+    lowratio: '低回F比', normal: '普通', protected: '受保护'
   };
 
   function tagLabel(t) {
@@ -372,7 +372,7 @@
   }
 
   function toCsv(users) {
-    var head = ['用户名', '昵称', '粉丝数', '关注数', '推文数', '是否认证',
+    var head = ['用户名', '昵称', '粉丝数', 'F注数', '推文数', '是否认证',
       '最后发推时间', '分类', '简介', '主页链接'];
     var lines = [head.join(',')];
     (users || []).forEach(function (u) {

@@ -28,7 +28,7 @@ https://kenter1643.github.io/TapePost/
 
 （约 250 / 280 字符单位，X 单条可直接发；发微博可把最后链接换成 GitHub 仓库地址。）
 
-## 三、X 短帖（英文，面向国际关注者）
+## 三、X 短帖（英文，面向国际F注者）
 
 ```
 TapePost v1.4.2 is live on GitHub (Chrome Web Store listing still pending).

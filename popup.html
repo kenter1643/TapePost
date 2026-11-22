@@ -106,7 +106,7 @@
     /* 主/次按钮：统一圆角、最小高度与状态 */
     #save,#openPanel,#check { width:100%; min-height:38px; padding:var(--sp-2) var(--sp-3);
       border-radius:var(--r-sm); font-size:var(--fs-subhead); font-weight:700; cursor:pointer; }
-    /* 顶部主入口：互关管理（1.5.22 起固定在品牌头正下方，弹窗第一眼可见） */
+    /* 顶部主入口：互F管理（1.5.22 起固定在品牌头正下方，弹窗第一眼可见） */
     #openFollow { display:flex; align-items:center; gap:var(--sp-3); width:100%; min-height:58px;
       margin:0 0 var(--sp-3); padding:var(--sp-2) var(--sp-3); text-align:left; cursor:pointer;
       border:1px solid rgba(34,211,238,.58); border-radius:var(--r-md);
@@ -124,6 +124,20 @@
       font-size:var(--fs-micro); font-weight:800; color:var(--text-onbrand);
       background:var(--grad-brand); border-radius:var(--r-pill); padding:1px var(--sp-2); white-space:nowrap; }
     #openFollow .he-arrow { flex:0 0 auto; font-size:var(--fs-title); color:var(--cyan-soft); line-height:1; }
+    /* 1.5.26：X 增长计划统计卡（发推 / 评论今日进度，点击进详情页） */
+    #openGrowth { display:block; width:100%; margin:0 0 var(--sp-3); padding:var(--sp-2) var(--sp-3);
+      text-align:left; cursor:pointer; border:1px solid rgba(255,138,61,.52); border-radius:var(--r-md);
+      background:linear-gradient(100deg,rgba(255,138,61,.2),rgba(255,95,86,.14) 60%,rgba(167,139,250,.16));
+      box-shadow:0 8px 22px rgba(255,94,77,.16),inset 0 0 0 1px rgba(255,255,255,.05); color:var(--text-1); }
+    #openGrowth:hover { border-color:rgba(255,138,61,.9); box-shadow:0 10px 26px rgba(255,94,77,.28); }
+    #openGrowth .gr-head { display:flex; align-items:center; gap:var(--sp-2); font-size:var(--fs-caption); font-weight:800; color:#fff; }
+    #openGrowth .gr-head .gr-new { margin-left:auto; font-size:var(--fs-micro); color:var(--text-onbrand);
+      background:var(--grad-brand); border-radius:var(--r-pill); padding:1px var(--sp-2); }
+    .gr-row { display:flex; align-items:center; gap:var(--sp-2); margin-top:var(--sp-2); font-size:var(--fs-micro); color:var(--text-2); }
+    .gr-row .gr-k { flex:0 0 32px; }
+    .gr-row .gr-bar { flex:1; height:6px; border-radius:var(--r-pill); background:rgba(255,255,255,.12); overflow:hidden; }
+    .gr-row .gr-bar i { display:block; height:100%; width:0; border-radius:var(--r-pill); background:var(--grad-cta); transition:width .3s ease; }
+    .gr-row .gr-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--text-1); font-weight:700; }
     #save { margin-top:var(--sp-3); border:none; background:var(--grad-cta); color:#fff;
       box-shadow:0 6px 18px rgba(255,94,77,.32); }
     #save:hover { background:linear-gradient(92deg,#ffae57,#ff7355); }
@@ -375,16 +389,23 @@
 </head>
 <body>
   <!-- 1.5.10：标题补回 TapePost，插件全名为「TapePost信仰者工具」；品牌字标与中文名分层，靠 5px 视觉间距分隔 -->
-  <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.22</span></h1>
+  <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.26</span></h1>
 
-  <!-- 1.5.22：互关管理主入口固定在品牌头正下方，打开 X 关注关系分析独立面板 -->
-  <button id="openFollow" type="button" title="打开 X 关注关系分析面板（未回关统计 / 分类明细 / 批量取关）">
+  <!-- 1.5.22：互F管理主入口固定在品牌头正下方，打开 X F注F系分析独立面板 -->
+  <button id="openFollow" type="button" title="打开 X F注F系分析面板（未回F统计 / 分类明细 / 批量取F）">
     <span class="he-ico" aria-hidden="true">👥</span>
     <span class="he-txt">
-      <span class="he-title">互关管理<span class="he-new">新增</span></span>
-      <span class="he-sub">X 关注关系分析 · 未回关统计 / 批量取关</span>
+      <span class="he-title">互F管理<span class="he-new">新增</span></span>
+      <span class="he-sub">X F注F系分析 · 未回F统计 / 批量取F</span>
     </span>
     <span class="he-arrow" aria-hidden="true">›</span>
+  </button>
+
+  <!-- 1.5.26：X 增长计划统计卡（今日发推 / 评论进度，点击进详情页看明细与推荐清单） -->
+  <button id="openGrowth" type="button" title="查看 X 增长计划：每日 40 发推 / 1000 评论进度、明细与大 V 推荐清单">
+    <span class="gr-head"><span>📈 X 增长计划</span><span class="gr-new">今日</span></span>
+    <span class="gr-row"><span class="gr-k">发推</span><span class="gr-bar"><i id="grPostBar"></i></span><span class="gr-v" id="grPostText">0/40</span></span>
+    <span class="gr-row"><span class="gr-k">评论</span><span class="gr-bar"><i id="grCommentBar"></i></span><span class="gr-v" id="grCommentText">0/1000</span></span>
   </button>
 
   <!-- 1.5.5：BEM 置顶为主卡（最大字号），TapeUP / 矿机日产并排第二行；描述一律 8px -->
@@ -576,7 +597,7 @@
 
   <button id="openPanel" type="button">🛡 打开 TapeOut 生态面板（295 条绿标 + 链接核验）</button>
 
-  <label>已启用站点（关掉后该站不再出现「一键转发」）</label>
+  <label>已启用站点（F掉后该站不再出现「一键转发」）</label>
   <div class="sites" id="sites">
     <label class="site"><input type="checkbox" id="site_weibo" /> 微博</label>
     <label class="site"><input type="checkbox" id="site_zhihu" /> 知乎</label>
@@ -612,7 +633,7 @@
   <!-- 1.4.3：临时文件 / 落盘策略 -->
   <div class="row" style="margin-top:10px">
     <input type="checkbox" id="tmpAutoDownload" />
-    <label for="tmpAutoDownload" style="margin:0;font-weight:400">转发时自动下载图片备份（默认关闭：图片走剪贴板，不落盘）</label>
+    <label for="tmpAutoDownload" style="margin:0;font-weight:400">转发时自动下载图片备份（默认F闭：图片走剪贴板，不落盘）</label>
   </div>
 
   <div class="row">
@@ -637,12 +658,12 @@
 
   <div class="row">
     <input type="checkbox" id="sig" />
-    <label for="sig" style="margin:0;font-weight:400">转发文字末尾附上我的署名与 X 主页链接（默认关闭）</label>
+    <label for="sig" style="margin:0;font-weight:400">转发文字末尾附上我的署名与 X 主页链接（默认F闭）</label>
   </div>
 
   <div class="row">
     <input type="checkbox" id="source" />
-    <label for="source" style="margin:0;font-weight:400">转发 X 上的推文时附上原推链接（默认关闭，用于标注来源）</label>
+    <label for="source" style="margin:0;font-weight:400">转发 X 上的推文时附上原推链接（默认F闭，用于标注来源）</label>
   </div>
 
   <label for="domain">打开的 X 域名</label>
@@ -685,16 +706,16 @@
       <p>两种用法：AI 候选自动随机附一句；或自己写完评论，点当前回复框右侧的 T 按钮带入。</p>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoQuickButtons" />
-        <label for="promoQuickButtons" style="margin:0;font-weight:400">回复框右侧显示 T 按钮（默认开启，与 AI 评论无关）</label>
+        <label for="promoQuickButtons" style="margin:0;font-weight:400">回复框右侧显示 T 按钮（默认开启，与 AI 评论无F）</label>
       </div>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoCopyOnly" />
-        <label for="promoCopyOnly" style="margin:0;font-weight:400">安全模式：T 只复制推广句，我自己粘贴（默认关闭）</label>
+        <label for="promoCopyOnly" style="margin:0;font-weight:400">安全模式：T 只复制推广句，我自己粘贴（默认F闭）</label>
       </div>
       <p class="tiny" style="margin:0 0 8px">全页只出现一个 T 按钮，跟着当前回复框走。左键随机换一句、右键去掉；写回一次全量替换，不压字、不重复、不弄丢正文。</p>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoEnabled" />
-        <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的候选自动随机附一句（默认关闭）</label>
+        <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的候选自动随机附一句（默认F闭）</label>
       </div>
       <label for="promoTarget">推广主题</label>
       <select id="promoTarget">
@@ -760,13 +781,13 @@
       </div>
       <div class="row" style="margin:7px 0 0">
         <input type="checkbox" id="deepseekJsonMode" />
-        <label for="deepseekJsonMode" style="margin:0;font-weight:400;font-size:var(--fs-form)">强制 JSON 输出（官方模型支持，兼容网关报错时关掉）</label>
+        <label for="deepseekJsonMode" style="margin:0;font-weight:400;font-size:var(--fs-form)">强制 JSON 输出（官方模型支持，兼容网F报错时F掉）</label>
       </div>
       <p class="tiny" style="margin:6px 0 0">官方 <b>https://api.deepseek.com</b>；模型 <b>deepseek-v4-flash</b>（快）/ <b>deepseek-v4-pro</b>（强），旧名 deepseek-chat 已弃用。Key 只存本机，按量计费。</p>
     </div>
     <div class="row" style="margin:8px 0 10px">
       <input type="checkbox" id="grokPreferNative" />
-      <label for="grokPreferNative" style="margin:0;font-weight:400">自动模式下优先站内直连（关掉＝恢复旧的「有 Key 走 API、没 Key 走页面」）</label>
+      <label for="grokPreferNative" style="margin:0;font-weight:400">自动模式下优先站内直连（F掉＝恢复旧的「有 Key 走 API、没 Key 走页面」）</label>
     </div>
 
     <div class="promptbox">
@@ -816,7 +837,7 @@
       </div>
       <div class="row" style="margin:8px 0 0">
         <input type="checkbox" id="grokPageAutoSubmit" />
-        <label for="grokPageAutoSubmit" style="margin:0;font-weight:400">自动点发送（关掉＝只填词，自己按发送后再点「读取 Grok 回答」）</label>
+        <label for="grokPageAutoSubmit" style="margin:0;font-weight:400">自动点发送（F掉＝只填词，自己按发送后再点「读取 Grok 回答」）</label>
       </div>
       <div class="row" style="margin:6px 0 0">
         <input type="checkbox" id="grokPageNewChat" />
@@ -826,7 +847,7 @@
     </details>
 
     <details class="apiset">
-      <summary>🔑 xAI API 专属设置（Key / 模型 / 网关）</summary>
+      <summary>🔑 xAI API 专属设置（Key / 模型 / 网F）</summary>
       <label for="grokKey">xAI API Key（页面模式可留空）</label>
       <input type="password" id="grokKey" placeholder="xai-…" autocomplete="off" spellcheck="false" />
       <div class="g2">
@@ -842,7 +863,7 @@
           <input type="text" id="grokModel" placeholder="grok-4.3" spellcheck="false" />
         </div>
       </div>
-      <label for="grokBaseUrl">接口地址（默认官方；也可填兼容网关）</label>
+      <label for="grokBaseUrl">接口地址（默认官方；也可填兼容网F）</label>
       <input type="text" id="grokBaseUrl" placeholder="https://api.x.ai/v1" spellcheck="false" />
     </details>
 
@@ -851,7 +872,7 @@
       <button type="button" id="openGrok">🪟 打开 Grok 页面</button>
     </div>
     <div class="btnrow">
-      <button type="button" id="grantOrigin">允许网关域名</button>
+      <button type="button" id="grantOrigin">允许网F域名</button>
       <button type="button" id="showKey">👁 显示 Key</button>
     </div>
     <div class="btnrow">
@@ -879,7 +900,7 @@
     <div class="info-card" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
       <div class="info-head">
         <strong id="infoTitle">说明</strong>
-        <button type="button" id="infoClose" aria-label="关闭">✕</button>
+        <button type="button" id="infoClose" aria-label="F闭">✕</button>
       </div>
       <div id="infoBody" class="info-body"></div>
       <div class="info-foot"><button type="button" id="infoOk">知道了</button></div>

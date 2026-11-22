@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>TapePost信仰者工具 · X 关注关系分析</title>
+  <title>TapePost信仰者工具 · X F注F系分析</title>
   <style>
-    /* ===== TapePost Design System · 1.5.10 / 关注分析面板 1.5.22 ===== */
+    /* ===== TapePost Design System · 1.5.10 / F注分析面板 1.5.26 ===== */
     :root {
       --brand-600:#e8622c; --brand-500:#ff8a3d; --brand-400:#ffb08a; --brand-300:#ffd6bd;
       --grad-brand:linear-gradient(92deg,#ffe14d,#ff9a3d 45%,#ff5f4d);
@@ -173,11 +173,36 @@
     .tag.verified,.tag.big { color:var(--cyan); border-color:rgba(34,211,238,.45); background:var(--cyan-bg); }
     .tag.empty,.tag.inactive,.tag.lowratio { color:var(--amber); border-color:rgba(255,138,61,.45); background:var(--amber-bg); }
     .tag.protected { color:var(--green); border-color:rgba(52,211,153,.45); background:var(--green-bg); }
+    /* 1.5.23：未互F账号的特殊颜色 / 样式 */
+    .tag.nb-badge { color:#ffd9d4; border-color:rgba(255,95,86,.62); background:linear-gradient(92deg,rgba(255,95,86,.3),rgba(255,138,61,.2));
+      box-shadow:0 0 10px rgba(255,95,86,.25); font-weight:800; }
+    .item.item-notback { position:relative; border-left:3px solid var(--red);
+      background:linear-gradient(100deg,rgba(255,107,94,.13),rgba(255,138,61,.04) 58%,transparent); }
+    .item.item-notback::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+      background:var(--grad-cta); box-shadow:0 0 12px rgba(255,95,86,.6); }
+    /* 1.5.23：未互F账号的头像 + 用户名特殊标识（红色描边发光环 + 高亮呼吸），纯 CSS 不改 DOM */
+    .item.item-notback .av { border:2px solid #ff5f56 !important;
+      box-shadow:0 0 0 2px rgba(255,95,86,.42),0 0 14px rgba(255,95,86,.62) !important;
+      animation:tpf-nb-pulse 2.4s ease-in-out infinite; }
+    .item.item-notback .nm { color:#ff8f84 !important; text-shadow:0 0 12px rgba(255,95,86,.5) !important;
+      text-decoration:underline; text-decoration-color:rgba(255,95,86,.7); text-underline-offset:3px; }
+    .item.item-notback .hd { color:#ffb3a4 !important; text-shadow:0 0 8px rgba(255,95,86,.32) !important; }
+    @keyframes tpf-nb-pulse {
+      0%,100% { box-shadow:0 0 0 2px rgba(255,95,86,.42),0 0 14px rgba(255,95,86,.62) !important; }
+      50% { box-shadow:0 0 0 3px rgba(255,95,86,.6),0 0 22px rgba(255,95,86,.9) !important; }
+    }
     .item .ops { display:flex; flex-direction:column; gap:var(--sp-1); align-items:flex-end; flex:0 0 auto; }
+    /* 1.5.23：行内「🎯 取F」按钮做成特色 CTA（渐变 + 发光 + 悬停抬升） */
+    button.btn-unfollow { min-height:28px; padding:var(--sp-1) var(--sp-3); font-size:var(--fs-caption);
+      font-weight:800; color:#fff; border:none; border-radius:var(--r-pill); letter-spacing:.3px;
+      background:var(--grad-cta); box-shadow:0 3px 12px rgba(255,94,77,.34),inset 0 1px 0 rgba(255,255,255,.28); }
+    button.btn-unfollow:hover:not(:disabled) { filter:brightness(1.1); transform:translateY(-1px);
+      box-shadow:0 6px 18px rgba(255,94,77,.5),inset 0 1px 0 rgba(255,255,255,.3); }
+    button.btn-unfollow:disabled { opacity:.5; }
     .empty-list { padding:var(--sp-6); text-align:center; color:var(--text-3); font-size:var(--fs-body); }
     .pager { display:flex; align-items:center; justify-content:center; gap:var(--sp-3); margin-top:var(--sp-3); }
 
-    /* ---------- 批量取关 ---------- */
+    /* ---------- 批量取F ---------- */
     section.danger-zone { border-color:rgba(255,107,94,.45); background:var(--red-bg); }
     .warnbox { padding:var(--sp-3) var(--sp-4); border-radius:var(--r-md);
       background:rgba(120,20,20,.24); border:1px solid rgba(255,107,94,.5); color:var(--red-soft); font-size:var(--fs-form); }
@@ -190,6 +215,15 @@
     .log { max-height:190px; overflow:auto; padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm);
       background:rgba(8,12,20,.7); border:1px solid var(--border-1);
       font:var(--fs-caption)/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--text-2); white-space:pre-wrap; }
+    /* 1.5.23：批量取F的两个主按钮做成特色 CTA（保留 id / 文案 / 流程不变） */
+    #dryRun, #modalConfirm { position:relative; overflow:hidden; font-weight:800; letter-spacing:.3px;
+      box-shadow:0 6px 20px rgba(255,94,77,.4),inset 0 1px 0 rgba(255,255,255,.3); }
+    #dryRun::after, #modalConfirm::after { content:""; position:absolute; top:0; left:-60%; width:40%; height:100%;
+      background:linear-gradient(100deg,transparent,rgba(255,255,255,.28),transparent); transform:skewX(-20deg);
+      transition:left var(--dur-base) var(--ease); }
+    #dryRun:hover:not(:disabled)::after, #modalConfirm:hover:not(:disabled)::after { left:120%; }
+    #dryRun:hover:not(:disabled), #modalConfirm:hover:not(:disabled) { filter:brightness(1.1); transform:translateY(-1px);
+      box-shadow:0 9px 26px rgba(255,94,77,.55),inset 0 1px 0 rgba(255,255,255,.32); }
     .modal { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center;
       background:rgba(4,6,12,.78); padding:var(--sp-5); }
     .modal.show { display:flex; }
@@ -211,18 +245,18 @@
     <div class="brandline">
       <div class="logo">T</div>
       <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span>
-        <span class="h1-sep">/</span><span class="h1-page">X 关注关系分析</span></h1>
-      <span class="ver" id="followVer">v1.5.22</span>
+        <span class="h1-sep">/</span><span class="h1-page">X F注F系分析</span></h1>
+      <span class="ver" id="followVer">v1.5.26</span>
     </div>
-    <p class="sub">分析你在 X（x.com）上的关注与粉丝：谁没回关、谁等你回关、谁已互关；
-      点统计卡或分类看明细，勾选后可限速批量取关。全程只在本机计算，不上传任何数据。</p>
+    <p class="sub">分析你在 X（x.com）上的F注与粉丝：谁没回F、谁等你回F、谁已互F；
+      点统计卡或分类看明细，勾选后可限速批量取F。全程只在本机计算，不上传任何数据。</p>
     <div class="privacy">
       <b>隐私与边界</b>
       <ul>
-        <li>名单来自 <b>X 网页客户端自己加载出来的</b>「关注中 / 粉丝」分页数据，扩展只被动读取，<b>不额外发请求、不读取登录凭证、不调用任何私有写接口</b>。</li>
-        <li>公开主页资料（用户名、昵称、粉丝数等）只存在本机 <code>chrome.storage.local</code>，不经过 TapePost 服务器或任何第三方；<b>每批数据立即写盘</b>，关闭面板 / 中途停止都不丢，重新打开自动恢复并可断点续采。</li>
-        <li>批量取关是唯一写操作：只点击 X 页面上该账号那一行的原生「正在关注」按钮，先预演、需你确认、限速执行、可随时暂停/停止。</li>
-        <li><b>1.5.21 页面内扫描浮层</b>：X 的「关注中 / 粉丝」页右侧会出现全中文「互关管理」小面板，可全量扫描 / 增量续扫 / 停止，并在列表里标红未回关（可随时关闭）。它同样<b>只被动读取 X 自己加载的数据、不额外发请求、不读凭证</b>；「从当前位置选未回关」只把账号带入本面板供你勾选，<b>不会自动取关</b>；扫描不会删除已保存的名单。</li>
+        <li>名单来自 <b>X 网页客户端自己加载出来的</b>「F注中 / 粉丝」分页数据，扩展只被动读取，<b>不额外发请求、不读取登录凭证、不调用任何私有写接口</b>。</li>
+        <li>公开主页资料（用户名、昵称、粉丝数等）只存在本机 <code>chrome.storage.local</code>，不经过 TapePost 服务器或任何第三方；<b>每批数据立即写盘</b>，F闭面板 / 中途停止都不丢，重新打开自动恢复并可断点续采。</li>
+        <li>批量取F是唯一写操作：只点击 X 页面上该账号那一行的原生「正在F注」按钮，先预演、需你确认、限速执行、可随时暂停/停止。</li>
+        <li><b>1.5.21 页面内扫描浮层</b>：X 的「F注中 / 粉丝」页右侧会出现全中文「互F管理」小面板，可全量扫描 / 增量续扫 / 停止，并在列表里标红未回F（可随时F闭）。它同样<b>只被动读取 X 自己加载的数据、不额外发请求、不读凭证</b>；「从当前位置选未回F」只把账号带入本面板供你勾选，<b>不会自动取F</b>；扫描不会删除已保存的名单。</li>
       </ul>
     </div>
   </header>
@@ -239,8 +273,8 @@
     <div class="steps">
       <div class="step">
         <span class="n">1</span>
-        <h3>我关注的人</h3>
-        <p>打开自己的「关注中」页并自动向下滚动，等 X 自己把分页加载完。</p>
+        <h3>我F注的人</h3>
+        <p>打开自己的「F注中」页并自动向下滚动，等 X 自己把分页加载完。</p>
         <div><span class="cnt" id="cntFollowing">0</span><span class="when" id="whenFollowing">未采集</span></div>
         <div class="row"><button id="capFollowing" class="primary">开始采集</button>
           <button id="stopCapture" class="ghost mini">停止</button></div>
@@ -248,33 +282,33 @@
       <div class="step">
         <span class="n">2</span>
         <h3>我的粉丝</h3>
-        <p>打开「粉丝」页并自动滚动。两边都采完才能算互关关系。</p>
+        <p>打开「粉丝」页并自动滚动。两边都采完才能算互FF系。</p>
         <div><span class="cnt" id="cntFollowers">0</span><span class="when" id="whenFollowers">未采集</span></div>
         <div class="row"><button id="capFollowers" class="primary">开始采集</button></div>
       </div>
       <div class="step">
         <span class="n">3</span>
         <h3>分析与清理</h3>
-        <p>在下方点统计卡 / 分类查看明细；白名单账号永不出现在取关名单里。</p>
+        <p>在下方点统计卡 / 分类查看明细；白名单账号永不出现在取F名单里。</p>
         <div class="row"><button id="clearData" class="ghost mini">清空本机名单</button></div>
       </div>
     </div>
     <div class="status" id="capStatus">尚未采集。请先确认已登录 x.com，再点上面两个按钮；采集期间请保持标签页在前台或可见。</div>
-    <p class="hint" id="saveHint">数据每一批都会立即写入本机缓存，关闭面板或中途停止都不会丢；下次打开自动恢复，点「继续采集」可从已保存的名单往下补。</p>
+    <p class="hint" id="saveHint">数据每一批都会立即写入本机缓存，F闭面板或中途停止都不会丢；下次打开自动恢复，点「继续采集」可从已保存的名单往下补。</p>
     <p class="hint" id="draftHint"></p>
-    <p class="hint">1.5.21 起也可以直接在 X 的「关注中 / 粉丝」页右侧用全中文「互关管理」扫描浮层：全量扫描 / 增量续扫 / 停止 / 列表标红，同样每批实时写盘；浮层里点「从当前位置选未回关」会把账号带到这里，仍需你预演并确认后才会取关。<b>1.5.22 起扫描会一直等到 X 列表真正到底：</b>分页再慢也不会几秒没数据就停；若达到时间 / 滚动上限会标「中断」并完整保留名单，点「增量续扫」或上面的「开始采集」即可接着补。</p>
+    <p class="hint">1.5.21 起也可以直接在 X 的「F注中 / 粉丝」页右侧用全中文「互F管理」扫描浮层：全量扫描 / 增量续扫 / 停止 / 列表标红，同样每批实时写盘；浮层里点「从当前位置选未回F」会把账号带到这里，仍需你预演并确认后才会取F。<b>1.5.22 起扫描会一直等到 X 列表真正到底：</b>分页再慢也不会几秒没数据就停；若达到时间 / 滚动上限会标「中断」并完整保留名单，点「增量续扫」或上面的「开始采集」即可接着补。</p>
   </section>
 
   <!-- 2. 统计 -->
   <section id="secStats">
-    <h2>② 关系统计 <span class="badge">点卡片看明细</span></h2>
+    <h2>② F系统计 <span class="badge">点卡片看明细</span></h2>
     <div class="cards" id="cards"></div>
-    <div class="rate" id="rateLine">互关率 —</div>
+    <div class="rate" id="rateLine">互F率 —</div>
   </section>
 
   <!-- 3. 明细 -->
   <section id="secList">
-    <h2>③ 明细清单 <span class="badge" id="listTitle">未回关我</span></h2>
+    <h2>③ 明细清单 <span class="badge" id="listTitle">未回F我</span></h2>
     <div class="chips" id="chips"></div>
     <div class="toolbar">
       <input type="text" id="search" class="grow" placeholder="搜索昵称 / @用户名 / 简介" spellcheck="false" />
@@ -307,16 +341,16 @@
       <button id="nextPage" class="ghost mini">下一页</button>
     </div>
     <div class="row">
-      <span class="hint">白名单（这些账号永远不会进入取关名单）：</span>
+      <span class="hint">白名单（这些账号永远不会进入取F名单）：</span>
     </div>
     <div class="whitelist" id="whitelist"></div>
   </section>
 
-  <!-- 4. 批量取关 -->
+  <!-- 4. 批量取F -->
   <section id="secUnfollow" class="danger-zone">
-    <h2>④ 批量取关 <span class="badge">需确认 · 可暂停</span></h2>
+    <h2>④ 批量取F <span class="badge">需确认 · 可暂停</span></h2>
     <div class="warnbox">
-      <b>请先读这段：</b>X 对自动化批量操作有风控，短时间大量取关可能被临时限制甚至冻结账号。
+      <b>请先读这段：</b>X 对自动化批量操作有风控，短时间大量取F可能被临时限制甚至冻结账号。
       本功能默认每个账号间隔 ≥ 5 秒随机、单批最多 50 人、认证/大 V/白名单自动跳过、连续 3 次定位失败立即停机。
       建议先小批量试跑；执行期间不要手动操作该标签页。
     </div>
@@ -332,7 +366,7 @@
           <option value="0">只跳过白名单与锁推</option></select></div>
     </div>
     <div class="row">
-      <button id="dryRun" class="primary">预演：查看将取关名单</button>
+      <button id="dryRun" class="primary">预演：查看将取F名单</button>
       <button id="pauseTask" class="ghost">暂停</button>
       <button id="resumeTask" class="ghost">继续</button>
       <button id="stopTask" class="danger">立即停止</button>
@@ -343,20 +377,20 @@
   </section>
 
   <div class="footer">
-    TapePost信仰者工具 · X 关注关系分析 · 数据只存本机 · 未授权不执行任何写操作 ·
-    采集与取关均依赖 X 网页客户端当前结构，若 X 改版导致定位失败，扩展会自动停机而不是盲点。
+    TapePost信仰者工具 · X F注F系分析 · 数据只存本机 · 未授权不执行任何写操作 ·
+    采集与取F均依赖 X 网页客户端当前结构，若 X 改版导致定位失败，扩展会自动停机而不是盲点。
   </div>
 </div>
 
 <!-- 预演确认层 -->
 <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
   <div class="dialog">
-    <h3 id="modalTitle">批量取关预演</h3>
+    <h3 id="modalTitle">批量取F预演</h3>
     <div class="warnbox" id="modalWarn"></div>
     <pre id="modalBody"></pre>
     <div class="row" style="justify-content:flex-end">
       <button id="modalCancel" class="ghost">取消</button>
-      <button id="modalConfirm" class="danger">确认执行取关</button>
+      <button id="modalConfirm" class="danger">确认执行取F</button>
     </div>
   </div>
 </div>
