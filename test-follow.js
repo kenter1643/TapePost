@@ -192,7 +192,9 @@ ok('上架资料保留 1.5.26 增长计划段，以及高亮 / DOM 兼容 / ERRO
   /MutationObserver/.test(D('1.5.25')) &&
   /findUserCells\(\)/.test(D('1.5.24')) &&
   /Unchecked runtime\.lastError/.test(D('1.5.23')));
-ok('上架资料首条为 1.5.27 互F管理 / 增长计划完善，并写明发送成功才计数、发送日志、不代点',
+ok('上架资料首条为 ' + CUR + ' 误判修复说明，并保留 1.5.27 互F / 增长计划特性',
+  /误判/.test(D(CUR)) && /IndexedDB/.test(D(CUR)) && /3000 条/.test(D(CUR)) &&
+  /发送成功才 \+1/.test(D(CUR)) && /不代点/.test(D(CUR)) &&
   /逐屏往下查找/.test(D('1.5.27')) && /谁取F了你|取F了你的人/.test(D('1.5.27')) &&
   /growth-watch\.js/.test(D('1.5.27')) && /确认发送成功才 \+1/.test(D('1.5.27')) &&
   /发送日志/.test(D('1.5.27')) && /不代点、不读未发送的草稿、不发请求/.test(D('1.5.27')));
@@ -205,7 +207,8 @@ privs.forEach((html, i) => {
     /只含响应计数与时间戳/.test(html));
   ok('隐私政策副本 ' + (i + 1) + ' 保留 1.5.23 运行时错误防护段',
     /1\.5\.23 运行时错误防护/.test(html) && /Unchecked runtime\.lastError/.test(html));
-  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.27 旁听发送按钮披露（不代点 / 读取发出文字 / 发送日志存本地数据库 90 天）',
+  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.28 误判修复披露 + 1.5.27 旁听发送按钮披露',
+    /1\.5\.28 修复发送成功误判/.test(html) && /3000 条/.test(html) &&
     /1\.5\.27 互F管理与增长计划完善/.test(html) && /growth-watch\.js/.test(html) &&
     /不阻止、不代点/.test(html) && /最多 280 字/.test(html) && /保留最近 90 天/.test(html) && /IndexedDB/.test(html) &&
     /X 确认发送成功才计数/.test(html));
@@ -222,7 +225,8 @@ ok('README 保留 1.5.23 错误防护章节与 1.5.22 / 1.5.21 / 1.5.20 / 1.5.19
   /### 1\.5\.21：X 页面内中文/.test(readme) &&
   /### 1\.5\.20：修复F注名单丢失/.test(readme) &&
   /### 1\.5\.19：新增 X F注F系分析/.test(readme) && /35 个文件/.test(readme) &&
-  /### 1\.5\.26：新增 X 增长计划/.test(readme) && /### 1\.5\.27：互F管理与 X 增长计划完善/.test(readme) &&
+  /### 1\.5\.26：新增 X 增长计划/.test(readme) && /### 1\.5\.28：修复发送成功误判/.test(readme) &&
+  /### 1\.5\.27：互F管理与 X 增长计划完善/.test(readme) &&
   /39 个文件/.test(readme));
 ok('README 说明多信号判定 / 响应心跳 / 上限标中断',
   /scanVerdict\(\)/.test(readme) && /TAPEFOLLOW_PULSE/.test(readme) &&
@@ -230,8 +234,8 @@ ok('README 说明多信号判定 / 响应心跳 / 上限标中断',
 ok('README 说明取F只点原生按钮、不调用写接口',
   /不调用 X 任何私有 \/ 公开写接口/.test(readme));
 if (tutorial) {
-  ok('Obsidian 教程版本同步 1.5.26', /version: 1\.5\.26/.test(tutorial) &&
-    /适用版本：\*\*v1\.5\.26\*\*/.test(tutorial));
+  ok('Obsidian 教程版本同步 ' + CUR, vRe('version: ').test(tutorial) &&
+    new RegExp('适用版本：\\*\\*v' + CUR_RE + '\\*\\*').test(tutorial));
   ok('Obsidian 教程新增F注分析章节与 FAQ',
     /## 十二、进阶：X F注F系分析/.test(tutorial) && /怎么看谁没回F我/.test(tutorial));
   ok('Obsidian 教程保留 1.5.21 页面扫描浮层章节与 FAQ',
@@ -485,7 +489,7 @@ if (fs.existsSync(zipPath)) {
     off = start + csize;
   }
   const names = Object.keys(entries);
-  eq('商店包 39 文件（1.5.27 新增 growth-watch.js）', names.length, 39);
+  eq('商店包 39 文件（1.5.28 新增 growth-watch.js）', names.length, 39);
   ok('十一个新运行时文件都进包', NEW_FILES.concat(OVERLAY_FILES, GROWTH_FILES).every((f) => names.includes(f)));
   ok('测试脚本不进包', names.every((n) => !n.startsWith('test-')));
   ok('根目录即 manifest.json', names.includes('manifest.json'));
@@ -1076,7 +1080,7 @@ async function scanChecks() {
     ok('全量重扫：已存名单没有被删', Object.keys(h.db.followData.following).length === 2);
   }
 
-  // 1.5.27：真实桥接源码跑完一轮「全量扫描到底」→ 本轮没出现的人被清理，并写入变化记录
+  // 1.5.28：真实桥接源码跑完一轮「全量扫描到底」→ 本轮没出现的人被清理，并写入变化记录
   {
     const seed = Array.from({ length: 20 }, (_, i) => 'p' + i);
     const h = makeScanBridge({ seed: seed });
@@ -1085,10 +1089,10 @@ async function scanChecks() {
     await h.emit([{ handle: 'fresh', name: 'fresh' }]);
     for (let i = 0; i < 40 && h.cap().status === 'running'; i++) await h.tick(1500);
     const fd = h.db.followData;
-    ok('1.5.27 全量扫描到底：状态 done 且记录清理结果', h.cap().status === 'done' && h.cap().prune && h.cap().prune.pruned === true);
-    ok('1.5.27 全量扫描到底：本轮没出现的人从本机名单移除并立墓碑', !fd.following.p5 && fd.gone.following.p5 > 0 &&
+    ok('1.5.28 全量扫描到底：状态 done 且记录清理结果', h.cap().status === 'done' && h.cap().prune && h.cap().prune.pruned === true);
+    ok('1.5.28 全量扫描到底：本轮没出现的人从本机名单移除并立墓碑', !fd.following.p5 && fd.gone.following.p5 > 0 &&
       !!fd.following.p4 && !!fd.following.fresh);
-    ok('1.5.27 全量扫描到底：首次只建基线、提示下次会自动对比', h.cap().prune.firstBaseline === true &&
+    ok('1.5.28 全量扫描到底：首次只建基线、提示下次会自动对比', h.cap().prune.firstBaseline === true &&
       /已建立基线/.test(h.cap().message) && fd.baseline.following > 0);
   }
 
@@ -1556,7 +1560,7 @@ function autoMarkChecks() {
   });
 }
 
-// ---------------------------------------------------------------- 15. 1.5.27 批量取F：虚拟列表逐屏查找 / 断点续跑 / 名单同步
+// ---------------------------------------------------------------- 15. 1.5.28 批量取F：虚拟列表逐屏查找 / 断点续跑 / 名单同步
 // X 的F注列表是虚拟滚动：同一时刻只渲染十来行。用真实 follow-bridge.js 源码 +
 // 「按 scrollY 只渲染可见行」的假 DOM 复现：旧版只在当前屏幕里找人，
 // 勾了不在屏上的账号就「没找到这一行」→ 连续 3 次停机。
@@ -1652,7 +1656,7 @@ function makeSweepEnv(opts) {
         onChanged: { addListener() {} }
       },
       runtime: { lastError: null, onMessage: { addListener(fn) { msgListeners.push(fn); } },
-        getManifest: () => ({ version: '1.5.27' }) }
+        getManifest: () => ({ version: '1.5.28' }) }
     }
   };
   Object.defineProperty(sandbox, 'scrollY', { get: () => scrollY });
@@ -1673,7 +1677,7 @@ function makeSweepEnv(opts) {
 }
 
 async function sweepChecks() {
-  console.log('== 15. 1.5.27 批量取F：虚拟列表逐屏查找 / 断点续跑 / 名单同步 ==');
+  console.log('== 15. 1.5.28 批量取F：虚拟列表逐屏查找 / 断点续跑 / 名单同步 ==');
   // A. 目标分散在 300 行的不同位置 + 一个不在列表 + 一个白名单
   {
     const targets = ['u3', 'u80', 'u150', 'u220', 'u299', 'ghost', 'u10'];
@@ -1737,9 +1741,9 @@ async function sweepChecks() {
   ok('E. 面板 setPhase(running) 重新发送 FOLLOW_TASK_START', /phase === 'running'[\s\S]{0,900}FOLLOW_PING[\s\S]{0,1400}FOLLOW_TASK_START/.test(followJs));
 }
 
-// ---------------------------------------------------------------- 16. 1.5.27 全量扫描清理 / 谁取F了我
+// ---------------------------------------------------------------- 16. 1.5.28 全量扫描清理 / 谁取F了我
 async function freshnessChecks() {
-  console.log('== 16. 1.5.27 全量扫描清理 / 谁取F了我 ==');
+  console.log('== 16. 1.5.28 全量扫描清理 / 谁取F了我 ==');
   const U = (n, p) => Array.from({ length: n }, (_, i) => ({ handle: (p || 'f') + i, name: 'N' + i, followers: i }));
   let d = Core.normalizeData({});
   d = Core.ingestUsers(d, 'followers', U(40), 1000).data;
@@ -1777,9 +1781,9 @@ async function freshnessChecks() {
   ok('清空本机名单同时清掉墓碑 / 基线 / 变化记录', /gone: \{\}, baseline: \{\}, history: \[\]/.test(followJs));
 }
 
-/* 1.5.27 复查修正：输入不被改写 / 采集缓存补发 / 弹窗回调 / 任务替换 / 新版 DOM 取F */
+/* 1.5.28 复查修正：输入不被改写 / 采集缓存补发 / 弹窗回调 / 任务替换 / 新版 DOM 取F */
 async function reviewFixChecks() {
-  console.log('== 17. 1.5.27 复查修正 ==');
+  console.log('== 17. 1.5.28 复查修正 ==');
   // 1) 内核函数不改调用方的原对象
   const raw = Core.normalizeData({ following: { a: { handle: 'a', seenAt: 1 }, b: { handle: 'b', seenAt: 5000 } } });
   const before = JSON.stringify(raw);

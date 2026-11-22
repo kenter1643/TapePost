@@ -170,7 +170,7 @@ if (fs.existsSync(zip)) {
   }
   const names = entries.map((e) => e.name);
   ok('商店包不含 tapeup-price.js', !names.includes('tapeup-price.js'));
-  eq('商店包 39 文件（1.5.26 新增 growth 三个文件，1.5.27 新增 growth-watch.js）', names.length, 39);
+  eq('商店包 39 文件（1.5.26 新增 growth 三个文件，1.5.28 新增 growth-watch.js）', names.length, 39);
   const manEntry = entries.find((e) => e.name === 'manifest.json');
   ok('包内根目录有 manifest.json', !!manEntry);
   if (manEntry) {

@@ -549,7 +549,7 @@ function loadGrowth() {
     const setBar = (bar, txt, v, goal) => {
       const el = document.getElementById(bar), t = document.getElementById(txt);
       if (el) el.style.width = Math.min(100, goal ? (v * 100 / goal) : 0) + '%';
-      // 1.5.27：不加千分位逗号（1000 而不是 1,000）
+      // 1.5.28：不加千分位逗号（1000 而不是 1,000）
       if (t) t.textContent = String(Math.round(Number(v) || 0)) + '/' + String(Math.round(Number(goal) || 0));
     };
     setBar('grPostBar', 'grPostText', s.post, s.postGoal);
@@ -937,7 +937,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.27 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.28 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

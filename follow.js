@@ -74,7 +74,7 @@
     return { me: '', following: {}, followers: {},
       updatedAt: { following: 0, followers: 0 }, savedAt: 0, version: 1, source: 'passive' };
   }
-  // 1.5.27：与桥接层共用 FollowCore 的数据口径（保留墓碑 / 基线 / 变化记录）
+  // 1.5.28：与桥接层共用 FollowCore 的数据口径（保留墓碑 / 基线 / 变化记录）
   function normalizeData(raw) { return Core.normalizeData(raw); }
   // 任何写 followData 都必须「先读最新再合并」：面板内存里的旧快照不能覆盖
   // 桥接层在面板关闭期间实时落盘的新用户（1.5.20 修复数据丢失的关键）。
@@ -199,7 +199,7 @@
     renderAll();
   }
 
-  // ---------------------------------------------------------------- 1.5.27 变化记录
+  // ---------------------------------------------------------------- 1.5.28 变化记录
   function userChip(u) {
     return '<a class="chip" href="https://x.com/' + encodeURIComponent(u.handle) +
       '" target="_blank" rel="noopener noreferrer" title="粉丝 ' + fmt(u.followers) + '">@' + esc(u.handle) +
@@ -688,7 +688,7 @@
     if (!t) { status('taskStatus', '当前没有运行中的任务。', 'warn'); return; }
     var tab = null;
     if (phase === 'running') {
-      // 1.5.27：「继续」要真的把执行循环重新跑起来。旧版只改状态，暂停超过
+      // 1.5.28：「继续」要真的把执行循环重新跑起来。旧版只改状态，暂停超过
       // 5 分钟或执行页刷新后循环早已退出，点继续什么都不会发生。
       if (!t.confirmed || t.dryRun !== false) { status('taskStatus', '这个任务没有经过确认，不能继续。', 'err'); return; }
       tab = await findXTab('/following');

@@ -1,5 +1,5 @@
 /*
- * TapePost · X 增长计划内核（1.5.26 · 1.5.27 真实发送计数 / 大 V 归属 / 节奏）
+ * TapePost · X 增长计划内核（1.5.26 · 1.5.28 真实发送计数 / 大 V 归属 / 节奏）
  * ---------------------------------------------------------------
  * 纯函数模块，不依赖 DOM / chrome.* / 网络，可被三处加载：
  *   1) background.js / growth.js：每日目标、计数、监督提醒、大 V 推荐清单；
@@ -8,8 +8,8 @@
  *
  * 隐私边界：只读本机 followData（F注F系分析已采到的公开主页资料），
  * 不发任何请求、不读登录凭证、不写 X 私有接口、不自动发帖/评论/取F。
- * 「自动 +1」只在用户点了扩展提供的「打开发推预填 / 写入回复框」后触发，
- * 代表辅助动作完成，最终是否发送仍由用户在 X 手动决定。
+ * 1.5.28 起「发送成功才 +1」：点扩展预填 / 写回复框只登记「待发送」，
+ * 由 growth-watch.js 旁听 X 给出成功结果后才确认计数；不代点、不自动发布。
  */
 (function (root, factory) {
   'use strict';
@@ -30,10 +30,10 @@
     verifiedFloorRatio: 0.2,        // 认证账号的粉丝下限 = 阈值 × 0.2（默认 2000）
     maxTargets: 200,                // 推荐清单最多保留多少个大 V
     maxHistoryDays: 90,
-    maxDedupeIds: 1500,             // 1.5.27：每天 1000 条评论，600 不够去重
-    maxEvents: 1500,                // 1.5.27：同上，明细保留一整天
+    maxDedupeIds: 1500,             // 1.5.28：每天 1000 条评论，600 不够去重
+    maxEvents: 1500,                // 1.5.28：同上，明细保留一整天
     dedupeWindowMs: 5000,           // 没带 ref 时，同类型 5 秒内重复点击只记一次
-    // 1.5.27：「准备好内容」之后多久内点了 X 的发送按钮，算同一条（只确认、不重复 +1）
+    // 1.5.28：「准备好内容」之后多久内点了 X 的发送按钮，算同一条（只确认、不重复 +1）
     confirmWindowMs: { post: 30 * 60000, comment: 20 * 60000 },
     sendDedupeMs: 4000,             // 同一个发送按钮连点只算一次
     markDedupeMs: 2 * 60000,        // 清单里「手动记一条」与 2 分钟内自动计到的同一对象合并
@@ -43,7 +43,7 @@
     paceRemindGapMs: 3 * 3600000,   // 落后提醒最多 3 小时一次
     paceFirstHour: 10,              // 10:00 之前不做落后提醒
     maxReminders: 8,                // 每天最多 8 个定时提醒
-    // 1.5.27：发送日志（按北京时间每天一个存储键）
+    // 1.5.28：发送日志（按北京时间每天一个存储键）
     logKeepDays: 90,                // 发送日志（IndexedDB）保留 90 天，与每天计数的 history 一致
     logMaxPerDay: 3000,
     logTextMax: 280
@@ -106,7 +106,7 @@
     };
   }
 
-  /* 1.5.27：定时提醒。每一条 = 北京时间 HH:MM + 到这个时间应完成目标的百分比。
+  /* 1.5.28：定时提醒。每一条 = 北京时间 HH:MM + 到这个时间应完成目标的百分比。
    * 例如 12:00 / 30%、18:00 / 70%、21:00 / 100%：到点时发推或评论没到该比例就提醒一次。 */
   function pad2(n) { return ('0' + n).slice(-2); }
   function timeOf(v) {
@@ -153,7 +153,7 @@
       importedAt: num(c.importedAt, 0),
       paceReminder: c.paceReminder !== false,
       paceLastAt: num(c.paceLastAt, 0),
-      // 1.5.27：在 X 的发帖 / 回复按钮上显示「还差 N」角标和发送结果动画
+      // 1.5.28：在 X 的发帖 / 回复按钮上显示「还差 N」角标和发送结果动画
       xHints: c.xHints !== false
     };
   }
@@ -180,9 +180,9 @@
         addedAt: num(t.addedAt, 0),
         done: Math.max(0, int(t.done, 0)),
         lastAt: num(t.lastAt, 0),
-        doneDay: String(t.doneDay || ''),       // 1.5.27：今日进度属于哪一天
+        doneDay: String(t.doneDay || ''),       // 1.5.28：今日进度属于哪一天
         todayDone: Math.max(0, int(t.todayDone, 0)),
-        manual: !!t.manual                      // 1.5.27：手动添加的对象
+        manual: !!t.manual                      // 1.5.28：手动添加的对象
       });
     }
     out.sort(function (a, b) { return b.followers - a.followers || a.handle.localeCompare(b.handle); });
@@ -205,7 +205,7 @@
     if (!isObj(s.today) || s.today.day !== day) {
       var old = isObj(s.today) ? s.today : null;
       if (old && old.day && (num(old.post, 0) > 0 || num(old.comment, 0) > 0)) {
-        // 1.5.27：顺带记下当天的目标，连续达标天数按「当天的目标」判断
+        // 1.5.28：顺带记下当天的目标，连续达标天数按「当天的目标」判断
         out.history[old.day] = { post: cnt(old.post), comment: cnt(old.comment),
           postSent: cnt(old.postSent), commentSent: cnt(old.commentSent),
           postGoal: out.config.postGoal, commentGoal: out.config.commentGoal };
@@ -253,7 +253,7 @@
     for (var i = 0; i < s.targets.length; i++) if (s.targets[i].handle === h) return s.targets[i];
     return null;
   }
-  /* 1.5.27：评论对象是清单里的大 V 时自动 +1（总数 + 今日数）。 */
+  /* 1.5.28：评论对象是清单里的大 V 时自动 +1（总数 + 今日数）。 */
   function bumpTarget(s, handle, t) {
     var hit = findTarget(s, handle);
     if (!hit) return false;
@@ -267,9 +267,9 @@
 
   /* 辅助动作计数。ref 用帖子 id / 账号 handle / 文本摘要，防同一动作重复 +1。
    * 返回值 counted=false 时不改状态（重复点击 / 未知类型）。
-   * 1.5.27：opts.target = 帖子作者 handle（清单里的大 V 自动记进度），
+   * 1.5.28：opts.target = 帖子作者 handle（清单里的大 V 自动记进度），
    *         opts.post = 帖子 id（之后检测到真的点了发送时用来对号，不重复计数）。 */
-  /* 1.5.27：「成功了才 +1」。
+  /* 1.5.28：「成功了才 +1」。
    *   prepare()   TapePost 把内容准备好（预填发推页 / 写入回复框）：只记一条「待发送」，不计数；
    *   record()    已经确认发出去的一条（旁听到 X 发送成功、清单手动记一条）：计数；
    *   recordSent() 旁听到发送成功时调用：对得上「待发送」就确认它并 +1，对不上就当手写发的 record()。 */
@@ -327,7 +327,7 @@
     return { state: s, counted: true, reason: 'ok', count: s.today[kind], attributed: attributed };
   }
 
-  /* 1.5.27：检测到用户真的点了 X 自己的「发布 / 回复」按钮。
+  /* 1.5.28：检测到用户真的点了 X 自己的「发布 / 回复」按钮。
    *   - 最近有一条同类型、还没确认的「准备好内容」记录（评论还要求帖子 id 对得上）
    *     → 只把它标成「已发送」，不重复 +1；
    *   - 否则说明是用户自己手写直接发的 → 记一条（来源 send），并给清单里的大 V 记进度。
@@ -367,7 +367,7 @@
     return r;
   }
 
-  /* 1.5.27：清单里点「手动记一条」——给这个大 V 记进度，同时算一条评论
+  /* 1.5.28：清单里点「手动记一条」——给这个大 V 记进度，同时算一条评论
    * （例如在手机上评论的）。2 分钟内已经自动计到同一对象就只合并、不重复算。 */
   function manualComment(state, handle, now) {
     var s = normalizeState(state, now);
@@ -409,7 +409,7 @@
     return { state: s, ok: s.targets.length < before };
   }
 
-  /* 1.5.27：今日推荐顺序——今天还没评过的优先，其次最久没评的，再按粉丝数。
+  /* 1.5.28：今日推荐顺序——今天还没评过的优先，其次最久没评的，再按粉丝数。
    * 这样每天轮着来，不会天天只盯着粉丝最多的那几个。 */
   function recommendTargets(targets, day, limit) {
     var arr = (targets || []).map(function (x) {
@@ -496,7 +496,7 @@
 
   /* 从 followData.following（本机已采的公开主页资料）筛大 V 作为评论推荐清单。
    * 认证或粉丝 ≥ 阈值即可入选；不读粉丝页、不发请求、不碰登录态。 */
-  /* 1.5.27：只有蓝标（付费订阅）不算大 V。X 的 verified 字段里混着 is_blue_verified，
+  /* 1.5.28：只有蓝标（付费订阅）不算大 V。X 的 verified 字段里混着 is_blue_verified，
    * 旧版凡是带蓝标就入选，几百粉的订阅号也进了「大 V 评论清单」，评论他们几乎没有曝光。
    * 现在：粉丝 ≥ 阈值；或认证且粉丝 ≥ 阈值的 1/5（默认 2000）。 */
   function isBigV(u, opts) {
@@ -592,7 +592,7 @@
     return n;
   }
 
-  /* ---------- 1.5.27 发送日志（纯函数；存储由后台负责） ---------- */
+  /* ---------- 1.5.28 发送日志（纯函数；存储由后台负责） ---------- */
   function logKey(day) { return LOG_PREFIX + day; }
   function logEntry(input, now) {
     var x = isObj(input) ? input : {};
@@ -637,7 +637,7 @@
     return o;
   }
 
-  /* ---------- 1.5.27 发送日志数据库（IndexedDB，扩展自己的本地数据库） ----------
+  /* ---------- 1.5.28 发送日志数据库（IndexedDB，扩展自己的本地数据库） ----------
    * 刷新页面、重启浏览器、重新加载扩展都不会丢；只有卸载扩展或在面板里点「清空日志」才删除。
    * factory = indexedDB，keyRange = IDBKeyRange（由调用方传入，便于测试）。 */
   var LOG_DB_NAME = 'tapepost-growth', LOG_DB_STORE = 'sendLog';
@@ -684,13 +684,33 @@
       add: function (entries) {
         return run('readwrite', function (os, out) {
           out.value = 0;
-          (Array.isArray(entries) ? entries : [entries]).forEach(function (e) {
-            if (!isObj(e)) return;
+          var list = (Array.isArray(entries) ? entries : [entries]).filter(isObj);
+          var days = [], seen = Object.create(null);
+          list.forEach(function (e) {
             var c = Object.assign({}, e);
             delete c.id;
             os.add(c);
             out.value++;
+            var d = String(e.day || '');
+            if (d && !seen[d]) { seen[d] = 1; days.push(d); }
           });
+          // 每天最多 logMaxPerDay 条（与降级到 chrome.storage 的路径一致）：
+          // day 索引按主键自增排列，最早的在最前，超出的从最旧开始删。
+          (function nextDay() {
+            if (!days.length) return;
+            var day = days.shift();
+            var req = os.index('day').count(day);
+            req.onsuccess = function () {
+              var over = (num(req.result, 0)) - DEFAULTS.logMaxPerDay;
+              if (over <= 0) return nextDay();
+              var cur = os.index('day').openCursor(keyRange.only(day));
+              cur.onsuccess = function () {
+                var c = cur.result;
+                if (c && over > 0) { c.delete(); over--; c.continue(); }
+                else nextDay();
+              };
+            };
+          })();
         });
       },
       byDay: function (day) {
@@ -743,7 +763,7 @@
       // 每种各留最近 200 条：一天上千条评论时，发推明细不会被挤没
       events: recentPerKind(s.events, 200),
       targets: s.targets,
-      // 1.5.27
+      // 1.5.28
       postSent: s.today.postSent, commentSent: s.today.commentSent,
       postPending: pendingOf(s.events, 'post', now), commentPending: pendingOf(s.events, 'comment', now),
       recommended: recommendTargets(s.targets, s.today.day, 30),
@@ -860,7 +880,7 @@
     nextReminderAt: nextReminderAt,
     normalizeReminders: normalizeReminders,
     reminderText: reminderText,
-    // 1.5.27
+    // 1.5.28
     recordSent: recordSent,
     manualComment: manualComment,
     addTarget: addTarget,

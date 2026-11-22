@@ -1,12 +1,12 @@
 /*
- * TapePost · X 增长计划面板（1.5.26 · 1.5.27 完善）
+ * TapePost · X 增长计划面板（1.5.26 · 1.5.28 完善）
  * ---------------------------------------------------------------
  * 只读本机统计并渲染：统计卡（可点进明细）、节奏与连续达标、评论对象推荐清单
- * （今日轮换 / 搜索 / 手动添加 / 移除）、14 天柱状图、发送日志（1.5.27）、目标与提醒设置。
+ * （今日轮换 / 搜索 / 手动添加 / 移除）、14 天柱状图、发送日志（1.5.28）、目标与提醒设置。
  * 所有读写都走 background 的 GROWTH_* 消息，不直接碰 X 页面、不发请求、
  * 不读凭证、不自动发帖或评论。
  *
- * 1.5.27：按钮统一用事件委托绑定在容器上。旧版每次重绘都对整页
+ * 1.5.28：按钮统一用事件委托绑定在容器上。旧版每次重绘都对整页
  * querySelectorAll 重新 addEventListener：打开「大 V 评论对象」明细后只要整页重绘
  * 一次（导入 / 保存设置 / 记一条），明细里点一下「记一条」就会记两次。
  */
@@ -22,7 +22,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
-  // 1.5.27：数字不加千分位逗号（1000 而不是 1,000）
+  // 1.5.28：数字不加千分位逗号（1000 而不是 1,000）
   var fmt = function (n) { var v = Number(n || 0); return String(isFinite(v) ? Math.round(v) : 0); };
   var clock = function (ts) {
     return ts ? new Date(ts).toLocaleTimeString('zh-CN', { hour12: false }) : '';
@@ -398,7 +398,7 @@
 
   // ---------------------------------------------------------------- 绑定（只绑一次）
   $('growthVer').textContent = 'v' + (function () {
-    try { return chrome.runtime.getManifest().version; } catch (e) { return '1.5.27'; }
+    try { return chrome.runtime.getManifest().version; } catch (e) { return '1.5.28'; }
   })();
   $('cards').addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('[data-view]') : null;

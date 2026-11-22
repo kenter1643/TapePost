@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.27';
+  return 'v1.5.28';
 })();
 
 /* ==================== 1.5.11：后台连接自愈 ====================
@@ -167,7 +167,7 @@ function growthHash(s) {
   }
   return h.toString(36);
 }
-/* 1.5.27：target 是被评论帖子的作者 handle（用于自动给大 V 清单记进度），
+/* 1.5.28：target 是被评论帖子的作者 handle（用于自动给大 V 清单记进度），
  * post 是帖子 id（用于和之后检测到的「真的点了回复」对上号，不重复计数）。
  * 旧版把帖子 id 当成 target 传，清单里的大 V 永远不会自动 +1。 */
 function growthPing(kind, content, target, post) {
@@ -2652,7 +2652,7 @@ function extractXStatusId(card) {
   return '';
 }
 
-/* 1.5.27：被回复帖子的作者 handle，从 /handle/status/id 形式的链接里取。 */
+/* 1.5.28：被回复帖子的作者 handle，从 /handle/status/id 形式的链接里取。 */
 function xStatusAuthorFrom(href) {
   const m = /(?:^|\/\/[^/]+)?\/([A-Za-z0-9_]{1,20})\/status\/\d+/.exec(String(href || ''));
   if (!m) return '';
@@ -2832,7 +2832,7 @@ async function onAiComment(card, btn) {
     return;
   }
   const statusId = extractXStatusId(card) || extractXStatusIdFromScope(scope);
-  try { if (statusId) growthAuthorByStatus[statusId] = extractXStatusAuthor(card, scope); } catch (e) {} // 1.5.27
+  try { if (statusId) growthAuthorByStatus[statusId] = extractXStatusAuthor(card, scope); } catch (e) {} // 1.5.28
   let permalink = '';
   try { permalink = card ? extractPermalink(card) : ''; } catch (e) {}
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中'; }
@@ -2991,7 +2991,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, 
       const wrote = applyCommentToReply(c, btn);
       if (wrote) {
         // 1.5.26：写入成功即计一条评论（辅助动作口径），最终发送仍由用户点「回复」
-        try { if (typeof growthPing === 'function') growthPing('comment', c, growthAuthorByStatus[statusId] || '', statusId); } catch (e) {} // 1.5.26 / 1.5.27 作者归属
+        try { if (typeof growthPing === 'function') growthPing('comment', c, growthAuthorByStatus[statusId] || '', statusId); } catch (e) {} // 1.5.26 / 1.5.28 作者归属
         showToast('已写入回复框，可继续手动修改，再点「回复」。', 3500);
         copyTextFallback(c);
         if (panel.remove) panel.remove();

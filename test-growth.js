@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* TapePost · X 增长计划内核离线测试（1.5.26 · 1.5.27） */
+/* TapePost · X 增长计划内核离线测试（1.5.26 · 1.5.28） */
 'use strict';
 const assert = require('assert');
 const G = require('./growth-core.js');
@@ -148,7 +148,7 @@ eq('脏清单只留合法 handle', dirty.targets.length, 1);
 eq('handle 统一小写', dirty.targets[0].handle, 'xyz');
 
 // ======================================================================
-// 1.5.27：真实发送计数 / 大 V 自动归属 / 今日轮换 / 节奏 / 连续达标
+// 1.5.28：真实发送计数 / 大 V 自动归属 / 今日轮换 / 节奏 / 连续达标
 // ======================================================================
 const fs = require('fs');
 const path = require('path');
@@ -360,7 +360,7 @@ console.log('== 15. 接线：manifest / 后台路由 / 面板 / 内容脚本 =='
     new RegExp('id="' + id + '"').test(gh)));
 }
 
-console.log('== 1.5.27 复查修正 ==');
+console.log('== 1.5.28 复查修正 ==');
 {
   const blueSmall = { handle: 'tiny', followers: 300, verified: true };
   const blueMid = { handle: 'mid', followers: 2500, verified: true };
@@ -383,7 +383,7 @@ console.log('== 1.5.27 复查修正 ==');
   ok('清空评论对象前二次确认', /window\.confirm\('确定清空全部/.test(read('growth.js')));
 }
 
-console.log('== 1.5.27 发送成功才 +1 / 发送日志 ==');
+console.log('== 1.5.28 发送成功才 +1 / 发送日志 ==');
 {
   const W2 = require('./growth-watch.js');
   ok('X 提示「已发送」判为成功', W2.toastVerdict('Your post was sent. View') === 'ok' && W2.toastVerdict('你的帖子已发送') === 'ok');
@@ -421,7 +421,7 @@ console.log('== 1.5.27 发送成功才 +1 / 发送日志 ==');
   ok('后台：手动记一条也进日志', /reason: 'mark', source: 'mark'/.test(bg));
 }
 
-console.log('== 1.5.27 旁听器：等 X 的结果再上报（DOM 模拟） ==');
+console.log('== 1.5.28 旁听器：等 X 的结果再上报（DOM 模拟） ==');
 {
   const vm = require('vm');
   const src = read('growth-watch.js');
@@ -484,7 +484,7 @@ console.log('== 1.5.27 旁听器：等 X 的结果再上报（DOM 模拟） ==')
   ok('点击前已存在的旧提示不算这次的结果', e.sent.length === 0);
 }
 
-console.log('== 1.5.27 多个定时提醒 ==');
+console.log('== 1.5.28 多个定时提醒 ==');
 {
   const at = (h, m) => Date.parse('2026-11-22T' + String(h).padStart(2, '0') + ':' + String(m || 0).padStart(2, '0') + ':00+08:00');
   let st = G.emptyState();
@@ -538,7 +538,7 @@ console.log('== 1.5.27 多个定时提醒 ==');
   ok('面板：数字不加千分位逗号', !/toLocaleString\('zh-CN'\)/.test(gj.split('var clock')[0]) && /String\(isFinite\(v\)/.test(gj));
 }
 
-console.log('== 1.5.27 通知页回复：发送按钮兜底识别 + 诊断输出 ==');
+console.log('== 1.5.28 通知页回复：发送按钮兜底识别 + 诊断输出 ==');
 {
   const vm = require('vm');
   const src = read('growth-watch.js');
@@ -582,7 +582,7 @@ console.log('== 1.5.27 通知页回复：发送按钮兜底识别 + 诊断输出
     dead.logs.some((m) => /WARN/.test(m) && /请刷新这个页面/.test(m)));
 }
 
-console.log('== 1.5.27 X 按钮角标「还差 N」+ 发送动画 ==');
+console.log('== 1.5.28 X 按钮角标「还差 N」+ 发送动画 ==');
 {
   const W3 = require('./growth-watch.js');
   const noon = Date.parse('2026-11-22T12:00:00+08:00');
@@ -610,7 +610,7 @@ console.log('== 1.5.27 X 按钮角标「还差 N」+ 发送动画 ==');
   ok('扩展弹窗里的进度也不加千分位逗号', !/toLocaleString\('zh-CN'\) \+ '\/'/.test(read('popup.js')));
 }
 
-console.log('== 1.5.27 加载即报错回归 ==');
+console.log('== 1.5.28 加载即报错回归 ==');
 {
   const vm = require('vm');
   ['growth.js', 'growth-watch.js', 'growth-core.js', 'background.js', 'popup.js'].forEach((f) => {
@@ -622,6 +622,52 @@ console.log('== 1.5.27 加载即报错回归 ==');
   const mod = bg.slice(bg.indexOf('(function growthModule()'));
   ok('后台：growthChain 在启动时首次调用 ensureGrowthAlarm() 之前就已定义（防 TDZ 让整个增长模块失效）',
     mod.indexOf('let growthChain') >= 0 && mod.indexOf('let growthChain') < mod.indexOf('\n  ensureGrowthAlarm();'));
+}
+
+console.log('== 1.5.28 发送日志上限与文案一致性 ==');
+{
+  const core = read('growth-core.js');
+  ok('IndexedDB 主路径也按天限流 3000 条（与降级路径一致）',
+    /os\.index\('day'\)\.count\(day\)/.test(core) && /DEFAULTS\.logMaxPerDay/.test(core) &&
+    /openCursor\(keyRange\.only\(day\)\)/.test(core));
+  const gh = read('growth.html');
+  ok('面板已无「辅助动作自动 +1」旧口径', !/辅助动作自动 \+1/.test(gh) && /发送成功才 \+1/.test(gh));
+  ok('面板明确日志存 IndexedDB 90 天，统计存 storage.local',
+    /chrome\.storage\.local/.test(gh) && /IndexedDB/.test(gh) && /90 天/.test(gh));
+  ok('过时注释已清理：后台不再写「只留最近 7 天」、旁听器不再写「默认保留 7 天」',
+    !/只留最近 7 天/.test(read('background.js')) && !/默认保留 7 天/.test(read('growth-watch.js')));
+  ['docs/privacy.html', 'store/privacy-site/index.html', '../vote-ledger/privacy.html'].forEach((f) => {
+    const h = fs.readFileSync(path.join(__dirname, f), 'utf8');
+    ok('隐私政策 ' + f + ' 数据落点描述无矛盾',
+      /发送日志在扩展自己的本地数据库/.test(h) && !/以上数据全部只存在 <code>chrome\.storage\.local<\/code>/.test(h));
+  });
+}
+
+console.log('== 1.5.28 发送成功判定：删除 / 关窗 / 关标签不再误判 ==');
+{
+  // 纯函数：各类证据组合的判定
+  eq('失败提示优先 → fail', W.verdictOf({ toast: 'fail', textCleared: true }).status, 'fail');
+  eq('成功提示 → ok', W.verdictOf({ toast: 'ok' }).status, 'ok');
+  eq('提示里的失败盖过成功（传 fail 时）', W.verdictOf({ toast: 'fail', editorGone: true }).status, 'fail');
+  eq('手动删字（userEdited）即使清空也不定论', W.verdictOf({ userEdited: true, textCleared: true,
+    hadText: true, elapsed: 2000 }), '');
+  eq('冷静期内（<600ms）清空不立即算成功', W.verdictOf({ textCleared: true, hadText: true, elapsed: 300 }), '');
+  eq('过了冷静期、文字清空且按钮已禁用 → ok', W.verdictOf({ textCleared: true, hadText: true,
+    sendDisabled: true, elapsed: 700 }).status, 'ok');
+  eq('仅编辑器消失（弹窗关闭）过冷静期 → ok', W.verdictOf({ editorGone: true, hadText: true, elapsed: 700 }).status, 'ok');
+  eq('发送按钮仍可用 → 不定论（可能只是重绘）', W.verdictOf({ textCleared: true, hadText: true,
+    sendDisabled: false, elapsed: 700 }), '');
+  eq('等待超时 → unknown', W.verdictOf({ elapsed: 16000 }).status, 'unknown');
+  eq('页面卸载且无成功迹象 → unknown', W.verdictOf({ unloading: true }).status, 'unknown');
+  eq('点击时输入框本来就是空的 → 清空不算成功', W.verdictOf({ textCleared: true, hadText: false,
+    sendDisabled: true, elapsed: 2000 }), '');
+  const wsrc = read('growth-watch.js');
+  ok('卸载一律记未确认，不再有 intent 路径直接判成功的分支',
+    /finish\(p, 'unknown', 'unload'\)/.test(wsrc) && !/indexOf\('\/intent\/'\) === 0/.test(wsrc));
+  ok('检测用户手动删字：Backspace / Delete / 单字符键 + 输入框焦点',
+    /e\.key === 'Backspace' \|\| e\.key === 'Delete'/.test(wsrc) && /p\.userEdited = true/.test(wsrc));
+  ok('判定逻辑集中在可单测的 judgement 函数 verdictOf',
+    /function verdictOf\(ev\)/.test(wsrc) && typeof W.verdictOf === 'function');
 }
 
 console.log('\n结果：' + pass + ' 通过 / ' + fail + ' 失败');

@@ -145,7 +145,7 @@
    * 就被整批丢弃，重新打开面板只剩「上次抓到的一部分」。现在每批到达立即
    * merge 并写入 chrome.storage.local，与采集状态完全解耦；写入失败保留内存
    * 副本，下一批继续补写，并把失败原因暴露给面板。 */
-  /* 1.5.27：数据口径统一交给 FollowCore（面板与桥接层共用），新增墓碑 / 基线 /
+  /* 1.5.28：数据口径统一交给 FollowCore（面板与桥接层共用），新增墓碑 / 基线 /
    * 变化记录字段。mergeData 不再把「已取F / 已清理」的人从内存副本复活。 */
   function normalizeData(raw) { return Core.normalizeData(raw); }
   function mergeData(fromStore, fromMemory) { return Core.mergeData(fromStore, fromMemory); }
@@ -199,7 +199,7 @@
           if (page && src !== page) return;
           var users = Array.isArray(b.users) ? b.users : [];
           if (!users.length) return;
-          // 1.5.27：打 seenAt / firstSeenAt，并撤销「又出现了」的人的墓碑
+          // 1.5.28：打 seenAt / firstSeenAt，并撤销「又出现了」的人的墓碑
           var res = Core.ingestUsers(data, src, users, Date.now());
           var me0 = data.me;
           data = res.data;
@@ -396,7 +396,7 @@
             o.status = 'done';
             o.message = '采集完成：' + (src === 'followers' ? '粉丝' : 'F注中') +
               '共 ' + count + ' 人（列表已到底，X 连续一段时间没有再加载新页，已实时保存到本机）';
-            // 1.5.27：只有「全量扫描 + 真正到底」才清理本轮没出现的人并生成变化记录
+            // 1.5.28：只有「全量扫描 + 真正到底」才清理本轮没出现的人并生成变化记录
             if (cap.mode === 'full') {
               var fin = Core.finishFullScan(data, src, startedAt, now);
               // 这里只算结果用于提示文案；真正写入放进 serial()，基于最新数据重算，
@@ -453,7 +453,7 @@
     return '';
   }
 
-  /* 1.5.27：X 改版后的列表行不一定带 [data-testid="UserCell"]（浮层 1.5.24 已兼容，
+  /* 1.5.28：X 改版后的列表行不一定带 [data-testid="UserCell"]（浮层 1.5.24 已兼容，
    * 执行器之前没兼容 —— 新版 DOM 下逐屏查找每屏都是 0 行，整批被记成「列表里没找到」）。
    * 回退：从带 @handle 的F注按钮（aria-label「Following @x」等）向上找只含这一位
    * 用户的最近容器当作行。只读 DOM，不改 X 结构。 */
@@ -600,7 +600,7 @@
     return t.phase || 'idle';
   }
 
-  /* 1.5.27：批量取F改为「从列表顶部往下扫一遍」。
+  /* 1.5.28：批量取F改为「从列表顶部往下扫一遍」。
    * 旧版只在当前屏幕已渲染的行里找人：X 的F注列表是虚拟滚动，6000 人里随便
    * 勾 50 个，绝大多数不在屏上，连续 3 次「没找到这一行」就停机。现在：
    *   ① 先回到列表顶部；② 每屏把「本屏可见且待处理」的人逐个处理；

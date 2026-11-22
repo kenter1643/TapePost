@@ -2003,7 +2003,7 @@ function guardedResponse(sendResponse) {
     }
     return s;
   }
-  /* 1.5.27：发送日志，每天一个键（tapeGrowthLog:YYYY-MM-DD），只留最近 7 天 */
+  /* 1.5.28：发送日志降级存储（数据库打不开时临时用），每天一个键，留最近 90 天；主路径在 IndexedDB */
   function gremove(keys) {
     return new Promise(function (resolve) {
       try { chrome.storage.local.remove(keys, function () {
@@ -2012,7 +2012,7 @@ function guardedResponse(sendResponse) {
       }); } catch (e) { resolve(false); }
     });
   }
-  /* 1.5.27：发送日志存进扩展自己的本地数据库（IndexedDB）：刷新、重启浏览器、重载扩展都不丢。
+  /* 1.5.28：发送日志存进扩展自己的本地数据库（IndexedDB）：刷新、重启浏览器、重载扩展都不丢。
    * 数据库打不开时（极少见）临时落到 chrome.storage.local，下次能打开时自动搬进数据库。 */
   const K_LOG_REV = 'tapeGrowthLogRev';     // 只存一个时间戳，用来通知面板「有新日志」
   const LogDB = (typeof indexedDB !== 'undefined' && indexedDB && typeof IDBKeyRange !== 'undefined')
@@ -2087,7 +2087,7 @@ function guardedResponse(sendResponse) {
   }
   async function maybeGrowthRemind() {
     let s = await growthState();
-    // 1.5.27：定时提醒（可设多个时间点 + 到点应完成的百分比）
+    // 1.5.28：定时提醒（可设多个时间点 + 到点应完成的百分比）
     const due = GrowthCore.dueReminder(s, Date.now());
     if (due) {
       s = GrowthCore.markReminders(s, due.covers, Date.now());
@@ -2155,7 +2155,7 @@ function guardedResponse(sendResponse) {
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || !/^GROWTH_/.test(String(msg.type || ''))) return false;
     sendResponse = guardedResponse(sendResponse);
-    // 1.5.27：所有「读-改-写」串行执行，「写入回复框」紧接着「点回复」时两条不会互相覆盖
+    // 1.5.28：所有「读-改-写」串行执行，「写入回复框」紧接着「点回复」时两条不会互相覆盖
     growthSerial(async function () {
       const t = String(msg.type || '');
       if (t === 'GROWTH_STATE') {
@@ -2165,13 +2165,13 @@ function guardedResponse(sendResponse) {
         const kind = String(msg.kind || '');
         if (GrowthCore.KINDS.indexOf(kind) < 0) { sendResponse({ ok: false, error: '无效的计数类型' }); return; }
         const s = await growthState();
-        // 1.5.27：target 是帖子作者，清单里的大 V 由 record() 自动记进度（不再二次 markTargetDone）
-        // 1.5.27：准备好内容只记「待发送」，检测到 X 发送成功才 +1
+        // 1.5.28：target 是帖子作者，清单里的大 V 由 record() 自动记进度（不再二次 markTargetDone）
+        // 1.5.28：准备好内容只记「待发送」，检测到 X 发送成功才 +1
         const r = GrowthCore.prepare(s, kind, msg.ref, Date.now(), { target: msg.target, post: msg.post });
         const summary = await saveState(r.state);
         sendResponse({ ok: true, counted: r.counted, reason: r.reason, attributed: !!r.attributed, summary: summary });
       } else if (t === 'GROWTH_SENT') {
-        // 1.5.27：growth-watch.js 旁听到用户点了 X 自己的「发布 / 回复」按钮
+        // 1.5.28：growth-watch.js 旁听到用户点了 X 自己的「发布 / 回复」按钮
         const kind = String(msg.kind || '');
         if (GrowthCore.KINDS.indexOf(kind) < 0) { sendResponse({ ok: false, error: '无效的计数类型' }); return; }
         // status：ok = X 确认发送成功（才计数）；fail = X 报错；unknown = 15 秒没结果。后两种只进日志
@@ -2210,7 +2210,7 @@ function guardedResponse(sendResponse) {
         const next = GrowthCore.normalizeConfig(Object.assign({}, s.config, msg.config || {}));
         if (next.paceReminder !== s.config.paceReminder) next.paceLastAt = 0;
         s.config = next;
-        // 1.5.27：改了提醒时间 / 开关后，今天已经过去的时间点不补响，只等之后的
+        // 1.5.28：改了提醒时间 / 开关后，今天已经过去的时间点不补响，只等之后的
         if (JSON.stringify(next.reminders) + next.reminderEnabled !== before) s = GrowthCore.skipPastReminders(s, Date.now());
         const summary = await saveState(s);
         await scheduleGrowthReminder(s);
@@ -2223,7 +2223,7 @@ function guardedResponse(sendResponse) {
         sendResponse({ ok: true, added: result.added, updated: result.updated,
           removed: result.removed || 0, total: result.total, summary: summary });
       } else if (t === 'GROWTH_TARGET_DONE') {
-        // 1.5.27：「手动记一条」= 给这个大 V 记进度 + 算一条评论（2 分钟内已自动计到则合并）
+        // 1.5.28：「手动记一条」= 给这个大 V 记进度 + 算一条评论（2 分钟内已自动计到则合并）
         const s = await growthState();
         const d = GrowthCore.manualComment(s, msg.handle, Date.now());
         const summary = await saveState(d.state);

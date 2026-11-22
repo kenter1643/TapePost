@@ -1,5 +1,5 @@
 /*
- * TapePost · X 增长计划「真实发送」旁听器（1.5.27）
+ * TapePost · X 增长计划「真实发送」旁听器（1.5.28）
  * ---------------------------------------------------------------
  * 旧版只统计「用 TapePost 准备好内容」的动作（打开发推预填 / 写入回复框），
  * 你自己手写、直接点 X 发送的不计数，也分不清「准备了但最后没发」。
@@ -13,7 +13,7 @@
  *   - 15 秒没有任何结果 → status unknown，只进发送日志。
  *
  * 边界：捕获阶段只读、不 preventDefault、不代点任何按钮、不发网络请求、不读凭证；
- * 读到的发送文字最多 280 字，只存在本机的发送日志里（默认保留 7 天）；
+ * 读到的发送文字最多 280 字，只存在本机的发送日志里（IndexedDB，保留 90 天）；
  * 按钮处于禁用状态（没写内容）时不计数。
  */
 (function (root) {
@@ -105,8 +105,37 @@
     return { main: '+1', sub: label + ' ' + n + '/' + goal + ' · 还差 ' + left, tone: 'ok' };
   }
 
+  /* 纯函数：点完 X 的发送按钮后，综合证据判断这次到底有没有发出去。
+   * 只读证据，不碰页面。信号优先级：
+   *   toast fail  → 失败；toast ok → 成功（X 自己的提示，最强）；
+   *   userEdited  → 点完后人又按了删除/剪切，说明是人在改框，不判成功；
+   *   unloading   → 关标签/跳转本身不是成功证据；
+   *   文字被清空 或 编辑器被移除 + 过了冷静期 → 成功；
+   *   超过等待窗口 → 未确认。
+   * 冷静期给失败提示留时间，避免把 X 的短暂重绘当成功。''
+   * 表示证据不足、继续观察。 */
+  var SETTLE_MS = 600, WAIT_TX_MS = 15000;
+  function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+  function verdictOf(ev) {
+    ev = ev || {};
+    var toast = ev.toast === 'ok' || ev.toast === 'fail' ? ev.toast : '';
+    if (toast === 'fail') return { status: 'fail', reason: 'toast' };
+    if (toast === 'ok') return { status: 'ok', reason: 'toast' };
+    if (ev.userEdited) return '';
+    if (ev.unloading) return { status: 'unknown', reason: 'unload' };
+    var elapsed = Math.max(0, num(ev.elapsed, 0));
+    var had = ev.hadText !== false;
+    var disabled = ev.sendDisabled === undefined ? true : !!ev.sendDisabled;
+    if (had && ev.textCleared && disabled && elapsed >= SETTLE_MS)
+      return { status: 'ok', reason: 'cleared' };
+    if (had && ev.editorGone && elapsed >= SETTLE_MS)
+      return { status: 'ok', reason: 'closed' };
+    if (elapsed > WAIT_TX_MS) return { status: 'unknown', reason: 'timeout' };
+    return '';
+  }
+
   var api = { classify: classify, statusFrom: statusFrom, toastVerdict: toastVerdict,
-    progressOf: progressOf, hintText: hintText, popText: popText };
+    progressOf: progressOf, hintText: hintText, popText: popText, verdictOf: verdictOf };
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.TapeGrowthWatch = api;
 
@@ -136,7 +165,7 @@
   }
   var EDITOR_SEL = '[data-testid^="tweetTextarea_"]';
   var TOAST_SEL = '[data-testid="toast"],[role="alert"]';
-  var POLL_MS = 300, WAIT_MS = 15000, TEXT_MAX = 280;
+  var POLL_MS = 300, TEXT_MAX = 280;
   var lastAt = 0;
   var pending = [];
 
@@ -194,7 +223,7 @@
     } catch (e) {}
   }
 
-  // ------------------------------------------------------------ 按钮角标 + 发送动画（1.5.27）
+  // ------------------------------------------------------------ 按钮角标 + 发送动画（1.5.28）
   // 只在页面最外层加一个固定定位的图层，不改 X 自己的按钮 DOM；pointer-events:none，不挡点击。
   var hintRoot = null, badges = [], hintData = null, layoutQueued = false, mutTimer = 0;
   function ensureRoot() {
@@ -323,24 +352,28 @@
     send(p, status, reason);
   }
 
-  // 点了发送之后看 X 的反应：报错提示 → 失败；成功提示 / 输入框清空 / 弹窗关闭 → 成功；
-  // 15 秒都没动静 → 记为「未确认」（不计数，只进日志）
+  // 点了发送之后看 X 的反应，统一交给 verdictOf 判定：
+  // 失败提示优先 → 成功提示 / 输入框清空 / 弹窗关闭（需过冷静期）→ 成功；
+  // 用户手动删字不算；15 秒没动静或页面卸载 → 未确认（不计数，只进日志）。
   function watch(p) {
     p.timer = setInterval(function () {
       try {
+        // 新出现的提示里，失败优先于成功，先找一遍失败
         var toasts = toastNodes().filter(function (n) { return p.before.indexOf(n) < 0; });
+        var toast = '';
         for (var i = 0; i < toasts.length; i++) {
           var tx = String(toasts[i].innerText || toasts[i].textContent || '').trim();
           if (!tx) continue;
-          var v = toastVerdict(tx);
-          if (v === 'fail') return finish(p, 'fail', tx.slice(0, 80));
-          if (v === 'ok') return finish(p, 'ok', 'toast');
+          if (toastVerdict(tx) === 'fail') { toast = 'fail'; p.toastText = tx.slice(0, 80); break; }
+          if (toastVerdict(tx) === 'ok') toast = 'ok';
         }
-        if (p.candidate) return finish(p, 'ok', p.candidate);   // 上一拍已见成功迹象，这一拍也没报错
         var alive = p.editors.filter(function (n) { return n.isConnected; });
-        if (p.editors.length && !alive.length) p.candidate = 'closed';
-        else if (p.text && alive.length && !textOf(alive)) p.candidate = 'cleared';
-        if (Date.now() - p.at > WAIT_MS) finish(p, 'unknown', 'timeout');
+        var editorGone = !!(p.editors.length && !alive.length);
+        var textCleared = !!(p.text && alive.length && !textOf(alive));
+        var v = verdictOf({ toast: toast, userEdited: p.userEdited, hadText: !!p.text,
+          textCleared: textCleared, editorGone: editorGone,
+          elapsed: Date.now() - p.at });
+        if (v) finish(p, v.status, v.status === 'fail' && p.toastText ? p.toastText : v.reason);
       } catch (e) { finish(p, 'unknown', 'error'); }
     }, POLL_MS);
   }
@@ -361,7 +394,7 @@
       var p = { kind: r.kind, target: r.target, post: r.post, at: now,
         rect: br ? { left: br.left, top: br.top, width: br.width, height: br.height } : null,
         text: textOf(editors).slice(0, TEXT_MAX), editors: editors, before: toastNodes(),
-        candidate: '', done: false, timer: 0 };
+        userEdited: false, done: false, timer: 0 };
       pending.push(p);
       log('检测到点击发送：' + (r.kind === 'comment' ? '评论' : '发推') + (r.target ? ' @' + r.target : '') +
         '，按钮 ' + (btn.getAttribute('data-testid') || '(无 testid)') + '，页面 ' + location.pathname + '，等待 X 的结果…');
@@ -369,11 +402,25 @@
     } catch (e) {}
   }
 
-  // 发推小窗（/intent/tweet）发出后会直接关掉，页面卸载时还没出结果的按成功处理
+  // 页面卸载（关标签 / intent 窗发出后跳转）时：之前已确认成功的才算成功，
+  // 否则一律记「未确认」——关标签本身不是发送成功的证据，绝不当成 +1。
   root.addEventListener('pagehide', function () {
-    pending.slice().forEach(function (p) { var ok = !!p.candidate || location.pathname.indexOf('/intent/') === 0;
-      finish(p, ok ? 'ok' : 'unknown', 'unload'); });
+    pending.slice().forEach(function (p) {
+      finish(p, 'unknown', 'unload');
+    });
   });
+
+  // 点击发送后，如果用户自己继续在输入框里按 Backspace/Delete 删字或输入，
+  // 说明是人在手动改内容，这时输入框被清空不能当作「X 发送成功」。
+  document.addEventListener('keydown', function (e) {
+    if (!pending.length || !e.key) return;
+    if (e.key === 'Backspace' || e.key === 'Delete' || e.key.length === 1) {
+      var a = document.activeElement;
+      if (a && a.getAttribute && /^tweetTextarea_\d+$/.test(a.getAttribute('data-testid') || '')) {
+        pending.forEach(function (p) { p.userEdited = true; });
+      }
+    }
+  }, true);
 
   document.addEventListener('click', function (e) {
     var btn = findSendButton(e.target);
