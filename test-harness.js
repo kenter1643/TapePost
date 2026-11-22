@@ -203,7 +203,7 @@ function makeChrome(name) {
             scenario.grokPageAutoSubmit === false ? { grokPageAutoSubmit: false } : {},
             scenario.grokPageNewChat === false ? { grokPageNewChat: false } : {},
             scenario.pagePromptExtra ? { pagePromptExtra: scenario.pagePromptExtra } : {},
-            // 1.4.3：需要验证「自动下载备份」路径的场景，显式打开该开F
+            // 1.4.3：需要验证「自动下载备份」路径的场景，显式打开该开关
             (scenario.__expect && scenario.__expect.download) ? { autoDownloadBackup: true } : {});
           // 1.4.1 迁移用数组键读取；其余场景保持原来的「默认值 + 覆盖值」语义
           if (Array.isArray(keys)) {
@@ -319,7 +319,7 @@ async function tabsSend(from, tabId, msg) {
   if ((scenario.tabUnreachable || []).indexOf(tabId) !== -1) {
     return Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'));
   }
-  // ping 正常、正式发送时才失效（模拟用户在两次消息之间刷新/F闭了标签）
+  // ping 正常、正式发送时才失效（模拟用户在两次消息之间刷新/关闭了标签）
   if (msg.type === 'GROK_PAGE_BRIDGE' && scenario.failBridgeAction === msg.action &&
       (scenario.failBridgeTabs || []).indexOf(tabId) !== -1) {
     return Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'));
@@ -768,7 +768,7 @@ async function runSiteScenario(name, cfg) {
   return ok;
 }
 
-/* X 专属守卫：发布页不自注入、permalink 解析、name=orig 原图、来源开F */
+/* X 专属守卫：发布页不自注入、permalink 解析、name=orig 原图、来源开关 */
 async function runXGuards() {
   const checks = {};
   const boot = async (host, path, appendSource) => {
@@ -817,7 +817,7 @@ async function runXGuards() {
     'https://x.com/someuser/status/1234567890';
   checks['绝对permalink'] = vm.runInContext('extractPermalink(__absCard)', contentCtx) ===
     'https://x.com/user2/status/9876543210';
-  checks['开FF闭不附来源'] = vm.runInContext('withSource("正文", __relCard)', contentCtx) === '正文';
+  checks['开关关闭不附来源'] = vm.runInContext('withSource("正文", __relCard)', contentCtx) === '正文';
   checks['name=small升级为orig'] = vm.runInContext(
     'upgradeImageUrl("https://pbs.twimg.com/media/Gabc?format=jpg&name=small")', contentCtx) ===
     'https://pbs.twimg.com/media/Gabc?format=jpg&name=orig';
@@ -826,7 +826,7 @@ async function runXGuards() {
 
   await boot('x.com', '/home', true);
   contentCtx.__relCard = relCard;
-  checks['开F打开附原推链接'] = vm.runInContext('withSource("正文", __relCard)', contentCtx) ===
+  checks['开关打开附原推链接'] = vm.runInContext('withSource("正文", __relCard)', contentCtx) ===
     '正文\n\n原文：https://x.com/someuser/status/1234567890';
 
   await boot('weibo.com', '/', true);
@@ -1562,7 +1562,7 @@ async function runNativePureChecks() {
   try { body = JSON.parse(J('buildBody', '测试提示词')); } catch (e) { body = {}; }
   A('请求体带上完整提示词', body.responses && body.responses[0] && body.responses[0].message === '测试提示词');
   A('临时对话不污染 Grok 历史', body.isTemporaryChat === true && body.requestFeatures && body.requestFeatures.serverHistory === false);
-  A('F闭搜索 / 引用 / 配图以缩短等待',
+  A('关闭搜索 / 引用 / 配图以缩短等待',
     body.returnSearchResults === false && body.returnCitations === false && body.imageGenerationCount === 0);
   A('会话 ID 是雪花数字串', /^\d{10,}$/.test(String(body.conversationId || '')));
 
@@ -1590,7 +1590,7 @@ async function runNativePureChecks() {
     P("TapeAI.pickGrokMode({grokMode:'auto',grokApiKey:''},{inXTab:true})") === 'native');
   A('auto 在 X 标签但填了 Key 仍走 API',
     P("TapeAI.pickGrokMode({grokMode:'auto',grokApiKey:'xai-x'},{inXTab:true})") === 'api');
-  A('F掉「优先直连」后 auto 恢复页面模式',
+  A('关掉「优先直连」后 auto 恢复页面模式',
     P("TapeAI.pickGrokMode({grokMode:'auto',grokPreferNative:false},{inXTab:true})") === 'page');
   A('不在 X 标签时 auto 保持旧行为',
     P("TapeAI.pickGrokMode({grokMode:'auto',grokApiKey:''})") === 'page');
@@ -1603,7 +1603,7 @@ async function runNativePureChecks() {
     P("TapeAI.pickGrokMode({grokMode:'page',grokApiKey:''},{inXTab:true})") === 'native');
   A('1.4.1 旧 page 设置在非 X 标签仍是页面兜底',
     P("TapeAI.pickGrokMode({grokMode:'page',grokApiKey:''})") === 'page');
-  A('1.4.1 用户F掉优先直连时旧 page 保持 page',
+  A('1.4.1 用户关掉优先直连时旧 page 保持 page',
     P("TapeAI.pickGrokMode({grokMode:'page',grokPreferNative:false},{inXTab:true})") === 'page');
   A('1.4.1 显式 api 不被直连升级',
     P("TapeAI.pickGrokMode({grokMode:'api',grokApiKey:'xai-x'},{inXTab:true})") === 'api');
@@ -1672,10 +1672,10 @@ async function runNativeEndToEnd() {
     A('强制直连失败给明确中文错误',
       r && r.ok === false && /站内直连 Grok 生成失败/.test(r.error) && /签名/.test(r.error));
 
-    // E：F掉「优先直连」→ auto 完全不调用 native
+    // E：关掉「优先直连」→ auto 完全不调用 native
     scenario = { grokMode: 'auto', grokApiKey: '', grokPreferNative: false, pageTabs: tabs(), nativeCalls: 0 };
     r = await runtimeSend('content', msg());
-    A('F掉优先直连后 auto 不调用 native',
+    A('关掉优先直连后 auto 不调用 native',
       r && r.ok === true && r.mode === 'page' && scenario.nativeCalls === 0);
 
     // F：页面内脚本失效（旧标签孤儿）→ 安静降级而不是死等
@@ -1732,7 +1732,7 @@ async function runModeMigrationChecks() {
 
     setup({ grokMode: 'page', grokPreferNative: false });
     vm.runInContext('migrateGrokMode141()', contentCtx);
-    A('1.4.1 F掉优先直连时不擅自改设置', scenario.storageSets === 0);
+    A('1.4.1 关掉优先直连时不擅自改设置', scenario.storageSets === 0);
 
     setup({ grokMode: 'auto' });
     vm.runInContext('migrateGrokMode141()', contentCtx);
@@ -1858,14 +1858,14 @@ function runTapeAIChecks() {
   A('未索引的 tapekit.org 容器子域不给绿标', () =>
     T.matchOfficial('https://999-999.tapekit.org/').status === 'unknown' &&
     T.matchOfficial('https://evil.tapekit.org/').status === 'unknown');
-  A('网F主域命中，但不会通配放行任意子域', () =>
+  A('网关主域命中，但不会通配放行任意子域', () =>
     T.matchOfficial('https://tapekit.org/').status === 'official' &&
     T.matchOfficial('https://anything.tapekit.org/').status === 'unknown');
-  A('同一链上容器走第三方网F仍算已索引，并提示官方网F', () => {
+  A('同一链上容器走第三方网关仍算已索引，并提示官方网关', () => {
     const r = T.matchOfficial('https://1-2-210.tapeout.site/');
     return r.status === 'official' && r.tier === 'deweb' &&
       r.viaGateway === 'https://1-2-210.tapekit.org/' &&
-      r.risks.some((x) => /官方网F/.test(x));
+      r.risks.some((x) => /官方网关/.test(x));
   });
   A('通用平台按路径隔离：x.com / t.me / github.io', () =>
     T.matchOfficial('https://x.com/blonskr').status === 'official' &&
@@ -1936,7 +1936,7 @@ async function runCommentButtonChecks() {
 
     vm.runInContext('settings.enableAiComment = false', contentCtx);
     vm.runInContext('injectIntoCard(__card)', contentCtx, { timeout: 3000 });
-    A('F闭开F后不再注入评论按钮、转发按钮仍在',
+    A('关闭开关后不再注入评论按钮、转发按钮仍在',
       !built.card._all().some((n) => n.className === 'wbx-comment-btn') &&
       built.card._all().some((n) => n.className === 'wbx-repost-btn'));
 
@@ -2055,11 +2055,11 @@ async function runReplyComposerChecks() {
       fallbackOk === false && !rd.input.textContent.includes('兜底写入') &&
       (dom._inserted || []).length === 2);
 
-    // 1.3.2：点击后必须有可见的等待浮层，结果回来才F闭
+    // 1.3.2：点击后必须有可见的等待浮层，结果回来才关闭
     const busy = vm.runInContext('showAiBusy("Grok 正在生成 3 条回复候选")', contentCtx);
     A('1.3.2 点击后弹出等待浮层', !!busy && busy.id === 'wbx-ai-busy' &&
       dom.getElementById('wbx-ai-busy') === busy);
-    A('1.3.2 等待浮层含 spinner / 阶段 / 耗时 / F闭按钮',
+    A('1.3.2 等待浮层含 spinner / 阶段 / 耗时 / 关闭按钮',
       busy._all().some((n) => n.className === 'wbx-busy-spin') &&
       busy._all().some((n) => n.className === 'wbx-busy-stage') &&
       busy._all().some((n) => n.className === 'wbx-busy-time') &&
@@ -2082,7 +2082,7 @@ async function runReplyComposerChecks() {
 
     vm.runInContext('settings.enableAiComment = false', contentCtx);
     vm.runInContext('injectIntoReplyComposers()', contentCtx, { timeout: 3000 });
-    A('F闭开F后回复框按钮被清掉', replyBtns().length === 0);
+    A('关闭开关后回复框按钮被清掉', replyBtns().length === 0);
     vm.runInContext('settings.enableAiComment = true', contentCtx);
     vm.runInContext('injectIntoReplyComposers()', contentCtx, { timeout: 3000 });
     A('重新开启后按钮恢复', replyBtns().length === 1);
@@ -2487,7 +2487,7 @@ async function runScenario(name, cfg, expect) {
     '首图剪贴板': expect.clipboard ? clipboard && validBytes : null,
     '图片字节完整': expect.clipboard ? validBytes : null,
     '剪贴板文字策略': clipboardTextOk,
-    // 1.4.3：默认不落盘，未显式开启备份开F的场景必须没有 png 下载
+    // 1.4.3：默认不落盘，未显式开启备份开关的场景必须没有 png 下载
     '其余图下载': expect.download ? downloaded : !downloaded,
     '视频下载mp4': expect.videoDownloaded ? mp4Downloaded : null,
     '视频提示可见': expect.videoTip ? videoTip : null,
@@ -2679,7 +2679,7 @@ async function runPrice1413Checks() {
         .every((f) => popupHtml1423.includes('id="' + f + c + '"'))));
   add('1.4.23 来源、口径、时间与缓存状态常驻明细行，不再只写进 title',
     popupJs1423.includes('const PRICE_SOURCE = {') &&
-    popupJs1423.includes("up: 'tapeup.io 交易页（与 Firsto 无F）'") &&
+    popupJs1423.includes("up: 'tapeup.io 交易页（与 Firsto 无关）'") &&
     popupJs1423.includes("miner: 'Firsto /circuits/other 页顶挂单参考价'") &&
     popupJs1423.includes("bem: 'Firsto 官方 analytics'") &&
     popupJs1423.includes("item.stale ? '沿用缓存' : '实时'") &&
@@ -2697,7 +2697,7 @@ async function runPrice1413Checks() {
     !probeJs1423.includes('overflow:hidden;') &&
     probeJs1423.includes('← K线动态价') &&
     probeJs1423.includes("'页头 ' + (r.value != null") &&
-    probeJs1423.includes('来源 tapeup.io 交易页（与 Firsto 无F） · 点开看全部候选') &&
+    probeJs1423.includes('来源 tapeup.io 交易页（与 Firsto 无关） · 点开看全部候选') &&
     probeJs1423.includes('cands.slice(0, 24)') &&
     probeJs1423.includes('r.debug.candidates.slice(0, 20)'));
   add('1.4.23 内容脚本回传动态价字段，后台按「页头或动态价任一有效」缓存',
@@ -2946,7 +2946,7 @@ async function runPrice1413Checks() {
   add('1.4.13 回到区间内不提醒，且状态复位', ev3.alerts.length === 0 && ev3.state.bem.kind === 'none');
   add('1.4.13 再次越界需过冷却期才提醒', ev4.alerts.length === 1 && ev4.alerts[0].kind === 'above');
   add('1.4.13 缓存/陈旧价格不会误触发提醒', evStale.alerts.length === 0);
-  add('1.4.13 F掉提醒总开F后完全不触发', evOff.alerts.length === 0);
+  add('1.4.13 关掉提醒总开关后完全不触发', evOff.alerts.length === 0);
   add('1.4.13 跌破下限单独触发，文案与跳转页正确',
     evBelow.alerts.length === 1 && evBelow.alerts[0].kind === 'below' &&
     /跌破下限/.test(evBelow.alerts[0].title) &&
@@ -3222,7 +3222,7 @@ async function runPrice1413Checks() {
   add('1.4.13 浮层最多叠 3 张，不会刷屏', root.children.length === 3);
   const closeBtn = root.children[0].children[0].children[1];
   closeBtn.click({ stopPropagation() {} });
-  add('1.4.13 F闭按钮只收卡片、不触发跳转',
+  add('1.4.13 关闭按钮只收卡片、不触发跳转',
     root.children.length === 2 && toastMsgs.length === 1);
 
   // ---- 静态接线 ----
@@ -3714,12 +3714,12 @@ async function runThinking1415Checks() {
       videoInDom: false, inpaintVideo: false, apiFail: true },
     { clipboard: false, clipboardText: 'yes', download: false, videoFailTip: true });
 
-  // ---- 新增：全局去水印开F（取消 UID 列表后） ----
-  R('普通账号也去水印（全局图片开F默认开启，不再看 UID）',
+  // ---- 新增：全局去水印开关（取消 UID 列表后） ----
+  R('普通账号也去水印（全局图片开关默认开启，不再看 UID）',
     { uid: '5903810533', imageCount: 1, text: '全局图片去水印测试', fetchFail: false },
     { clipboard: true, clipboardText: 'no', download: false, imageInpaint: true });
-  R('图片去水印F闭（payload 明确 false）',
-    { uid: null, imageCount: 1, text: 'F闭图片去水印', fetchFail: false, inpaintImages: false },
+  R('图片去水印关闭（payload 明确 false）',
+    { uid: null, imageCount: 1, text: '关闭图片去水印', fetchFail: false, inpaintImages: false },
     { clipboard: true, clipboardText: 'no', download: false, imageInpaint: false });
   R('视频去水印开启（优先取 HD 原片）',
     { uid: null, imageCount: 0, text: '视频去水印测试', fetchFail: false, video: true, videoInDom: true },
@@ -3809,7 +3809,7 @@ async function runThinking1415Checks() {
         imageCount: 1, expectQuery: 'name=orig', sourceLink: '/someuser/status/1234567890' }],
     ['X 多图（4 张原图进托盘，不抢焦点）',
       { site: 'x', text: 'X 上一条多图推文。', imageCount: 4, expectQuery: 'name=orig' }],
-    ['X 附原文链接（开F打开时正文末尾带来源）',
+    ['X 附原文链接（开关打开时正文末尾带来源）',
       { site: 'x', text: '转发别人推文时标注来源。', imageCount: 1,
         expectQuery: 'name=orig', appendSource: true,
         sourceLink: '/someuser/status/1234567890',
@@ -3817,7 +3817,7 @@ async function runThinking1415Checks() {
   ];
   for (const [n, c] of siteCases) results.push(await runSiteScenario(n, c));
 
-  // ---- X 专属守卫（发布页 / permalink / 原图 / 来源开F）----
+  // ---- X 专属守卫（发布页 / permalink / 原图 / 来源开关）----
   results.push(await runXGuards());
 
   // ---- 新增：重新加载后弹窗「运行环境自检」的消息链路 ----
@@ -3880,7 +3880,7 @@ async function runThinking1415Checks() {
   const tmpChecks = [
     { name: '1.4.7 manifest 版本号持续升级',
       ok: manifestJson.version === '1.4.23' },
-    { name: '1.4.3 默认F闭自动下载备份',
+    { name: '1.4.3 默认关闭自动下载备份',
       ok: contentJs.includes('autoDownloadBackup: false') && contentJs.includes('if (settings.autoDownloadBackup)') },
     { name: '1.4.3 图片下载统一进临时子目录',
       ok: backgroundJs.includes("const TMP_DIR = 'TapePost_tmp'") && backgroundJs.includes('${TMP_DIR}/xpost_') },
@@ -3998,7 +3998,7 @@ async function runThinking1415Checks() {
       ok: popupHtml.includes('<script src="promo.js"></script>') &&
           ['promoEnabled', 'promoTarget', 'promoCustomTapeOut', 'promoCustomBEM', 'promoPreview', 'promoPreviewBox']
             .every((id) => popupHtml.includes('id="' + id + '"')) },
-    { name: '1.4.5 设置读写接入推广键，默认F闭',
+    { name: '1.4.5 设置读写接入推广键，默认关闭',
       ok: popupJs.includes('promoEnabled: false') && popupJs.includes('promoTarget: \'both\'') &&
           popupJs.includes('promoEnabled: !!(document.getElementById') &&
           contentJs.includes('promoEnabled: false') },
@@ -4365,7 +4365,7 @@ async function runThinking1415Checks() {
       ok: contentJs.includes('function replyHasRichContent(') &&
           contentJs.includes('[data-testid="emoji"]') &&
           applyQuickBody.includes('replyHasRichContent(input)') },
-    { name: '1.4.11 提供 T 安全模式开F并接入设置读写',
+    { name: '1.4.11 提供 T 安全模式开关并接入设置读写',
       ok: contentJs.includes('promoCopyOnly: false') &&
           applyQuickBody.includes('settings.promoCopyOnly === true') &&
           popupHtml.includes('id="promoCopyOnly"') &&
@@ -4396,7 +4396,7 @@ async function runThinking1415Checks() {
     { name: '1.4.11 等待浮层文案与阶段按快速模式调整',
       ok: contentJs.includes('settings.grokFastMode !== false') &&
           contentJs.includes('快速模式：不思考、通常 5~15 秒') },
-    { name: '1.4.11 设置页提供快速模式开F',
+    { name: '1.4.11 设置页提供快速模式开关',
       ok: popupHtml.includes('id="grokFastMode"') &&
           popupJs.includes('grokFastMode: (document.getElementById') },
     { name: '1.4.11 运行时：安全模式点 T 一个字都不写',

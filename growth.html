@@ -141,6 +141,39 @@
     .hist .hday { padding:var(--sp-2) var(--sp-3); border:1px solid var(--border-1); border-radius:var(--r-sm);
       background:var(--surface-1); font-size:var(--fs-caption); color:var(--text-2); }
     .hist .hday b { color:var(--text-1); font-size:var(--fs-body); }
+
+    /* 1.5.27：节奏 / 连续达标 / 14 天柱状图 / 清单工具条 */
+    .pace { display:flex; gap:var(--sp-2); flex-wrap:wrap; margin-top:var(--sp-3); }
+    .pill { font-size:var(--fs-caption); padding:var(--sp-1) var(--sp-3); border-radius:var(--r-pill);
+      border:1px solid var(--border-2); background:var(--surface-1); color:var(--text-2); }
+    .pill.bad { color:var(--red-soft); border-color:rgba(255,107,94,.45); background:var(--red-bg); }
+    .pill.good { color:var(--green-soft); border-color:rgba(52,211,153,.45); background:var(--green-bg); }
+    .pill.fire { color:#ffd34d; border-color:rgba(255,138,61,.5); background:rgba(255,138,61,.16); font-weight:700; }
+    .card .sent { font-size:var(--fs-micro); color:var(--text-2); margin-top:2px; }
+    .chart { display:grid; grid-template-columns:repeat(14,1fr); gap:6px; align-items:end; height:150px;
+      padding:var(--sp-3) var(--sp-2) 0; border:1px solid var(--border-1); border-radius:var(--r-md); background:var(--surface-1); }
+    .chart .col { display:flex; flex-direction:column; align-items:center; gap:3px; height:100%; justify-content:flex-end; min-width:0; }
+    .chart .bars { display:flex; gap:2px; align-items:flex-end; height:100px; width:100%; justify-content:center; }
+    .chart .bars i { display:block; width:42%; max-width:14px; border-radius:3px 3px 0 0; min-height:2px; }
+    .chart .bars i.p { background:var(--brand-500); } .chart .bars i.c { background:var(--cyan); }
+    .chart .lb { font-size:var(--fs-micro); color:var(--text-3); white-space:nowrap; }
+    .chart .lb.met { color:var(--green); font-weight:700; }
+    .legend { display:flex; gap:var(--sp-3); flex-wrap:wrap; font-size:var(--fs-micro); color:var(--text-3); margin-top:var(--sp-2); }
+    .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+    .tag.today { color:var(--amber); border-color:rgba(255,138,61,.45); background:var(--amber-bg); }
+    .tag.src-assist { color:var(--text-3); } .tag.src-sent { color:var(--green); border-color:rgba(52,211,153,.45); }
+    .tag.src-send { color:var(--cyan); border-color:rgba(34,211,238,.45); } .tag.src-mark { color:var(--violet); }
+    .tag.log-ok { color:var(--green); border-color:rgba(52,211,153,.45); }
+    .tag.log-fail { color:var(--red-soft); border-color:rgba(255,107,94,.45); background:var(--red-bg); }
+    .tag.log-unknown { color:var(--text-3); }
+    h3.sub { font-size:var(--fs-body); margin:var(--sp-4) 0 var(--sp-2); display:flex; gap:var(--sp-3); align-items:baseline; flex-wrap:wrap; }
+    .rem-list { display:flex; flex-direction:column; gap:var(--sp-2); }
+    .rem-row { display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+    .rem-row input[type=time] { width:120px; } .rem-row input[type=number] { width:80px; }
+    .rem-row .fired { font-size:var(--fs-caption); color:var(--text-3); }
+    .item .txt { margin-top:4px; font-size:var(--fs-caption); color:var(--text-2); white-space:pre-wrap; word-break:break-word; }
+    button.danger-mini { min-height:26px; padding:var(--sp-1) var(--sp-2); font-size:var(--fs-caption);
+      background:transparent; border-color:rgba(255,107,94,.4); color:var(--red-soft); }
   </style>
 </head>
 <body>
@@ -157,9 +190,10 @@
       <b>计数口径与隐私边界</b>
       <ul>
         <li>计数由<b>辅助动作自动 +1</b>：点 TapePost 的「打开 X 发推（正文已预填）」算一条 Post；点「写入回复框」或 X intent 兜底算一条评论。最终是否发送仍由你在 X 手动决定。</li>
+        <li><b>发送成功才 +1</b>：你在 x.com 点 X 自己的「发布 / 回复」按钮（或 Ctrl/⌘+Enter）后，扩展看 X 给出的结果，确认发送成功才计数；刚用 TapePost 准备过的那条只确认不重复算，你自己手写发的也会 +1。评论对象是清单里的大 V 时自动记进度。每次发送都记入下方「发送日志」（存在本机的本地数据库，保留 90 天）。<b>不代点、不阻止、不发请求</b>。</li>
         <li>推荐清单只读你本机「互F管理」已采到的公开主页资料（用户名、昵称、粉丝数、认证标记），<b>不发请求、不读登录凭证、不调用任何私有接口</b>。</li>
         <li>统计、明细与清单只存在本机 <code>chrome.storage.local</code>，不上传、不经过任何服务器；不新增权限、域名或第三方接收方。</li>
-        <li>监督提醒按北京时间每天 21:00 起检查一次，未达标发系统通知；可在下方F闭或改时间。</li>
+        <li>监督提醒按北京时间每天 21:00 起检查一次，未达标发系统通知；10:00 起若明显落后节奏，最多每 3 小时再提醒一次。都可在下方关闭或改时间。</li>
       </ul>
     </div>
   </header>
@@ -167,6 +201,7 @@
   <section id="secStats">
     <h2>① 今日任务 <span class="badge">点卡片看明细</span></h2>
     <div class="cards" id="cards"></div>
+    <div class="pace" id="paceLine"></div>
     <div class="status" id="statusLine">读取本机统计中…</div>
   </section>
 
@@ -177,33 +212,70 @@
   </section>
 
   <section id="secTargets">
-    <h2>③ 评论对象推荐清单 <span class="badge">来自已F注的大 V</span></h2>
+    <h2>③ 评论对象推荐清单 <span class="badge" id="targetBadge">今日轮换</span></h2>
     <div class="row">
       <button id="importBigV" class="primary">从互F管理导入大 V</button>
       <button id="openFollow" class="ghost">去采集 / 查看F注名单</button>
       <button id="clearTargets" class="ghost mini">清空清单</button>
     </div>
-    <p class="hint">导入后，点每个大 V 的「去看帖子」打开其主页，挑互动量最高的帖子用 TapePost 的 AI 评论写入；回来点「记一条」更新这个账号的进度。大 V 判定：认证账号或粉丝数 ≥ 1 万。</p>
+    <div class="row">
+      <input type="text" id="targetSearch" class="grow" placeholder="搜索 @用户名 / 昵称" />
+      <input type="text" id="addHandle" placeholder="手动添加 @用户名" style="width:180px" />
+      <button id="addTarget" class="ghost">＋ 添加</button>
+    </div>
+    <p class="hint">排序：<b>今天还没评过的优先 → 最久没评的 → 粉丝多的</b>，每天自然轮换。点「去看帖子」打开主页挑高互动帖子评论；
+      在 x.com 点「回复」发出后会<b>自动</b>给这个大 V 记一条。在手机等其他地方评论的，回来点「手动记一条」。大 V 判定：认证账号或粉丝数 ≥ 1 万。</p>
     <div class="list" id="targetList"></div>
   </section>
 
   <section id="secHistory">
-    <h2>④ 最近 14 天</h2>
-    <div class="hist" id="histList"></div>
+    <h2>④ 最近 14 天 <span class="badge" id="streakBadge">连续达标 0 天</span></h2>
+    <div class="chart" id="histChart"></div>
+    <div class="legend"><span><i style="background:var(--brand-500)"></i>发推（占当天目标）</span>
+      <span><i style="background:var(--cyan)"></i>评论（占当天目标）</span><span style="color:var(--green)">绿色日期 = 两项都达标</span></div>
+    <div class="hist" id="histList" style="margin-top:var(--sp-3)"></div>
+  </section>
+
+  <section id="secLog">
+    <h2>⑤ 发送日志 <span class="badge" id="logBadge"></span></h2>
+    <div class="row">
+      <select id="logDay" aria-label="选择日期"></select>
+      <select id="logFilter" aria-label="筛选">
+        <option value="">全部</option><option value="ok">发送成功</option>
+        <option value="fail">发送失败</option><option value="unknown">未确认</option>
+        <option value="post">只看发推</option><option value="comment">只看评论</option>
+      </select>
+      <button id="logExport" class="ghost mini">导出 CSV</button>
+      <button id="logClear" class="ghost mini">清空日志</button>
+      <span class="hint" id="logStore"></span>
+    </div>
+    <p class="hint">在 x.com 每点一次「发布 / 回复」都会记一条：什么时间、发推还是评论、回复的谁、发了什么（最多 280 字）。
+      只有 X 确认<b>发送成功</b>才计入今日任务；X 报错的记为「失败」，15 秒没有结果的记为「未确认」，这两种都不计数。
+      日志存在扩展自己的<b>本地数据库（IndexedDB）</b>里：刷新页面、重启浏览器、重新加载扩展都不会丢，只有卸载扩展或点「清空日志」才删除；保留最近 90 天，不上传。</p>
+    <div class="list" id="logList"></div>
   </section>
 
   <section id="secConfig">
-    <h2>⑤ 目标与提醒设置</h2>
+    <h2>⑥ 目标与提醒设置</h2>
     <div class="cfg">
       <div><label for="cfgPostGoal">每日发推目标</label><input type="number" id="cfgPostGoal" min="1" max="10000" /></div>
       <div><label for="cfgCommentGoal">每日评论目标</label><input type="number" id="cfgCommentGoal" min="1" max="100000" /></div>
-      <div><label for="cfgHour">提醒时间（北京时间）</label><select id="cfgHour"></select></div>
+    </div>
+    <h3 class="sub">定时提醒（北京时间）<span class="hint" id="nextReminder"></span></h3>
+    <div class="rem-list" id="remList"></div>
+    <div class="row">
+      <button id="remAdd" class="ghost mini">＋ 添加提醒时间</button>
+      <button id="remPreset" class="ghost mini">用推荐：12:00 30% · 18:00 70% · 21:00 100%</button>
     </div>
     <div class="row">
-      <label class="inline"><input type="checkbox" id="cfgReminder" /> 开启每日监督提醒</label>
+      <label class="inline"><input type="checkbox" id="cfgReminder" /> 开启定时提醒</label>
+      <label class="inline"><input type="checkbox" id="cfgPace" /> 中途落后提醒（10:00 起，最多 3 小时一次）</label>
+      <label class="inline"><input type="checkbox" id="cfgXHints" /> 在 X 的发帖 / 回复按钮上显示「还差 N」和发送动画</label>
       <button id="saveConfig" class="primary">保存设置</button>
     </div>
-    <p class="hint">提醒只在「已到设定时间 + 当天至少一项未达标 + 当天还没提醒过」时响一次；点通知直接回到本页。</p>
+    <p class="hint">每个提醒 = 一个时间点 + 到那时应完成今日目标的百分比。到点时发推或评论<b>没到这个比例</b>才弹通知，每个时间点每天最多响一次；
+      两项都够了就不打扰。电脑休眠或浏览器关着错过的，下次打开时只补最近的那一条。最多 8 个；点通知直接回到本页。
+      中途落后提醒按北京时间 8:00 到最晚一个提醒时间平均分配目标，实际不到「此刻应完成」的 70% 才算落后。</p>
   </section>
 </div>
 <script src="growth-core.js"></script>

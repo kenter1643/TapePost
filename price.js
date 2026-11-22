@@ -9,7 +9,7 @@
  *     即 https://tapeout.firsto.ai/circuits/other 页顶「日产能价参考价」，
  *     口径是当前有效挂单的日产能价中位数（marketStats.dailyCapacityPriceWei），
  *     不是 /v1/analytics/circuits 的 24h 小时成交序列（那是历史成交均价，会滞后）。
- *   【此项来自 tapeup.io，与 Firsto 无F】
+ *   【此项来自 tapeup.io，与 Firsto 无关】
    *   · TapeUP $UP 内盘价：来自 tapeup.io 交易页（UP 以 BEM 计价，页面标注 BEM/UP，
    *     同时给出美元折算价）。真机页面示例：0.0254 BEM/UP · $0.3154 · +19.25%。
    *     1.4.23 起另抓 K 线图「收=0.31542257」这个随成交跳动的动态当前价
@@ -54,7 +54,7 @@ var TapePrice = (function () {
   var FETCH_KEYS = ['miner', 'bem'];
 
   var DEFAULT_SETTINGS = {
-    enabled: true,           // 提醒总开F（不填任何阈值时不会触发）
+    enabled: true,           // 提醒总开关（不填任何阈值时不会触发）
     pollMinutes: 5,          // 后台检查间隔
     cooldownMinutes: 30,     // 二次保险：状态变化后的最短提醒间隔
     toast: true,             // 网页右下角浮层
@@ -317,7 +317,7 @@ var TapePrice = (function () {
 
     /* 1.4.23：取 K 线动态当前价（箭头所指的绿框数字）。
      * 只认图例「收=」；和页头折算价差太多（>5 倍 / <0.2 倍）说明是鼠标悬停到
-     * 历史 K 线、或抓到了无F数字，直接丢弃，退回页头折算价并标 header。
+     * 历史 K 线、或抓到了无关数字，直接丢弃，退回页头折算价并标 header。
      * 轴刻度 0.35000000 这类数字在 canvas 上，本来就不在页面文本里。 */
     var live = extractChartLive(text);
     live.candidates.forEach(function (c) {
@@ -365,7 +365,7 @@ var TapePrice = (function () {
    *     之后按列顺序取数字，带 $ / % 的按单位归类；
    *   B 卡片布局：找「标签 + 邻近数字」，表头整段先剥掉，避免把
    *     「持仓估值24H涨跌幅」里的 24 误当成持仓。
-   * 认不出的字段一律留 null，绝不用页面上无F数字凑数。
+   * 认不出的字段一律留 null，绝不用页面上无关数字凑数。
    */
   var ASSET_KEYS = ['held', 'pending', 'boostable', 'valueUsd', 'changePct'];
   var ASSET_LABELS = {

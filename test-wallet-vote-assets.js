@@ -10,6 +10,11 @@
  *       1.5.8：X Layer / FabX 双链资产（FAB / 电路矿机 / 待领 / OKB / 算力 / 权限）。
  */
 'use strict';
+// 当前版本一律读 manifest.json，升补丁号时不用逐个改测试
+const CUR = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'manifest.json'), 'utf8')).version;
+const CUR_RE = CUR.replace(/\./g, '\\.');
+const vRe = (pre, post) => new RegExp((pre || '') + CUR_RE + (post || ''));
+
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -379,8 +384,8 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   ok('popup 渲染 X Layer 数字', /wbxText\('xlFab', fmtAsset\(x\.balance\)\)/.test(pop158));
   ok('面板标注日产为估算', /仅供参考/.test(pop158));
   ok('后台对旧缓存自动补取双链', /cached && cached\.xlayer && cached\.fetchedAt/.test(bg158));
-  eq('manifest 版本', man158.version, '1.5.26');
-  eq('listing 版本', list158.version, '1.5.26');
+  ok('manifest 版本为 1.5.x 补丁号', /^1\.5\.\d+$/.test(man158.version));
+  eq('listing 版本与 manifest 一致', list158.version, CUR);
   eq('permissions 仍 9 项', man158.permissions.length, 9);
   eq('host_permissions 34 条（1.5.16 移除 tapeup.io 两条）', man158.host_permissions.length, 34);
   ['https://api.fabx.tech/*', 'https://rpc.xlayer.tech/*', 'https://xlayerrpc.okx.com/*'].forEach((h) => {
@@ -394,11 +399,11 @@ const BemQuotes = ctx.BemQuotes, BemAvatars = ctx.BemAvatars;
   ok('独立部署副本同步', privSite158.includes('api.fabx.tech') && privSite158.includes('34 条'));
   ok('上架资料列出三条新域名', ['api.fabx.tech', 'rpc.xlayer.tech', 'xlayerrpc.okx.com']
     .every((h) => JSON.stringify(list158).includes(h)));
-  ok('上架详细描述含 1.5.26 说明', list158.detailed_description[0].startsWith('【1.5.26'));
+  ok('上架详细描述含 ' + CUR + ' 说明', list158.detailed_description[0].startsWith('【' + CUR));
   ok('上架详细描述保留 1.5.16 下线说明', list158.detailed_description.some((x) => String(x).startsWith('【1.5.16')));
   ok('商店描述不超 132 字', man158.description.length <= 132 && list158.summary_132.length <= 132);
-  ok('UI 版本兜底统一 1.5.26', /v1\.5\.26/.test(html158) && /v1\.5\.26/.test(read('panel.html')) &&
-    /v1\.5\.26/.test(read('content.js')) && /v1\.5\.26/.test(pop158));
+  ok('UI 版本兜底统一 v' + CUR, vRe('v').test(html158) && vRe('v').test(read('panel.html')) &&
+    vRe('v').test(read('content.js')) && vRe('v').test(pop158));
 
   console.log('\n== 7. 钱包地址不出缓存 / 不出 popup 消息 ==');
   const bgSrc = read('background.js');

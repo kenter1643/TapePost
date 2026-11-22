@@ -1,6 +1,6 @@
 'use strict';
 
-// 已取消「需去水印作者 UID」列表；图片/视频都改由全局开F控制。
+// 已取消「需去水印作者 UID」列表；图片/视频都改由全局开关控制。
 // 换用新 key，让旧版保存的 alwaysInpaint / watermarkUids 自动失效，避免旧设置盖掉新默认值。
 const PAGE_DEFAULTS = (typeof TapeAI !== 'undefined' && TapeAI.PAGE_MODE_DEFAULTS)
   ? TapeAI.PAGE_MODE_DEFAULTS : {};
@@ -23,12 +23,12 @@ const DEFAULTS = Object.assign({
   autoDownloadBackup: false,  // 转发时自动下载图片备份（默认F）
   tmpCleanup: true,           // 到期自动清理
   tmpKeepMinutes: 30,         // 0 = 不自动清理
-  // 1.4.5：AI 评论末尾的生态推广尾巴（默认F闭，用户显式勾选才生效）
+  // 1.4.5：AI 评论末尾的生态推广尾巴（默认关闭，用户显式勾选才生效）
   promoEnabled: false,
   promoTarget: 'both',        // both | tapeout | bem
   promoCustomTapeOut: '',     // 每行一句；留空用内置话术
   promoCustomBEM: '',
-  // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无F，默认开启）
+  // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无关，默认开启）
   promoQuickButtons: true,
   promoQuickCount: 4,            // 兼容旧配置，1.4.8 起不再使用
   // 1.4.11
@@ -50,7 +50,7 @@ const GROK_SECRET_DEFAULTS = {
   grokBaseUrl: 'https://api.x.ai/v1',
   grokModel: 'grok-4.3',
   grokTemperature: 0.7,
-  // 1.5.3：DeepSeek 与 xAI 的密钥 / 模型 / 网F完全分开存，互不覆盖
+  // 1.5.3：DeepSeek 与 xAI 的密钥 / 模型 / 网关完全分开存，互不覆盖
   deepseekApiKey: '',
   deepseekModel: 'deepseek-v4-flash',
   deepseekBaseUrl: 'https://api.deepseek.com',
@@ -71,7 +71,7 @@ const SITE_LIST = (typeof SITE_PROFILES !== 'undefined')
 /*
  * 1.4.4：统一发消息通道，消除 chrome://extensions 里的
  * "Unchecked runtime.lastError: The message port closed before a response was received"。
- * popup 随时可能被用户F掉；若端口在后台 sendResponse 之前F闭，回调里
+ * popup 随时可能被用户关掉；若端口在后台 sendResponse 之前关闭，回调里
  * 不读取 chrome.runtime.lastError 就会被 Chrome 记成扩展错误。
  * 所有发往后台的消息都走这里，并在回调第一行同步读取 lastError。
  */
@@ -217,7 +217,7 @@ function load() {
     renderPrompt('verifyPrompt', s.verifyPrompt);
     const mode = document.getElementById('grokMode');
     /* 1.4.1：旧版把「X 站内 Grok」存成显式 page，导致 1.4.0 的直连链路
-     * 一次都没被走到。只要用户没主动F掉「优先站内直连」，就在打开设置时
+     * 一次都没被走到。只要用户没主动关掉「优先站内直连」，就在打开设置时
      * 自动纠正为 auto（只写必要的键，不覆盖其它设置）；用户之后手动改回
      * page 会被 save() 打标记，不再被自动改。 */
     const legacyPage = String(s.grokMode || '').toLowerCase() === 'page' &&
@@ -288,7 +288,7 @@ function save() {
       return isFinite(n) ? Math.max(1, Math.min(10, n)) : 5;
     })(),
     promoCopyOnly: !!(document.getElementById('promoCopyOnly') || {}).checked,
-    // 1.4.5：推广开F与话术
+    // 1.4.5：推广开关与话术
     promoEnabled: !!(document.getElementById('promoEnabled') || {}).checked,
     promoTarget: (document.getElementById('promoTarget') || {}).value || 'both',
     promoCustomTapeOut: (document.getElementById('promoCustomTapeOut') || {}).value || '',
@@ -442,9 +442,9 @@ function openGrokPage() {
   }
 }
 
-/* 自定义网F不是默认 host_permissions，用户主动点一下才申请该域名访问权 */
+/* 自定义网关不是默认 host_permissions，用户主动点一下才申请该域名访问权 */
 function grantOrigin() {
-  // 1.5.3：按当前运行模式申请对应服务商 / 网F的域名权限
+  // 1.5.3：按当前运行模式申请对应服务商 / 网关的域名权限
   const isDs = String((document.getElementById('grokMode') || {}).value || '') === 'deepseek';
   const base = (document.getElementById(isDs ? 'deepseekBaseUrl' : 'grokBaseUrl') || {}).value ||
     (isDs ? GROK_SECRET_DEFAULTS.deepseekBaseUrl : GROK_SECRET_DEFAULTS.grokBaseUrl);
@@ -452,7 +452,7 @@ function grantOrigin() {
   try { origin = new URL(String(base).trim()).origin; }
   catch (e) { grokStatus('接口地址不是合法 URL，请检查后再点。', false); return; }
   if (!chrome.permissions || !chrome.permissions.request) {
-    grokStatus('当前 Chrome 不支持动态权限申请；请用官方默认地址，或让网F允许跨域。', false);
+    grokStatus('当前 Chrome 不支持动态权限申请；请用官方默认地址，或让网关允许跨域。', false);
     return;
   }
   chrome.permissions.request({ origins: [origin + '/*'] }, (granted) => {
@@ -549,7 +549,8 @@ function loadGrowth() {
     const setBar = (bar, txt, v, goal) => {
       const el = document.getElementById(bar), t = document.getElementById(txt);
       if (el) el.style.width = Math.min(100, goal ? (v * 100 / goal) : 0) + '%';
-      if (t) t.textContent = v.toLocaleString('zh-CN') + '/' + goal.toLocaleString('zh-CN');
+      // 1.5.27：不加千分位逗号（1000 而不是 1,000）
+      if (t) t.textContent = String(Math.round(Number(v) || 0)) + '/' + String(Math.round(Number(goal) || 0));
     };
     setBar('grPostBar', 'grPostText', s.post, s.postGoal);
     setBar('grCommentBar', 'grCommentText', s.comment, s.commentGoal);
@@ -697,7 +698,7 @@ bind('infoOk', closeInfo);
 
 // 1.4.3：临时文件状态与立即清理
 // 1.4.4：状态直接读 storage.local —— popup 打开时不再发 runtime 消息，
-// 避免弹窗被快速F闭时留下 "message port closed before a response" 错误。
+// 避免弹窗被快速关闭时留下 "message port closed before a response" 错误。
 function refreshTmpStatus() {
   const el = document.getElementById('tmpStatus');
   if (!el) return;
@@ -733,7 +734,7 @@ refreshTmpStatus();
 /* =====================================================================
  * 1.4.13：面板顶端行情卡片 + 价格上下限提醒设置
  * 价格抓取 / 判定 / 通知全在后台，popup 只负责展示与读写设置，
- * 这样F掉弹窗也不会影响后台定时提醒。
+ * 这样关掉弹窗也不会影响后台定时提醒。
  * ===================================================================== */
 const PRICE_SET_KEY = 'priceSettings';
 const PRICE_BOUND_IDS = {
@@ -936,7 +937,7 @@ if (priceApi) {
 }
 
 /* 1.4.19：标题旁的版本号以 manifest 为准，升版本时不会漏改静态文案。
- * HTML 里已写死 v1.5.26 作兜底，即使这段没跑到也不会空白。 */
+ * HTML 里已写死 v1.5.27 作兜底，即使这段没跑到也不会空白。 */
 (function showAppVersion() {
   try {
     const v = chrome.runtime.getManifest && chrome.runtime.getManifest().version;

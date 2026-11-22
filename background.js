@@ -191,7 +191,7 @@ const GROK_DEFAULTS = {
 };
 
 /* 1.5.3：DeepSeek 官方 OpenAI 兼容接口（https://api-docs.deepseek.com）。
- * 官方 base_url 是 https://api.deepseek.com（也可填 /v1 或自填兼容网F），
+ * 官方 base_url 是 https://api.deepseek.com（也可填 /v1 或自填兼容网关），
  * 模型为 deepseek-v4-flash / deepseek-v4-pro；旧的 deepseek-chat / deepseek-reasoner
  * 已于 2026-07-24 弃用。这些键与 xAI 的 Key 完全分开存，互不覆盖。 */
 const DEEPSEEK_DEFAULTS = {
@@ -199,7 +199,7 @@ const DEEPSEEK_DEFAULTS = {
   deepseekBaseUrl: 'https://api.deepseek.com',
   deepseekModel: 'deepseek-v4-flash',
   deepseekTemperature: 0.7,
-  deepseekJsonMode: true             // 官方模型支持 JSON Output；兼容网F可在设置里F掉
+  deepseekJsonMode: true             // 官方模型支持 JSON Output；兼容网关可在设置里关掉
 };
 let lastGrokError = null;
 
@@ -233,7 +233,7 @@ async function getGrokConfig() {
   /* 1.4.1 双保险：老版本把「X 站内 Grok」存成显式 grokMode="page"，
    * 1.4.0 的 pickGrokMode 遇到非 auto 直接返回，新增的直连链路一次都没走过，
    * 用户一直卡在会报「提示词写入校验失败」的旧 DOM 页面模式上。
-   * 只要用户没F掉「优先站内直连」且没填 API Key，就把 page 按 auto 的
+   * 只要用户没关掉「优先站内直连」且没填 API Key，就把 page 按 auto 的
    * 免 Key 语义处理（auto 在 X 标签里走直连、其它情况仍回退页面模式）。
    * 这是运行时归一化，不依赖 storage 迁移是否成功，重载后必定生效。 */
   if (String(page.grokMode || '').toLowerCase() === 'page' &&
@@ -247,7 +247,7 @@ async function getGrokConfig() {
     commentCount: (typeof TapeAI !== 'undefined' && TapeAI.normalizeCommentCount)
       ? TapeAI.normalizeCommentCount(pref.commentCount, TapeAI.COMMENT_COUNT_DEFAULT || 5) : 5,
     // 1.5.3：只有显式选了 DeepSeek 模式才把供应商切过去；其它模式一律保持 xAI 口径，
-    // 这样用户既有的 xAI Key / 网F设置与 1.5.2 的行为完全一致。
+    // 这样用户既有的 xAI Key / 网关设置与 1.5.2 的行为完全一致。
     aiProvider: String(page.grokMode || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'xai'
   });
 }
@@ -271,7 +271,7 @@ function deepseekBody(cfg, messages, maxTokens) {
   const temp = isFinite(temperature) ? Math.min(1, Math.max(0, temperature)) : 0.7;
   let msgs = messages || [];
   const body = { model, messages: msgs, temperature: temp, max_tokens: maxTokens || 700, stream: false };
-  // 两个 AI 功能都要求 JSON；官方模型支持 response_format，兼容网F可F掉
+  // 两个 AI 功能都要求 JSON；官方模型支持 response_format，兼容网关可关掉
   if (cfg.deepseekJsonMode !== false) {
     body.response_format = { type: 'json_object' };
     /* DeepSeek 官方 JSON Output 要求提示词里出现 "json" 字样，否则可能返回空 content。
@@ -335,7 +335,7 @@ function grokFriendlyError(status, bodyText, isDeepseek) {
 async function callGrok(messages, maxTokens, cfgIn) {
   const cfg = cfgIn || await getGrokConfig();
   /* 1.5.3：同一个函数按 aiProvider 服务两家；选 DeepSeek 时完全不碰 xAI 的
-   * Key / 模型 / 网F，也不降级到 X 页面，错误直接指向 DeepSeek 设置。 */
+   * Key / 模型 / 网关，也不降级到 X 页面，错误直接指向 DeepSeek 设置。 */
   const ds = cfg.aiProvider === 'deepseek';
   const providerName = ds ? 'DeepSeek' : 'xAI';
   const key = String((ds ? cfg.deepseekApiKey : cfg.grokApiKey) || '').trim();
@@ -358,7 +358,7 @@ async function callGrok(messages, maxTokens, cfgIn) {
   } catch (e) {
     throw new Error('无法连接 ' + endpoint + '（' + String(e && e.message || e) + '）。' +
       (ds ? '请检查接口地址与网络；DeepSeek 官方地址是 https://api.deepseek.com。'
-          : '国内网络通常需要代理；也可以在设置里换用兼容网F地址。'));
+          : '国内网络通常需要代理；也可以在设置里换用兼容网关地址。'));
   }
   const raw = await resp.text();
   if (!resp.ok) throw new Error(grokFriendlyError(resp.status, raw, ds));
@@ -366,7 +366,7 @@ async function callGrok(messages, maxTokens, cfgIn) {
   try { data = JSON.parse(raw); } catch (e) { throw new Error('接口返回的不是 JSON：' + raw.slice(0, 120)); }
   const text = grokText(data, protocol);
   if (!text) throw new Error(ds
-    ? 'DeepSeek 返回了空内容。可F掉「强制 JSON 输出」，或换一个模型 ID 后重试。'
+    ? 'DeepSeek 返回了空内容。可关掉「强制 JSON 输出」，或换一个模型 ID 后重试。'
     : '接口返回了空内容，请把「接口协议」切换成另一项后重试。');
   return {
     text,
@@ -397,7 +397,7 @@ function tabError(raw, tabId) {
   const text = String(raw || '');
   const bad = TAB_UNREACHABLE_RE.test(text);
   const e = new Error(bad
-    ? TAB_HINT + '插件已自动尝试刷新 / 新建标签；若仍失败，请刷新所有 X 页面（Cmd+R），或F闭旧的 Grok 对话标签后重试。（原始错误：' + text + '）'
+    ? TAB_HINT + '插件已自动尝试刷新 / 新建标签；若仍失败，请刷新所有 X 页面（Cmd+R），或关闭旧的 Grok 对话标签后重试。（原始错误：' + text + '）'
     : text);
   e.tabUnreachable = bad;
   e.tabId = tabId;
@@ -455,7 +455,7 @@ async function ensurePageTab(cfg, forceFresh) {
           p = await pagePing(grok.id, cfg);
           if (p && p.ok && p.hasInput) return { tabId: grok.id, ping: p, created: false, healed: true };
         }
-        // 1.3.3 F键修复：刷新后仍然不通，绝不再把这个坏标签交给 callGrokPage
+        // 1.3.3 关键修复：刷新后仍然不通，绝不再把这个坏标签交给 callGrokPage
         // （1.3.2 就是在这里把失效标签返回，才冒出 "Receiving end does not exist"）。
         // 直接走第 3 步新建标签 —— 新标签必定注入当前实例的 content script。
       }
@@ -492,7 +492,7 @@ async function callGrokPage(prompt, cfg, action) {
     r = await sendToTab(t.tabId, message);
   } catch (e) {
     if (!e.tabUnreachable) throw e;
-    // 标签脚本在 ensurePageTab 之后才失效（例如用户刚好刷新/F闭了它）：
+    // 标签脚本在 ensurePageTab 之后才失效（例如用户刚好刷新/关闭了它）：
     // 先刷新同一个标签等新脚本注入，救不回来再强制新建标签重试一次。
     console.warn('[bg][grok] 标签脚本失效，尝试刷新恢复：' + t.tabId);
     await reloadTab(t.tabId);
@@ -547,7 +547,7 @@ async function findXTabId(preferredId) {
       // 消息本来就来自这个标签，没有 tabs 权限时 url 可能读不到，别因此丢掉它
       const t = await chrome.tabs.get(preferredId);
       if (t) return t.id;
-    } catch (e) { /* 标签可能已F闭 */ }
+    } catch (e) { /* 标签可能已关闭 */ }
   }
   try {
     const tabs = (await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] })) || [];
@@ -695,7 +695,7 @@ async function handleGrokMessage(msg, sender) {
   let actualMode = mode;
 
   // 1.3.3：一键修复「重新加载扩展后旧 X 标签脚本失效」。
-  // 只刷新已打开的 /i/grok 页面（不F闭用户标签），再强制新开一个干净标签。
+  // 只刷新已打开的 /i/grok 页面（不关闭用户标签），再强制新开一个干净标签。
   if (msg.type === 'GROK_PAGE_RESET') {
     if (mode === 'native') {
       const t = await nativeTab(tabId);
@@ -808,7 +808,7 @@ async function handleGrokMessage(msg, sender) {
             (refusedForced
               ? '。这是提示词被 X 站内 Grok 拒答，1.4.18 已改为极简模板；请在 chrome://extensions 重新加载扩展后再试，也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
               : parseIssueForced
-                ? '。请再点一次「AI 评论」，或到 Grok 设置F掉「AI 快速模式」重试；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+                ? '。请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；也可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
                 : '。请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
                   '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断。'));
         }
@@ -832,7 +832,7 @@ async function handleGrokMessage(msg, sender) {
           (refusedIssue
             ? '。这是提示词被 X 站内 Grok 拒答（非签名问题），1.4.18 已改为 XVM 式极简模板；请在 chrome://extensions 重新加载扩展后再点一次「AI 评论」；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
             : parseIssue
-              ? '。这是回答解析阶段的问题，签名通常正常；请再点一次「AI 评论」，或到 Grok 设置F掉「AI 快速模式」重试；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
+              ? '。这是回答解析阶段的问题，签名通常正常；请再点一次「AI 评论」，或到 Grok 设置关掉「AI 快速模式」重试；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'
               : '。签名不可用时请刷新 X 页面后重试；也可到 x.com/i/grok 发一条消息让扩展捕获有效签名，' +
                 '或点插件图标 → Grok 设置 → 「测试当前模式」看诊断；临时可用「复制提示词（手动）→ 读取 Grok 回答」兜底。'));
       }
@@ -1232,10 +1232,10 @@ purgeTmp(false).catch(() => {});   // Service Worker 每次唤醒也顺带清一
  * ===================================================================== */
 /* 1.5.23：消除 chrome://extensions「错误」面板里的
  *   "Unchecked runtime.lastError: The message port closed before a response was received"
- * 弹窗 / 分析面板在后台异步任务（转发、取价、钱包同步、打卡）完成前被F掉时，
- * 端口已经F闭，后台再调用 sendResponse 会让 Chrome 记一条未检查的 lastError，
+ * 弹窗 / 分析面板在后台异步任务（转发、取价、钱包同步、打卡）完成前被关掉时，
+ * 端口已经关闭，后台再调用 sendResponse 会让 Chrome 记一条未检查的 lastError，
  * 长任务（如批量取F）几乎必然触发。这里把所有消息监听器统一包一层：
- * 只回一次包、吞掉端口F闭异常、回调后同步读取 lastError。
+ * 只回一次包、吞掉端口关闭异常、回调后同步读取 lastError。
  * 只做错误兜底，不改变任何响应内容、不吞掉业务错误。 */
 function guardedResponse(sendResponse) {
   var raw = sendResponse;
@@ -1968,6 +1968,7 @@ function guardedResponse(sendResponse) {
   const K_GROWTH = 'tapeGrowthStateV1';
   const K_FOLLOW = 'followData';
   const GROWTH_ALARM = 'tapeGrowthDailyCheck';
+  const K_LOG_DAYS = 'tapeGrowthLogDays';
 
   function gget(keys) {
     return new Promise(function (resolve) {
@@ -1985,6 +1986,13 @@ function guardedResponse(sendResponse) {
       }); } catch (e) { resolve(false); }
     });
   }
+  // 增长计划的读-改-写都串行执行（放在最前面：启动时 ensureGrowthAlarm 就会用到）
+  let growthChain = Promise.resolve();
+  function growthSerial(fn) {
+    const next = growthChain.then(fn, fn);
+    growthChain = next.catch(function () {});
+    return next;
+  }
   async function growthState() {
     const r = await gget([K_GROWTH]);
     const s = GrowthCore.normalizeState(r[K_GROWTH], Date.now());
@@ -1995,6 +2003,73 @@ function guardedResponse(sendResponse) {
     }
     return s;
   }
+  /* 1.5.27：发送日志，每天一个键（tapeGrowthLog:YYYY-MM-DD），只留最近 7 天 */
+  function gremove(keys) {
+    return new Promise(function (resolve) {
+      try { chrome.storage.local.remove(keys, function () {
+        void (chrome.runtime && chrome.runtime.lastError);
+        resolve(true);
+      }); } catch (e) { resolve(false); }
+    });
+  }
+  /* 1.5.27：发送日志存进扩展自己的本地数据库（IndexedDB）：刷新、重启浏览器、重载扩展都不丢。
+   * 数据库打不开时（极少见）临时落到 chrome.storage.local，下次能打开时自动搬进数据库。 */
+  const K_LOG_REV = 'tapeGrowthLogRev';     // 只存一个时间戳，用来通知面板「有新日志」
+  const LogDB = (typeof indexedDB !== 'undefined' && indexedDB && typeof IDBKeyRange !== 'undefined')
+    ? GrowthCore.createLogDB(indexedDB, IDBKeyRange) : null;
+  async function appendLogToStorage(e) {
+    const key = GrowthCore.logKey(e.day);
+    const r = await gget([key, K_LOG_DAYS]);
+    const days = GrowthCore.logDays(r[K_LOG_DAYS], e.day);
+    await gset({ [key]: GrowthCore.appendLog(r[key], e), [K_LOG_DAYS]: days.keep });
+    if (days.drop.length) await gremove(days.drop.map(GrowthCore.logKey));
+  }
+  async function appendGrowthLog(input) {
+    const e = GrowthCore.logEntry(input, Date.now());
+    let saved = false;
+    if (LogDB) { try { await LogDB.add([e]); saved = true; } catch (err) {} }
+    if (!saved) await appendLogToStorage(e);
+    await gset({ [K_LOG_REV]: Date.now() });
+    return e;
+  }
+  /* 把 chrome.storage 里的日志（旧版 / 数据库打不开时的临时记录）搬进数据库 */
+  async function migrateGrowthLog() {
+    if (!LogDB) return 0;
+    const r = await gget([K_LOG_DAYS]);
+    const days = Array.isArray(r[K_LOG_DAYS]) ? r[K_LOG_DAYS] : [];
+    if (!days.length) return 0;
+    const keys = days.map(GrowthCore.logKey);
+    const got = await gget(keys);
+    let all = [];
+    keys.forEach(function (k) { if (Array.isArray(got[k])) all = all.concat(got[k]); });
+    if (all.length) await LogDB.add(all);
+    await gremove(keys.concat([K_LOG_DAYS]));
+    if (all.length) await gset({ [K_LOG_REV]: Date.now() });
+    return all.length;
+  }
+  async function pruneGrowthLog() {
+    if (!LogDB) return;
+    try { await LogDB.pruneBefore(Date.now() - GrowthCore.DEFAULTS.logKeepDays * 86400000); } catch (e) {}
+  }
+  async function readGrowthLog(wantDay) {
+    const today = GrowthCore.dayKey(Date.now());
+    const okDay = /^\d{4}-\d{2}-\d{2}$/.test(String(wantDay || ''));
+    if (LogDB) {
+      try {
+        await migrateGrowthLog();
+        const days = GrowthCore.logDays(await LogDB.days(), today, GrowthCore.DEFAULTS.logKeepDays).keep;
+        const day = okDay ? String(wantDay) : days[0];
+        return { day: day, days: days, entries: await LogDB.byDay(day), total: await LogDB.count(), store: 'indexeddb' };
+      } catch (e) {}
+    }
+    const r = await gget([K_LOG_DAYS]);
+    const days = GrowthCore.logDays(r[K_LOG_DAYS], today).keep;
+    const day = okDay ? String(wantDay) : days[0];
+    const key = GrowthCore.logKey(day);
+    const got = await gget([key]);
+    const entries = Array.isArray(got[key]) ? got[key] : [];
+    return { day: day, days: days, entries: entries, total: entries.length, store: 'storage' };
+  }
   async function saveState(s) {
     s.updatedAt = Date.now();
     await gset({ [K_GROWTH]: s });
@@ -2002,31 +2077,64 @@ function guardedResponse(sendResponse) {
   }
 
   /* ---------- 监督提醒（北京时间，30 分钟一查，未达标每天只提醒一次） ---------- */
-  async function maybeGrowthRemind() {
-    const s = await growthState();
-    const reasons = GrowthCore.reminderReasons(s, Date.now());
-    if (!reasons.length) return;
-    const day = s.today.day;
-    s.config.reminderLastDay = day;
-    await saveState(s);
-    const text = GrowthCore.reminderText(reasons, GrowthCore.summary(s, Date.now()));
+  function growthNotify(id, text, priority) {
     try {
-      chrome.notifications.create('tapegrowth-' + day, {
+      chrome.notifications.create(id, {
         type: 'basic', iconUrl: 'icons/icon128.png',
-        title: text.title, message: text.message,
-        contextMessage: text.contextMessage, priority: 1
+        title: text.title, message: text.message, contextMessage: text.contextMessage, priority: priority
       }, function () { void (chrome.runtime && chrome.runtime.lastError); });
     } catch (e) {}
+  }
+  async function maybeGrowthRemind() {
+    let s = await growthState();
+    // 1.5.27：定时提醒（可设多个时间点 + 到点应完成的百分比）
+    const due = GrowthCore.dueReminder(s, Date.now());
+    if (due) {
+      s = GrowthCore.markReminders(s, due.covers, Date.now());
+      const sum = await saveState(s);
+      if (due.reasons.length) {
+        growthNotify('tapegrowth-' + s.today.day + '-' + due.time.replace(':', ''),
+          GrowthCore.reminderText(due.reasons, sum, due), 1);
+      }
+      return;
+    }
+    // 提醒时间之前，明显落后节奏时最多 3 小时提醒一次
+    const pr = GrowthCore.paceReminderReasons(s, Date.now());
+    if (!pr.length) return;
+    s.config.paceLastAt = Date.now();
+    const sum = await saveState(s);
+    growthNotify('tapegrowth-pace-' + Date.now(), GrowthCore.paceReminderText(pr, sum), 0);
+  }
+  /* 每 30 分钟兜底检查一次；另外按下一个提醒时间设一个精确闹钟，到点准时响 */
+  const GROWTH_ALARM_AT = 'tapeGrowthReminderAt';
+  async function scheduleGrowthReminder(state) {
+    try {
+      const s = state || await growthState();
+      const at = GrowthCore.nextReminderAt(s, Date.now());
+      if (!at) { chrome.alarms.clear(GROWTH_ALARM_AT, function () { void (chrome.runtime && chrome.runtime.lastError); }); return; }
+      const p = chrome.alarms.create(GROWTH_ALARM_AT, { when: at + 1000 });
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    } catch (e) {}
+  }
+  async function growthTick() {
+    await maybeGrowthRemind();
+    await scheduleGrowthReminder();
+    try { await migrateGrowthLog(); } catch (e) {}
+    await pruneGrowthLog();
   }
   function ensureGrowthAlarm() {
     try {
       var p = chrome.alarms.create(GROWTH_ALARM, { delayInMinutes: 1, periodInMinutes: 30 });
       if (p && typeof p.catch === 'function') p.catch(function () {});
     } catch (e) {}
+    growthSerial(async function () {
+      await scheduleGrowthReminder();
+      try { await migrateGrowthLog(); } catch (e) {}
+    }).catch(function () {});
   }
   if (chrome.alarms && chrome.alarms.onAlarm) {
     chrome.alarms.onAlarm.addListener(function (a) {
-      if (a && a.name === GROWTH_ALARM) maybeGrowthRemind().catch(function () {});
+      if (a && (a.name === GROWTH_ALARM || a.name === GROWTH_ALARM_AT)) growthSerial(growthTick).catch(function () {});
     });
   }
   if (chrome.notifications && chrome.notifications.onClicked) {
@@ -2042,11 +2150,13 @@ function guardedResponse(sendResponse) {
   chrome.runtime.onStartup.addListener(ensureGrowthAlarm);
   ensureGrowthAlarm();
 
+
   /* ---------- 消息路由 ---------- */
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || !/^GROWTH_/.test(String(msg.type || ''))) return false;
     sendResponse = guardedResponse(sendResponse);
-    (async function () {
+    // 1.5.27：所有「读-改-写」串行执行，「写入回复框」紧接着「点回复」时两条不会互相覆盖
+    growthSerial(async function () {
       const t = String(msg.type || '');
       if (t === 'GROWTH_STATE') {
         const s = await growthState();
@@ -2055,35 +2165,73 @@ function guardedResponse(sendResponse) {
         const kind = String(msg.kind || '');
         if (GrowthCore.KINDS.indexOf(kind) < 0) { sendResponse({ ok: false, error: '无效的计数类型' }); return; }
         const s = await growthState();
-        const r = GrowthCore.record(s, kind, msg.ref, Date.now(), { target: msg.target });
+        // 1.5.27：target 是帖子作者，清单里的大 V 由 record() 自动记进度（不再二次 markTargetDone）
+        // 1.5.27：准备好内容只记「待发送」，检测到 X 发送成功才 +1
+        const r = GrowthCore.prepare(s, kind, msg.ref, Date.now(), { target: msg.target, post: msg.post });
         const summary = await saveState(r.state);
-        // 用户点「写入回复框」时顺手给对应大 V 记一条，方便清单里看进度
-        if (r.counted && kind === 'comment' && msg.target) {
-          const d = GrowthCore.markTargetDone(r.state, msg.target, Date.now());
-          if (d.ok) await saveState(d.state);
-        }
-        sendResponse({ ok: true, counted: r.counted, reason: r.reason, summary: summary });
-      } else if (t === 'GROWTH_CONFIG') {
+        sendResponse({ ok: true, counted: r.counted, reason: r.reason, attributed: !!r.attributed, summary: summary });
+      } else if (t === 'GROWTH_SENT') {
+        // 1.5.27：growth-watch.js 旁听到用户点了 X 自己的「发布 / 回复」按钮
+        const kind = String(msg.kind || '');
+        if (GrowthCore.KINDS.indexOf(kind) < 0) { sendResponse({ ok: false, error: '无效的计数类型' }); return; }
+        // status：ok = X 确认发送成功（才计数）；fail = X 报错；unknown = 15 秒没结果。后两种只进日志
+        const status = msg.status == null ? 'ok' : String(msg.status);
         const s = await growthState();
+        let r = { state: s, counted: false, confirmed: false, reason: status };
+        if (status === 'ok') r = GrowthCore.recordSent(s, kind, { target: msg.target, post: msg.post }, Date.now());
+        const summary = status === 'ok' ? await saveState(r.state) : GrowthCore.summary(s, Date.now());
+        await appendGrowthLog({ at: msg.at, kind: kind, status: status,
+          reason: status === 'ok' ? (msg.reason || r.reason) : msg.reason,
+          source: 'send', target: msg.target, post: msg.post, text: msg.text,
+          counted: !!r.counted, confirmed: !!r.confirmed });
+        sendResponse({ ok: true, counted: !!r.counted, confirmed: !!r.confirmed, reason: r.reason, summary: summary });
+      } else if (t === 'GROWTH_LOG') {
+        const g = await readGrowthLog(msg.day);
+        sendResponse({ ok: true, day: g.day, days: g.days, entries: g.entries, total: g.total, store: g.store,
+          stats: GrowthCore.logStats(g.entries) });
+      } else if (t === 'GROWTH_LOG_CLEAR') {
+        if (LogDB) { try { await LogDB.clear(); } catch (e) {} }
+        const r = await gget([K_LOG_DAYS]);
+        const days = Array.isArray(r[K_LOG_DAYS]) ? r[K_LOG_DAYS] : [];
+        await gremove(days.map(GrowthCore.logKey).concat([K_LOG_DAYS]));
+        await gset({ [K_LOG_REV]: Date.now() });
+        sendResponse({ ok: true });
+      } else if (t === 'GROWTH_TARGET_ADD') {
+        const s = await growthState();
+        const r = GrowthCore.addTarget(s, msg.handle, msg.name, Date.now());
+        sendResponse({ ok: r.ok, reason: r.reason, summary: await saveState(r.state) });
+      } else if (t === 'GROWTH_TARGET_REMOVE') {
+        const s = await growthState();
+        const r = GrowthCore.removeTarget(s, msg.handle, Date.now());
+        sendResponse({ ok: r.ok, summary: await saveState(r.state) });
+      } else if (t === 'GROWTH_CONFIG') {
+        let s = await growthState();
+        const before = JSON.stringify(s.config.reminders) + s.config.reminderEnabled;
         const next = GrowthCore.normalizeConfig(Object.assign({}, s.config, msg.config || {}));
-        // 改了提醒开F / 小时就允许当天重新判断，避免旧的 lastDay 把新设置压住
-        if (next.reminderEnabled !== s.config.reminderEnabled || next.reminderHour !== s.config.reminderHour) {
-          next.reminderLastDay = '';
-        }
+        if (next.paceReminder !== s.config.paceReminder) next.paceLastAt = 0;
         s.config = next;
-        sendResponse({ ok: true, summary: await saveState(s) });
+        // 1.5.27：改了提醒时间 / 开关后，今天已经过去的时间点不补响，只等之后的
+        if (JSON.stringify(next.reminders) + next.reminderEnabled !== before) s = GrowthCore.skipPastReminders(s, Date.now());
+        const summary = await saveState(s);
+        await scheduleGrowthReminder(s);
+        sendResponse({ ok: true, summary: summary });
       } else if (t === 'GROWTH_IMPORT') {
         const r = await gget([K_GROWTH, K_FOLLOW]);
         const s = GrowthCore.normalizeState(r[K_GROWTH], Date.now());
         const result = GrowthCore.importBigV(s, r[K_FOLLOW], Date.now());
         const summary = await saveState(result.state);
         sendResponse({ ok: true, added: result.added, updated: result.updated,
-          total: result.total, summary: summary });
+          removed: result.removed || 0, total: result.total, summary: summary });
       } else if (t === 'GROWTH_TARGET_DONE') {
+        // 1.5.27：「手动记一条」= 给这个大 V 记进度 + 算一条评论（2 分钟内已自动计到则合并）
         const s = await growthState();
-        const d = GrowthCore.markTargetDone(s, msg.handle, Date.now());
+        const d = GrowthCore.manualComment(s, msg.handle, Date.now());
         const summary = await saveState(d.state);
-        sendResponse({ ok: d.ok, summary: summary });
+        if (d.counted) {
+          await appendGrowthLog({ kind: 'comment', status: 'ok', reason: 'mark', source: 'mark',
+            target: msg.handle, text: '', counted: true });
+        }
+        sendResponse({ ok: d.ok, counted: d.counted, reason: d.reason, summary: summary });
       } else if (t === 'GROWTH_CLEAR_TARGETS') {
         const s = await growthState();
         const summary = await saveState(GrowthCore.clearTargets(s, Date.now()));
@@ -2091,7 +2239,7 @@ function guardedResponse(sendResponse) {
       } else {
         sendResponse({ ok: false, error: '未知消息类型' });
       }
-    })().catch(function (e) {
+    }).catch(function (e) {
       try { sendResponse({ ok: false, error: String(e && e.message || e) }); } catch (e2) {}
     });
     return true;

@@ -136,7 +136,7 @@ var Wallet = (function () {
   /*
    * 1.5.6：以钱包地址为种子算当日身份哈希。与旧的「本机随机盐」方案相比，
    * 同一个地址在不同设备 / 重装扩展后当天仍是同一票，账本能跨设备去重；
-   * 但账本收到的是不可逆哈希，既看不到明文地址，也跨不了天F联同一个人。
+   * 但账本收到的是不可逆哈希，既看不到明文地址，也跨不了天关联同一个人。
    */
   function walletVoterId(cryptoImpl, address, day) {
     var c = cryptoOf(cryptoImpl);

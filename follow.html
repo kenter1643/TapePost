@@ -158,6 +158,10 @@
       border-bottom:1px solid var(--border-1); }
     .item:last-child { border-bottom:none; }
     .item:hover { background:var(--surface-1); }
+    details.item.hist { display:block; cursor:pointer; }
+    details.item.hist summary { color:var(--text-2); }
+    details.item.hist .chips { display:flex; flex-wrap:wrap; gap:var(--sp-1); margin-top:var(--sp-1); }
+    details.item.hist .chip { text-decoration:none; color:var(--text-2); }
     .item .av { width:38px; height:38px; border-radius:50%; flex:0 0 auto; object-fit:cover;
       background:var(--surface-3); border:1px solid var(--border-1); }
     .item .main { flex:1 1 auto; min-width:0; }
@@ -246,7 +250,7 @@
       <div class="logo">T</div>
       <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span>
         <span class="h1-sep">/</span><span class="h1-page">X F注F系分析</span></h1>
-      <span class="ver" id="followVer">v1.5.26</span>
+      <span class="ver" id="followVer">v1.5.27</span>
     </div>
     <p class="sub">分析你在 X（x.com）上的F注与粉丝：谁没回F、谁等你回F、谁已互F；
       点统计卡或分类看明细，勾选后可限速批量取F。全程只在本机计算，不上传任何数据。</p>
@@ -254,9 +258,9 @@
       <b>隐私与边界</b>
       <ul>
         <li>名单来自 <b>X 网页客户端自己加载出来的</b>「F注中 / 粉丝」分页数据，扩展只被动读取，<b>不额外发请求、不读取登录凭证、不调用任何私有写接口</b>。</li>
-        <li>公开主页资料（用户名、昵称、粉丝数等）只存在本机 <code>chrome.storage.local</code>，不经过 TapePost 服务器或任何第三方；<b>每批数据立即写盘</b>，F闭面板 / 中途停止都不丢，重新打开自动恢复并可断点续采。</li>
+        <li>公开主页资料（用户名、昵称、粉丝数等）只存在本机 <code>chrome.storage.local</code>，不经过 TapePost 服务器或任何第三方；<b>每批数据立即写盘</b>，关闭面板 / 中途停止都不丢，重新打开自动恢复并可断点续采。</li>
         <li>批量取F是唯一写操作：只点击 X 页面上该账号那一行的原生「正在F注」按钮，先预演、需你确认、限速执行、可随时暂停/停止。</li>
-        <li><b>1.5.21 页面内扫描浮层</b>：X 的「F注中 / 粉丝」页右侧会出现全中文「互F管理」小面板，可全量扫描 / 增量续扫 / 停止，并在列表里标红未回F（可随时F闭）。它同样<b>只被动读取 X 自己加载的数据、不额外发请求、不读凭证</b>；「从当前位置选未回F」只把账号带入本面板供你勾选，<b>不会自动取F</b>；扫描不会删除已保存的名单。</li>
+        <li><b>1.5.21 页面内扫描浮层</b>：X 的「F注中 / 粉丝」页右侧会出现全中文「互F管理」小面板，可全量扫描 / 增量续扫 / 停止，并在列表里标红未回F（可随时关闭）。它同样<b>只被动读取 X 自己加载的数据、不额外发请求、不读凭证</b>；「从当前位置选未回F」只把账号带入本面板供你勾选，<b>不会自动取F</b>；扫描不会删除已保存的名单。</li>
       </ul>
     </div>
   </header>
@@ -294,7 +298,7 @@
       </div>
     </div>
     <div class="status" id="capStatus">尚未采集。请先确认已登录 x.com，再点上面两个按钮；采集期间请保持标签页在前台或可见。</div>
-    <p class="hint" id="saveHint">数据每一批都会立即写入本机缓存，F闭面板或中途停止都不会丢；下次打开自动恢复，点「继续采集」可从已保存的名单往下补。</p>
+    <p class="hint" id="saveHint">数据每一批都会立即写入本机缓存，关闭面板或中途停止都不会丢；下次打开自动恢复，点「继续采集」可从已保存的名单往下补。</p>
     <p class="hint" id="draftHint"></p>
     <p class="hint">1.5.21 起也可以直接在 X 的「F注中 / 粉丝」页右侧用全中文「互F管理」扫描浮层：全量扫描 / 增量续扫 / 停止 / 列表标红，同样每批实时写盘；浮层里点「从当前位置选未回F」会把账号带到这里，仍需你预演并确认后才会取F。<b>1.5.22 起扫描会一直等到 X 列表真正到底：</b>分页再慢也不会几秒没数据就停；若达到时间 / 滚动上限会标「中断」并完整保留名单，点「增量续扫」或上面的「开始采集」即可接着补。</p>
   </section>
@@ -374,6 +378,17 @@
     <div class="progress"><i id="progressBar"></i></div>
     <div class="status" id="taskStatus">任务空闲。勾选账号后先点「预演」，确认名单无误再执行。</div>
     <div class="log" id="taskLog">（执行日志会显示在这里）</div>
+  </section>
+
+  <!-- 5. 变化记录（1.5.27） -->
+  <section id="secHistory">
+    <h2>⑤ 谁取F了我 <span class="badge" id="lostBadge">0 人</span></h2>
+    <p class="hint">在 X「粉丝」页用浮层点「全量扫描」并扫到底，会和上一次完整扫描对比，列出最近 30 天里取F你的人。
+      本轮看到的人数不足旧名单 85% 时（多半没扫全）不会清理旧数据，也不会误报。</p>
+    <div class="list" id="lostList"></div>
+    <h2 style="margin-top:var(--sp-5)">变化记录 <span class="badge">最近 30 次</span></h2>
+    <p class="hint">每次全量扫描到底的新增 / 减少，以及 TapePost 批量取F成功的账号（已同步从本机名单移除，统计卡不再把他们算作未回F）。</p>
+    <div class="list" id="histList"></div>
   </section>
 
   <div class="footer">

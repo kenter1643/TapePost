@@ -1,7 +1,7 @@
 /* TapePost 1.5.21 · X 页面内「互F管理 / 扫描」浮层
  * ---------------------------------------------------------------
- * 所有选择器都带 tpf- 前缀或 #tpfOverlay 限定；只有用户打开「标红」开F后
- * 才会给 X 自己的 UserCell 加 tpf-row-notback，F闭即刻清除。
+ * 所有选择器都带 tpf- 前缀或 #tpfOverlay 限定；只有用户打开「标红」开关后
+ * 才会给 X 自己的 UserCell 加 tpf-row-notback，关闭即刻清除。
  * 浮层用固定深色卡片，保证 X 浅色 / 深色两种主题下都可读。
  */
 #tpfOverlay {
@@ -187,4 +187,56 @@
 @media (prefers-contrast: more) {
   #tpfOverlay { border-color: #ff8a3d !important; }
   .tpf-title small { color: #e3e9f2 !important; }
+}
+
+/* 1.5.27 · X 增长计划：发帖 / 回复按钮上的「还差 N」角标与发送结果动画（growth-watch.js）
+ * 全部挂在 #tpgHints 固定定位图层里，不改 X 自己的按钮；pointer-events:none，不挡任何点击。 */
+#tpgHints { position: fixed !important; inset: 0 !important; pointer-events: none !important;
+  z-index: 2147483001 !important; overflow: visible !important; }
+#tpgHints * { pointer-events: none !important; box-sizing: border-box !important; }
+.tpg-badge {
+  position: fixed !important; transform: translate(-55%, -62%) !important;
+  padding: 3px 7px !important; border-radius: 999px !important; white-space: nowrap !important;
+  font: 700 11px/1.15 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif !important;
+  color: #fff !important; background: #ff8a3d !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35), 0 0 0 2px rgba(255, 255, 255, .9) !important;
+  transition: background .25s ease, transform .25s ease !important;
+}
+.tpg-badge.tpg-comment { background: #0ea5c6 !important; }
+.tpg-badge.tpg-done { background: #10b981 !important; }
+.tpg-pop {
+  position: fixed !important; display: flex !important; flex-direction: column !important; align-items: center !important;
+  gap: 2px !important; transform: translate(-50%, -100%) !important; white-space: nowrap !important;
+  font: 600 12px/1.3 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif !important;
+  animation: tpgRise 2.1s cubic-bezier(.2, .8, .3, 1) forwards !important;
+}
+.tpg-pop b { font-size: 26px !important; line-height: 1 !important; font-weight: 800 !important;
+  color: #ff8a3d !important; text-shadow: 0 2px 10px rgba(255, 138, 61, .55), 0 0 2px #fff !important; }
+.tpg-pop span { padding: 4px 10px !important; border-radius: 999px !important; color: #fff !important;
+  background: rgba(17, 24, 39, .92) !important; box-shadow: 0 6px 18px rgba(0, 0, 0, .35) !important; }
+.tpg-pop.tpg-goal b { font-size: 34px !important; }
+.tpg-pop.tpg-goal span { background: linear-gradient(92deg, #ff8a3d, #a78bfa) !important; font-weight: 700 !important; }
+.tpg-pop.tpg-goal { animation-duration: 3.5s !important; }
+.tpg-pop.tpg-fail b { color: #ff6b5e !important; text-shadow: none !important; }
+.tpg-pop.tpg-fail span { background: rgba(127, 29, 29, .95) !important; }
+.tpg-pop.tpg-unknown b { color: #9ca3af !important; text-shadow: none !important; }
+.tpg-spark {
+  position: fixed !important; width: 7px !important; height: 7px !important; border-radius: 2px !important;
+  margin: -3px 0 0 -3px !important; animation: tpgSpark 1s cubic-bezier(.15, .7, .3, 1) forwards !important;
+}
+@keyframes tpgRise {
+  0% { opacity: 0; transform: translate(-50%, -60%) scale(.6); }
+  12% { opacity: 1; transform: translate(-50%, -110%) scale(1.12); }
+  22% { transform: translate(-50%, -105%) scale(1); }
+  75% { opacity: 1; transform: translate(-50%, -150%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -190%) scale(.96); }
+}
+@keyframes tpgSpark {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(260deg) scale(.4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tpg-pop { animation: tpgFade 2s ease forwards !important; }
+  .tpg-spark { display: none !important; }
+  @keyframes tpgFade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
 }

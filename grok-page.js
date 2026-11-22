@@ -115,7 +115,7 @@
     return String(el.innerText || el.textContent || '');
   }
 
-  /* 1.3.2 F键修复：绝不再用 execCommand('selectAll')。
+  /* 1.3.2 关键修复：绝不再用 execCommand('selectAll')。
    * 实测（x.com/i/grok）它会把整页选中，导致侧栏文字 History/Usage/Share
    * 和插件按钮「AI 评论」被成片粘进 Grok 输入框，提示词彻底被污染，
    * Grok 只能答非所问。这里改成 Range.selectNodeContents(el)，只操作输入框内部。 */
@@ -192,7 +192,7 @@
       throw new Error('提示词写入校验失败：Grok 输入框里混入了页面文字或没写进去' +
         (err ? '（' + String(err && err.message || err) + '）' : '') +
         '。这是已弃用的「页面模式」，X 改版后常写入失败；请点插件图标，把「运行模式」改为「自动」或「站内直连」（免 Key、最稳定）。' +
-        '若必须留在页面模式，可F掉「自动发送」，改用「复制提示词 → 手动粘贴 → 读取回答」。');
+        '若必须留在页面模式，可关掉「自动发送」，改用「复制提示词 → 手动粘贴 → 读取回答」。');
     }
     return true;
   }
@@ -397,7 +397,7 @@
     await new Promise(function (r) { setTimeout(r, 350); });
     var how = submit(cfg);
     if (how === 'none') {
-      return { ok: false, error: '没找到发送按钮（X 改版？）。可在设置里F掉「自动发送」，改用手动模式。' };
+      return { ok: false, error: '没找到发送按钮（X 改版？）。可在设置里关掉「自动发送」，改用手动模式。' };
     }
     var before = snapshot(cfg, tag);
     var waited = await waitStable(cfg, before, tag);

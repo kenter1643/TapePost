@@ -231,7 +231,7 @@ function renderResult(local, grok, aiError) {
     : (v.short === 'community' ? '命中参考清单 → 不给绿标' : '未命中 → 不给绿标'));
   if (local && local.site) kvRow(dl, '命中的条目', local.site.name + ' — ' + local.site.url);
   if (local && local.site) kvRow(dl, '收录分类', local.site.category || '—');
-  if (local && local.viaGateway) kvRow(dl, '建议改用官方网F', local.viaGateway);
+  if (local && local.viaGateway) kvRow(dl, '建议改用官方网关', local.viaGateway);
   kvRow(dl, 'Grok 判定', grok ? verdictLabel(grok.verdict) + (grok.model ? '（' + grok.model + '）' : '') : '未返回');
   if (grok && grok.reason) kvRow(dl, 'Grok 理由', grok.reason);
   if (grok && grok.matched) kvRow(dl, 'Grok 声称命中', grok.matched);

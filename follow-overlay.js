@@ -6,7 +6,7 @@
  *   - 1.5.25：打开F注页即按 X 自己渲染的「Follows you / 关注了你」判定，
  *     红底 + 头像发光圈 + 用户名高亮 + ✕未回F徽标，不需要先扫描；
  *   - 标红默认开启，X 虚拟 DOM 重绘（鼠标移上 / 移开）后由 MutationObserver
- *     即时补齐，标记不再被冲掉；可随时手动F闭，F闭即刻清除标记；
+ *     即时补齐，标记不再被冲掉；可随时手动关闭，关闭即刻清除标记；
  *   - 「从当前位置选未回F」把可见账号带入独立分析面板（仍须预演 + 确认）。
  *
  * 复用既有链路，不重复造轮子：
@@ -200,6 +200,18 @@
   function wrap(key, val) { var o = {}; o[key] = val; return o; }
   function lower(v) { return Core.lowerHandle(v); }
 
+  /* 名单内存缓存：即时高亮每 0.9 秒 + 每次 DOM 变化都要用名单，旧版每次都
+   * chrome.storage.local.get 整份 followData（上万人时好几 MB），滚动时页面发卡。
+   * 现在只在首次和 storage.onChanged 时更新。 */
+  var dataCache = null;
+  function getData() {
+    if (dataCache) return Promise.resolve(dataCache);
+    return get([KEY.data]).then(function (r) {
+      dataCache = r[KEY.data] || {};
+      return dataCache;
+    });
+  }
+
   function source() { return Pure.pageSource(location.pathname); }
 
   function meHandle() {
@@ -317,8 +329,10 @@
 
   async function render() {
     if (!root || !source()) return;
-    var r = await get([KEY.data, KEY.capture, KEY.anchor]);
-    var d = r[KEY.data] || {};
+    // 一次 get 拿齐（缓存为空时顺带读名单），不额外多等一轮
+    var r = await get(dataCache ? [KEY.capture, KEY.anchor] : [KEY.data, KEY.capture, KEY.anchor]);
+    if (!dataCache) dataCache = r[KEY.data] || {};
+    var d = dataCache;
     var f = d.following && typeof d.following === 'object' ? d.following : {};
     var fr = d.followers && typeof d.followers === 'object' ? d.followers : {};
     var counts = { following: Object.keys(f).length, followers: Object.keys(fr).length };
@@ -589,8 +603,9 @@
 
   async function markRows() {
     if (!ui.markEnabled || !source()) return;
-    var r = await get([KEY.data]);
-    var d = r[KEY.data] || {};
+    // 「未回F」只对「F注中」列表有意义；粉丝页上全员都关注了你，不标
+    if (source() !== 'following') { clearMarks(); return; }
+    var d = await getData();
     var f = d.following || {}, fr = d.followers || {};
     var cells = findUserCells();
     var rows = [];
@@ -617,8 +632,7 @@
       transient('请停留在「F注中」页面，才能从当前位置挑未回F的账号。', true);
       return;
     }
-    var r = await get([KEY.data]);
-    var d = r[KEY.data] || {};
+    var d = await getData();
     var f = d.following || {}, fr = d.followers || {};
     var cells = findUserCells();
     var rows = [];
@@ -683,6 +697,7 @@
   if (chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener(function (changes, area) {
       if (area !== 'local') return;
+      if (changes[KEY.data]) dataCache = changes[KEY.data].newValue || {};
       if (changes[KEY.data] || changes[KEY.capture] || changes[KEY.anchor]) {
         render().catch(swallow);
         if (ui.markEnabled && changes[KEY.data]) markRows().catch(swallow);

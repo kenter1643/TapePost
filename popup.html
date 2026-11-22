@@ -389,7 +389,7 @@
 </head>
 <body>
   <!-- 1.5.10：标题补回 TapePost，插件全名为「TapePost信仰者工具」；品牌字标与中文名分层，靠 5px 视觉间距分隔 -->
-  <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.26</span></h1>
+  <h1><span class="brand-word">TapePost</span><span class="brand-cn">信仰者工具</span><span class="appver" id="appVersion">v1.5.27</span></h1>
 
   <!-- 1.5.22：互F管理主入口固定在品牌头正下方，打开 X F注F系分析独立面板 -->
   <button id="openFollow" type="button" title="打开 X F注F系分析面板（未回F统计 / 分类明细 / 批量取F）">
@@ -597,7 +597,7 @@
 
   <button id="openPanel" type="button">🛡 打开 TapeOut 生态面板（295 条绿标 + 链接核验）</button>
 
-  <label>已启用站点（F掉后该站不再出现「一键转发」）</label>
+  <label>已启用站点（关掉后该站不再出现「一键转发」）</label>
   <div class="sites" id="sites">
     <label class="site"><input type="checkbox" id="site_weibo" /> 微博</label>
     <label class="site"><input type="checkbox" id="site_zhihu" /> 知乎</label>
@@ -633,7 +633,7 @@
   <!-- 1.4.3：临时文件 / 落盘策略 -->
   <div class="row" style="margin-top:10px">
     <input type="checkbox" id="tmpAutoDownload" />
-    <label for="tmpAutoDownload" style="margin:0;font-weight:400">转发时自动下载图片备份（默认F闭：图片走剪贴板，不落盘）</label>
+    <label for="tmpAutoDownload" style="margin:0;font-weight:400">转发时自动下载图片备份（默认关闭：图片走剪贴板，不落盘）</label>
   </div>
 
   <div class="row">
@@ -658,12 +658,12 @@
 
   <div class="row">
     <input type="checkbox" id="sig" />
-    <label for="sig" style="margin:0;font-weight:400">转发文字末尾附上我的署名与 X 主页链接（默认F闭）</label>
+    <label for="sig" style="margin:0;font-weight:400">转发文字末尾附上我的署名与 X 主页链接（默认关闭）</label>
   </div>
 
   <div class="row">
     <input type="checkbox" id="source" />
-    <label for="source" style="margin:0;font-weight:400">转发 X 上的推文时附上原推链接（默认F闭，用于标注来源）</label>
+    <label for="source" style="margin:0;font-weight:400">转发 X 上的推文时附上原推链接（默认关闭，用于标注来源）</label>
   </div>
 
   <label for="domain">打开的 X 域名</label>
@@ -706,16 +706,16 @@
       <p>两种用法：AI 候选自动随机附一句；或自己写完评论，点当前回复框右侧的 T 按钮带入。</p>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoQuickButtons" />
-        <label for="promoQuickButtons" style="margin:0;font-weight:400">回复框右侧显示 T 按钮（默认开启，与 AI 评论无F）</label>
+        <label for="promoQuickButtons" style="margin:0;font-weight:400">回复框右侧显示 T 按钮（默认开启，与 AI 评论无关）</label>
       </div>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoCopyOnly" />
-        <label for="promoCopyOnly" style="margin:0;font-weight:400">安全模式：T 只复制推广句，我自己粘贴（默认F闭）</label>
+        <label for="promoCopyOnly" style="margin:0;font-weight:400">安全模式：T 只复制推广句，我自己粘贴（默认关闭）</label>
       </div>
       <p class="tiny" style="margin:0 0 8px">全页只出现一个 T 按钮，跟着当前回复框走。左键随机换一句、右键去掉；写回一次全量替换，不压字、不重复、不弄丢正文。</p>
       <div class="row" style="margin:7px 0">
         <input type="checkbox" id="promoEnabled" />
-        <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的候选自动随机附一句（默认F闭）</label>
+        <label for="promoEnabled" style="margin:0;font-weight:400">AI 生成的候选自动随机附一句（默认关闭）</label>
       </div>
       <label for="promoTarget">推广主题</label>
       <select id="promoTarget">
@@ -781,13 +781,13 @@
       </div>
       <div class="row" style="margin:7px 0 0">
         <input type="checkbox" id="deepseekJsonMode" />
-        <label for="deepseekJsonMode" style="margin:0;font-weight:400;font-size:var(--fs-form)">强制 JSON 输出（官方模型支持，兼容网F报错时F掉）</label>
+        <label for="deepseekJsonMode" style="margin:0;font-weight:400;font-size:var(--fs-form)">强制 JSON 输出（官方模型支持，兼容网关报错时关掉）</label>
       </div>
       <p class="tiny" style="margin:6px 0 0">官方 <b>https://api.deepseek.com</b>；模型 <b>deepseek-v4-flash</b>（快）/ <b>deepseek-v4-pro</b>（强），旧名 deepseek-chat 已弃用。Key 只存本机，按量计费。</p>
     </div>
     <div class="row" style="margin:8px 0 10px">
       <input type="checkbox" id="grokPreferNative" />
-      <label for="grokPreferNative" style="margin:0;font-weight:400">自动模式下优先站内直连（F掉＝恢复旧的「有 Key 走 API、没 Key 走页面」）</label>
+      <label for="grokPreferNative" style="margin:0;font-weight:400">自动模式下优先站内直连（关掉＝恢复旧的「有 Key 走 API、没 Key 走页面」）</label>
     </div>
 
     <div class="promptbox">
@@ -837,7 +837,7 @@
       </div>
       <div class="row" style="margin:8px 0 0">
         <input type="checkbox" id="grokPageAutoSubmit" />
-        <label for="grokPageAutoSubmit" style="margin:0;font-weight:400">自动点发送（F掉＝只填词，自己按发送后再点「读取 Grok 回答」）</label>
+        <label for="grokPageAutoSubmit" style="margin:0;font-weight:400">自动点发送（关掉＝只填词，自己按发送后再点「读取 Grok 回答」）</label>
       </div>
       <div class="row" style="margin:6px 0 0">
         <input type="checkbox" id="grokPageNewChat" />
@@ -847,7 +847,7 @@
     </details>
 
     <details class="apiset">
-      <summary>🔑 xAI API 专属设置（Key / 模型 / 网F）</summary>
+      <summary>🔑 xAI API 专属设置（Key / 模型 / 网关）</summary>
       <label for="grokKey">xAI API Key（页面模式可留空）</label>
       <input type="password" id="grokKey" placeholder="xai-…" autocomplete="off" spellcheck="false" />
       <div class="g2">
@@ -863,7 +863,7 @@
           <input type="text" id="grokModel" placeholder="grok-4.3" spellcheck="false" />
         </div>
       </div>
-      <label for="grokBaseUrl">接口地址（默认官方；也可填兼容网F）</label>
+      <label for="grokBaseUrl">接口地址（默认官方；也可填兼容网关）</label>
       <input type="text" id="grokBaseUrl" placeholder="https://api.x.ai/v1" spellcheck="false" />
     </details>
 
@@ -872,7 +872,7 @@
       <button type="button" id="openGrok">🪟 打开 Grok 页面</button>
     </div>
     <div class="btnrow">
-      <button type="button" id="grantOrigin">允许网F域名</button>
+      <button type="button" id="grantOrigin">允许网关域名</button>
       <button type="button" id="showKey">👁 显示 Key</button>
     </div>
     <div class="btnrow">
@@ -900,7 +900,7 @@
     <div class="info-card" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
       <div class="info-head">
         <strong id="infoTitle">说明</strong>
-        <button type="button" id="infoClose" aria-label="F闭">✕</button>
+        <button type="button" id="infoClose" aria-label="关闭">✕</button>
       </div>
       <div id="infoBody" class="info-body"></div>
       <div class="info-foot"><button type="button" id="infoOk">知道了</button></div>

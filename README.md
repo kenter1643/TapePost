@@ -5,7 +5,7 @@
 - 介绍页：<https://kenter1643.github.io/TapePost/>
 - 隐私政策：<https://kenter1643.github.io/TapePost/privacy.html>
 - 源码：<https://github.com/kenter1643/TapePost>
-- 版本：**1.5.26**（本仓库源码）　｜　Chrome Web Store 上架包：`store/TapePost_1.5.26_store.zip`　｜　Manifest V3　｜　Chrome 116+
+- 版本：**1.5.27**（本仓库源码）　｜　Chrome Web Store 上架包：`store/TapePost_1.5.27_store.zip`　｜　Manifest V3　｜　Chrome 116+
 - **版本规则**：未经明确授权，只在 1.5 系列里顺延补丁号（1.5.3 → 1.5.4 …），**不自行跳 1.6 / 2.0 等大版本**；新增功能一律算补丁，不改动 minor / major 号。
 
 ![TapePost 功能示意](docs/assets/screenshots/01_overview_1280x800.png)
@@ -17,11 +17,34 @@
 1. **只取这一条**：按正文锚点定位，剥掉昵称、时间、认证标签、话题尾巴等元信息；按钮点击时实时重新解析卡片，避免无限滚动的 DOM 复用导致抓错内容。
 2. **取全部配图**：九宫格、多个媒体容器、懒加载属性、CSS 背景图、内联 `pic_infos`、X 的 `name=orig` 原图，最多 9 张；自动排除头像等干扰图。
 3. **本地去水印**：逐张用局部对比提取亮笔画 + 全图重叠瓦片扫描定位任意位置的水印条带（含拼接长图中间、多帧重复），只重建条带内的水印像素（含半透明抗锯齿边缘），用周围真实纹理加权填充；没检测到的图像素一个字节都不改，不会强行抹图。
-4. **多图托盘**：右下角弹出「干净图 N 张」，点缩略图可全屏放大浏览（左右切换 / 1:1 原图 / ESC F闭），可逐张复制、拼长图、下载到临时目录；托盘就绪后再点按钮打开 X，避免 X 抢焦点。
+4. **多图托盘**：右下角弹出「干净图 N 张」，点缩略图可全屏放大浏览（左右切换 / 1:1 原图 / ESC 关闭），可逐张复制、拼长图、下载到临时目录；托盘就绪后再点按钮打开 X，避免 X 抢焦点。
 5. **文字预填**：清洗后的正文通过 `x.com/intent/tweet?text=...` 预填到发推框，你在 X 里粘贴图片、确认内容后**手动点发送**。
 
 
-> **版本状态（2026-11-15）**：本仓库 `main` 是 **1.5.24**（本次更新见下一节；以下为 1.5.7 及更早的历史记录）。此前 **1.5.4**（**修复**：微博首页带视频的帖子仍然看不到「一键转发」按钮 —— 真机（已登录 weibo.com）确认扩展已加载 v1.5.3、图文帖按钮正常，视频帖的入口被播放器图层 / 微博框架重渲染抹掉，且播放器无障碍文本不断变化让内容指纹抖动；现在视频入口改挂在页面根层的固定悬浮条，按卡片位置跟随，视频卡片内部不再写入任何按钮。仍是纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。此前 **1.5.3**（**新增**：AI 回复可选 DeepSeek API 模式 —— 运行模式新增第五种「DeepSeek API」，Key / 模型 / 接口地址独立配置，两个 AI 功能与「测试当前模式」都走 DeepSeek；新增 `api.deepseek.com` 一条主机权限，只在用户主动选择并发起 AI 请求时使用；默认站内直连与既有 xAI 设置一行未动）。此前 **1.5.2**（**修复**：微博首页视频微博与 /tv 视频频道看不到「一键转发」按钮 —— 视频信号识别放宽到播放按钮 / 视频链接 / 播放器容器，找不到锚点时退回卡片本身，卡片选择器覆盖不到的视频单元注入独立悬浮入口「一键转发 + 视频剪辑」，层级提到播放器之上；纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。同一个 1.5.2 补丁里还包含（新增视频一键转发工作台：卡片「视频剪辑」快捷入口、1~4 段剪接拼接、逐帧去水印、MP4/WebM 导出；含视频的一键转发不再自动开窗抢焦点；此前按真机反馈修复右下角水印漏检：瓦片贴边扫描 + 自适应行阈值 + 结构校验 + 条带纹理重建；商店上架包 `store/TapePost_1.5.2_store.zip`，`store/listing.json` 已同步；TapeUP 卡片删掉与主值重复的页头美元折算价；此前 1.4.29 多图托盘缩略图可点开大图浏览：左右切换 / 1:1 原图 / ESC 或点空白F闭；此前 1.4.28 按真机反馈重写水印检测：拼接长图中间 / 多帧重复水印也能逐处去掉；此前 1.4.27 把所有图片逐张全图去水印 + 4K 高清输出；此前 1.4.26 行情区压成两行：UP 单行 + ②③ 并排；此前 1.4.25 移除昆哥个人介绍卡与生态面板徽章；此前 1.4.24 把行情区精简为只留数字、去掉来源与版本说明；此前 1.4.23 把 UP 主值改抓 K 线图右侧绿色「当前价标签」那个随成交跳动的动态价，页头三数完整保留；行情区按紧凑版重排，收窄到 330px；此前 1.4.22 把行情面板改版为上中下三块、完整展示全部字段；此前 1.4.21 按真机页面重新校准 TapeUP 内盘价为 `0.0264 BEM/UP · $0.3181 · +19.44%`，BEM 与矿机日产价两项明确标注来自 Firsto；矿机日产价改用 /circuits/other 页顶实时挂单参考价；版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板）；Chrome Web Store 待上架版本为 **1.5.21**（此前首次提交审核的条目是 1.4.2，代码不同但数据流向口径一致）。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取；1.4.20 只在**同一个已授权域名** `api-tapeout.firsto.ai` 上换了一个公开只读接口路径（`/v1/analytics/circuits` → `/v1/circuit-holders`），并把矿机卡跳转改到 `tapeout.firsto.ai/circuits/other`（普通网页跳转，不需要新权限），不新增域名、权限或网络接收方。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。**1.5.4 已同步** `store/listing.json`（含行情域名、`alarms` / `notifications` 权限理由）与 `docs/privacy.html`，提交前按 `pre_submit_checklist` 核对 Dashboard 表单即可。**1.4.22 只改本机行情面板的布局与文案**（三列 → 上中下三块 + 完整字段 + 可折叠采集明细），不新增数据源、权限、域名或网络接收方。**1.4.23 也只改本机采集与渲染**（新增读取同一页面上已存在的 K 线图例文本 + 收紧布局），不新增数据源、权限、域名或网络接收方。1.5 上架时上述资料已一次性统一，不再需要分版本补件。
+> **版本状态（2026-11-15）**：本仓库 `main` 是 **1.5.24**（本次更新见下一节；以下为 1.5.7 及更早的历史记录）。此前 **1.5.4**（**修复**：微博首页带视频的帖子仍然看不到「一键转发」按钮 —— 真机（已登录 weibo.com）确认扩展已加载 v1.5.3、图文帖按钮正常，视频帖的入口被播放器图层 / 微博框架重渲染抹掉，且播放器无障碍文本不断变化让内容指纹抖动；现在视频入口改挂在页面根层的固定悬浮条，按卡片位置跟随，视频卡片内部不再写入任何按钮。仍是纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。此前 **1.5.3**（**新增**：AI 回复可选 DeepSeek API 模式 —— 运行模式新增第五种「DeepSeek API」，Key / 模型 / 接口地址独立配置，两个 AI 功能与「测试当前模式」都走 DeepSeek；新增 `api.deepseek.com` 一条主机权限，只在用户主动选择并发起 AI 请求时使用；默认站内直连与既有 xAI 设置一行未动）。此前 **1.5.2**（**修复**：微博首页视频微博与 /tv 视频频道看不到「一键转发」按钮 —— 视频信号识别放宽到播放按钮 / 视频链接 / 播放器容器，找不到锚点时退回卡片本身，卡片选择器覆盖不到的视频单元注入独立悬浮入口「一键转发 + 视频剪辑」，层级提到播放器之上；纯本机 DOM 注入，不新增权限 / 域名 / 数据接收方）。同一个 1.5.2 补丁里还包含（新增视频一键转发工作台：卡片「视频剪辑」快捷入口、1~4 段剪接拼接、逐帧去水印、MP4/WebM 导出；含视频的一键转发不再自动开窗抢焦点；此前按真机反馈修复右下角水印漏检：瓦片贴边扫描 + 自适应行阈值 + 结构校验 + 条带纹理重建；商店上架包 `store/TapePost_1.5.2_store.zip`，`store/listing.json` 已同步；TapeUP 卡片删掉与主值重复的页头美元折算价；此前 1.4.29 多图托盘缩略图可点开大图浏览：左右切换 / 1:1 原图 / ESC 或点空白关闭；此前 1.4.28 按真机反馈重写水印检测：拼接长图中间 / 多帧重复水印也能逐处去掉；此前 1.4.27 把所有图片逐张全图去水印 + 4K 高清输出；此前 1.4.26 行情区压成两行：UP 单行 + ②③ 并排；此前 1.4.25 移除昆哥个人介绍卡与生态面板徽章；此前 1.4.24 把行情区精简为只留数字、去掉来源与版本说明；此前 1.4.23 把 UP 主值改抓 K 线图右侧绿色「当前价标签」那个随成交跳动的动态价，页头三数完整保留；行情区按紧凑版重排，收窄到 330px；此前 1.4.22 把行情面板改版为上中下三块、完整展示全部字段；此前 1.4.21 按真机页面重新校准 TapeUP 内盘价为 `0.0264 BEM/UP · $0.3181 · +19.44%`，BEM 与矿机日产价两项明确标注来自 Firsto；矿机日产价改用 /circuits/other 页顶实时挂单参考价；版本号常驻显示在 TapePost 旁边；AI 评论站内直连提示词对齐 X Viral Monitor 极简模板）；Chrome Web Store 待上架版本为 **1.5.21**（此前首次提交审核的条目是 1.4.2，代码不同但数据流向口径一致）。1.4.18 只改本机提示词构造与回答解析，1.4.19 只改本机 UI 与版本读取；1.4.20 只在**同一个已授权域名** `api-tapeout.firsto.ai` 上换了一个公开只读接口路径（`/v1/analytics/circuits` → `/v1/circuit-holders`），并把矿机卡跳转改到 `tapeout.firsto.ai/circuits/other`（普通网页跳转，不需要新权限），不新增域名、权限或网络接收方。`docs/privacy.html` 已同步 1.4.13 的两个只读行情域名、`alarms` / `notifications` 权限与本地阈值存储说明；1.4.14 / 1.4.15 只改本机签名构造与响应解析，不新增网络请求或权限。1.4.16 把行情源换成 tapeup.io 内盘价采集：移除 `api.dexscreener.com` 主机权限、新增 `tapeup.io` 主机权限（仅用于在交易页注入内容脚本读取页面显示的内盘价，不发请求、不读页面外数据），属网络请求变更。**1.5.4 已同步** `store/listing.json`（含行情域名、`alarms` / `notifications` 权限理由）与 `docs/privacy.html`，提交前按 `pre_submit_checklist` 核对 Dashboard 表单即可。**1.4.22 只改本机行情面板的布局与文案**（三列 → 上中下三块 + 完整字段 + 可折叠采集明细），不新增数据源、权限、域名或网络接收方。**1.4.23 也只改本机采集与渲染**（新增读取同一页面上已存在的 K 线图例文本 + 收紧布局），不新增数据源、权限、域名或网络接收方。1.5 上架时上述资料已一次性统一，不再需要分版本补件。
+
+### 1.5.27：互F管理与 X 增长计划完善（批量取F逐屏查找 / 谁取F了我 / 真实发送计数）
+
+用户反馈「互F管理，还有增长计划，功能都没有完善」。逐项排查后补齐以下缺口（全部离线测试覆盖）：
+
+**互F管理**
+- **批量取F能处理整张列表了**：X 的「F注中」是虚拟滚动，同一时刻只渲染十几行。旧版只在当前屏幕里找人，勾了不在屏上的账号就「没找到这一行」，连续 3 次即停机（离线复现：300 人列表勾 5 个分散账号，旧版只成功 1 个）。现在先回到列表顶部，逐屏把「本屏可见且待处理」的人处理完再往下滚；到底仍没出现的记「列表里没找到（可能已取F）」，**不算定位失败、不触发停机**。「找到行但按钮不对 / 状态没变」连续 3 次仍自动停机。
+- **暂停 / 刷新后「继续」真的能继续**：旧版暂停超过 5 分钟或执行页刷新后循环已退出，点「继续」只改状态、什么都不会发生。现在暂停即退出循环，「继续」会核对「F注中」页后重新下发执行，从剩下的人接着处理、不重复点；执行页刷新导致心跳过期时，任务自动改为「已暂停」，**绝不自动续跑**。
+- **名单保持新鲜**：取F成功的人同步移出本机「F注中」（旧版一直算作「未回F」）；用墓碑防止被另一个 X 标签页的旧副本复活。浮层「全量扫描」真正到底后，清理本轮没再出现的账号，并和上一次完整扫描对比生成变化记录；**本轮看到的人数不足旧名单 85% 时不清理、不误报**；第一次全量扫描只建立基线。
+- **新增「⑤ 谁取F了我」**：最近 30 天粉丝全量扫描对比出的取F名单（标出「你还F注着 TA」），以及最近 30 次变化记录（新粉丝 / 取F了你 / 已不在列表 / TapePost 批量取F）。
+- 数据口径统一到 `follow-core.js`（`normalizeData` / `mergeData` / `ingestUsers` / `removeHandles` / `finishFullScan` / `recentLostFollowers`），面板与桥接层共用，不再各写一份、互相丢字段。
+
+**X 增长计划**
+- **计数真实发送**：新增 `growth-watch.js`（X 专属第三段内容脚本），旁听你点 X 自己的「发布 / 回复」按钮和 Ctrl/⌘+Enter。刚用 TapePost 准备过的那条只标「已发送」、不重复 +1；你自己手写直接发的也计数。点击后等 X 页面给出结果：「已发送」提示 / 输入框清空 / 发送窗口关闭算成功，**成功才 +1**；X 报错记「失败」、15 秒没结果记「未确认」，都不计数。TapePost 准备好的内容只记「待发送」，确认发送成功时才计入。每次发送记入本机**发送日志**：存在扩展自己的 IndexedDB 数据库 `tapepost-growth` / `sendLog`（按 `day`、`at` 建索引），刷新、重启浏览器、重载扩展都不丢；记录时间 / 类型 / 回复对象 / 帖子 id / 结果 / 发出的文字最多 280 字，保留 90 天，面板可按天查看、筛选、导出 CSV、一键清空。数据库打不开时临时写到 `chrome.storage.local`，下次自动搬进数据库。**不阻止、不代点、不读未发送的草稿、不发请求**；按钮禁用（没写内容）时不计数。
+- **评论自动记到大 V**：旧版把帖子 id 当成评论对象传给后台，清单里的大 V 永远不会自动 +1。现在传作者 handle + 帖子 id，评论对象在清单里就自动记「今日 / 累计」进度。「手动记一条」用于手机等其他地方的评论，并与 2 分钟内已自动计到的同一对象合并。
+- **推荐清单每日轮换**：按「今天还没评过 → 最久没评 → 粉丝多」排序；支持搜索、手动添加（可粘贴主页链接）、单个移除；统计卡第三张改为「今日已覆盖 X / 共 Y 个大 V」，点开即「今天该评论谁」。
+- **节奏与监督**：显示「此刻应完成多少 / 落后多少 / 剩余每小时需多少」、连续达标天数（按当天目标判断）、14 天柱状图；新增中途落后提醒（10:00 起、实际不到应完成的 70%、最多 3 小时一次，可关）。
+- 一天 1000 条评论时，去重 id 与明细上限 600 / 400 → 1500，不再被截断；后台增长计划的读-改-写串行执行，「写入回复框」紧接着「点回复」两条消息不会互相覆盖；面板按钮改为事件委托（旧版打开「大 V 评论对象」明细后整页重绘一次，明细里点一下「记一条」会记两次）。
+
+**其他**
+- 修正此前全站「关→F」替换误伤的普通词语：`F闭 → 关闭`、`开F → 开关`、`网F → 网关`、`无F → 无关`、`相F → 相关`、`F掉 → 关掉`、`F键 → 关键`、`F联 → 关联`、`F于 → 关于`（「F注 / 互F / 取F / 回F」等F注相关用语保持不变；匹配 X 页面的正则本就保留原字，功能不受影响）。
+- `test-follow.js` 不再因本机没有 `../vote-ledger` 或 Obsidian 教程而直接崩溃（缺失时跳过对应断言）；各测试的「当前版本」断言改为读取 `manifest.json`，以后升补丁号不用再逐个改测试。
+- 权限仍 9 项 / 34 条、`content_scripts` 仍 3 段，不新增域名或第三方接收方；商店包 38 → **39 个文件**（新增 `growth-watch.js`）。两份隐私政策副本与上架资料同步为 1.5.27（`vote-ledger/privacy.html` 与 Obsidian 教程在仓库外，需另行同步）。
 
 ### 1.5.26：新增 X 增长计划（每日 40 发推 / 1000 评论、监督提醒、大 V 推荐清单）
 
@@ -37,13 +60,13 @@
 用户要求「不要做扫描才能高亮，打开F注页就直接在页面元素上判断」，并反馈「鼠标移过去再移开，高亮全没了」。
 
 - **不扫描也判定**：X 自己在用户行里渲染互F标识（英文 `Follows you` / 中文 `F注了你`）。新版读这个叶子节点，页面有互F标识即可区分谁没回F；本机已存粉丝名单作为补充，两者都没有时一条都不标，绝不整页误标。
-- **打开即高亮**：进入 `/following` 自动给未回F账号红底 + 头像发光圈 + 用户名高亮 + ✕「未回F」徽标，默认开启，不必先点扫描或开F；手动F掉仍即刻清除。
+- **打开即高亮**：进入 `/following` 自动给未回F账号红底 + 头像发光圈 + 用户名高亮 + ✕「未回F」徽标，默认开启，不必先点扫描或开关；手动关掉仍即刻清除。
 - **重绘补标**：鼠标移上/移开会让 X 虚拟列表重建行节点，旧版只在「没有徽标」时才补类，class 被冲掉但徽标还在就永远补不回来。现改为逐项幂等补标 + `MutationObserver` + 鼠标事件即时补齐，不重复插徽标。
-- **安全与体积不变**：不 fetch、不读凭证、不写 `followTask`、不自动确认弹窗；权限 9 项 / 34 条、`content_scripts` 3 段、商店包 35 文件均不变。新增 test-follow 第 14 节离线模拟验证零名单判定、默认开启、重绘补标与手动F闭。
+- **安全与体积不变**：不 fetch、不读凭证、不写 `followTask`、不自动确认弹窗；权限 9 项 / 34 条、`content_scripts` 3 段、商店包 35 文件均不变。新增 test-follow 第 14 节离线模拟验证零名单判定、默认开启、重绘补标与手动关闭。
 
 ### 1.5.24：修复 X 改版后F注列表「未回F」标红失效
 
-用户反馈在 X F注页看不到未回F标红 / 头像发光 / 用户名高亮。真机排查确认：不是没采名单（F注 6,206 + 粉丝 2,427 都齐了、标红开F也开着），而是 **X 改版了 DOM**——用户行不再是 `<div data-testid="UserCell">`，改成了 `<button role="button">` 内嵌 `a[href="/handle"]` 与 `aria-label="Following @handle"` 的F注按钮。旧版 `markRows()` 写死 `querySelectorAll('[data-testid="UserCell"]')`，一行都匹配不到，自然不会插入徽标或高亮。
+用户反馈在 X F注页看不到未回F标红 / 头像发光 / 用户名高亮。真机排查确认：不是没采名单（F注 6,206 + 粉丝 2,427 都齐了、标红开关也开着），而是 **X 改版了 DOM**——用户行不再是 `<div data-testid="UserCell">`，改成了 `<button role="button">` 内嵌 `a[href="/handle"]` 与 `aria-label="Following @handle"` 的F注按钮。旧版 `markRows()` 写死 `querySelectorAll('[data-testid="UserCell"]')`，一行都匹配不到，自然不会插入徽标或高亮。
 
 - **修复**：`follow-overlay.js` 新增 `findUserCells()`——优先用老的 `UserCell` testid；取不到时从F注 / 回F按钮的 `aria-label` 里的 handle 反推最近的、handle 一致的祖先行容器，兼容新旧两种 DOM。行标记 / 头像 class / 徽标插入分步容错，任一 DOM 步骤失败互不影响。
 - **样式同步**：浮层 CSS 不再写死 `[data-testid="UserCell"]` 和 `img[src*="profile_images"]`，改为只认我们自己的 `.tpf-row-notback` 行类与 `.tpf-nb-avatar` 头像类（认证徽章是 SVG 不是 img，不会误伤发光圈）。
@@ -55,7 +78,7 @@
 用户反馈「插件运行有 ERROR 信息」，位置在 `chrome://extensions → 错误`。排查确认三类来源，逐一加固：
 
 - **`Unchecked runtime.lastError`**：`follow.js` / `follow-overlay.js` / `follow-bridge.js`（1.5.19~1.5.22 新增）以及 `popup.js` / `content.js` / `panel.js` / `background.js` 价格模块里，回调式 `chrome.storage.local.get/set`、`chrome.tabs.query/create`、`chrome.storage.sync.get/set` 的回调没有同步读取 `chrome.runtime.lastError`。扩展刚重载、名单触及配额或 API 调用失败时，Chrome 会把未检查的错误记进「错误」面板；桥接层每 1.5 秒、浮层每 1.2 秒读一次 storage，容易持续刷屏。现在全部同步读取，并让写入失败如实返回 `false`。
-- **`Error handling response` / 端口F闭**：弹窗、分析面板在后台长任务（转发、取价、钱包同步、批量取F）完成前被F掉，后台或内容脚本之后调用异步 `sendResponse` 时消息端口已F闭。`background.js` 新增 `guardedResponse()` 统一包住全部 5 个 `onMessage` 监听器（只回一次包、吞掉端口F闭异常、回调后同步读取 `lastError`）；`follow-bridge.js` 在自己的 ISOLATED world 里同样包一层，`FOLLOW_TASK_START` 长任务无论成功失败都只回一次包。函数定义放在 1.4.13 价格模块标记之后，确保离线自检把该段源码单独载入时也能解析（这次实测踩过：放文件顶部会让价格模块引用未定义函数）。
+- **`Error handling response` / 端口关闭**：弹窗、分析面板在后台长任务（转发、取价、钱包同步、批量取F）完成前被关掉，后台或内容脚本之后调用异步 `sendResponse` 时消息端口已关闭。`background.js` 新增 `guardedResponse()` 统一包住全部 5 个 `onMessage` 监听器（只回一次包、吞掉端口关闭异常、回调后同步读取 `lastError`）；`follow-bridge.js` 在自己的 ISOLATED world 里同样包一层，`FOLLOW_TASK_START` 长任务无论成功失败都只回一次包。函数定义放在 1.4.13 价格模块标记之后，确保离线自检把该段源码单独载入时也能解析（这次实测踩过：放文件顶部会让价格模块引用未定义函数）。
 - **`Uncaught (in promise)` / `Error in event handler`**：`follow-overlay.js` 的 `render()` / `markRows()` / `startScan()` 等 async 函数由定时器与 `storage.onChanged` 直接调用，没有 `.catch()`；`follow.js` 用 `safe(fn)` 包装所有 async 事件回调，顶层 `refresh()` 补 catch；无回调的 `chrome.tabs.create` / `chrome.alarms.create` / `chrome.storage.sync.set` 改为带回调读 `lastError` 或补 Promise catch。
 - **口径不变**：只加错误兜底，不改任何功能逻辑、发 X 预填文案与本机数据种类；不主动发请求、不重放、不改参数、不读请求头 / Cookie / ct0 / bearer / 签名；名单仍每批实时落盘、只存本机 `chrome.storage.local`。权限仍 9 项 / 34 条、`content_scripts` 仍 3 段、商店包仍 35 文件，不新增域名或第三方接收方；线上账本服务不重部署。新增 `test-follow.js` 第 11 节（全量扫描所有运行时 JS 的回调式 chrome API，杜绝漏网），`test-harness.js` 仍为 489/532、44 条旧 FAIL 逐行一致、新增失败 0。
 
@@ -64,7 +87,7 @@
 在两处「列表」里把未互F（我F注了、对方没F注我）的账号做得更醒目：
 
 - **X 页面内扫描浮层**：打开「列表里标红未回F」后，未回F的用户格子从单条红边升级为**红色渐变底色 + 高亮描边 + 发光**；**头像加红色描边发光环、用户名 / @handle 高亮发光**，一眼就能认出来；徽标保留「未回F」文案（伪元素加 ✕ 标记，读屏与断言不受影响）。浮层里的取F引导按钮「🎯 从当前位置选未回F」做成渐变发光 CTA。
-- **F注F系分析面板明细清单**：粉丝名单齐备时，未互F的行加 `item-notback` 类（左侧渐变高亮条 + 淡红底）、行内「🚫 未互F」徽标，以及「🎯 取F」特色渐变按钮；**头像加红色描边发光环 + 轻微呼吸、用户名 / @handle 高亮发光**（`prefers-reduced-motion` 下自动F闭动效）。该按钮**只把账号勾选并滚动到预演区，绝不直接取F**，仍必须点「预演」核对后由用户确认；受保护账号禁用。底部「预演 / 确认执行取F」两个按钮加扫光 + 抬升动效（`prefers-reduced-motion` 下自动F闭）。
+- **F注F系分析面板明细清单**：粉丝名单齐备时，未互F的行加 `item-notback` 类（左侧渐变高亮条 + 淡红底）、行内「🚫 未互F」徽标，以及「🎯 取F」特色渐变按钮；**头像加红色描边发光环 + 轻微呼吸、用户名 / @handle 高亮发光**（`prefers-reduced-motion` 下自动关闭动效）。该按钮**只把账号勾选并滚动到预演区，绝不直接取F**，仍必须点「预演」核对后由用户确认；受保护账号禁用。底部「预演 / 确认执行取F」两个按钮加扫光 + 抬升动效（`prefers-reduced-motion` 下自动关闭）。
 - **安全与口径不变**：只在已有两份名单都齐时标记，名单不全绝不误标；不 fetch、不读凭证、不写 `followTask`、不自动确认弹窗；权限仍 9 项 / 34 条、`content_scripts` 仍 3 段、商店包仍 35 文件。
 
 ### 1.5.22：修复「扫描没扫完就停了」（多信号结束判定）
@@ -82,16 +105,16 @@
 
 用户反馈「Followback Marker · Scan 部分我看全部是英文」「我需要把他继承进来 我的TapePost」。该第三方扩展的 Scan 面板全英文，靠浏览器 UI 语言切换；本版**不复制它的源码、不引入第二套 `fetch` / `XHR` hook**，而是把它好用的页面内交互吸收进 TapePost 自己的架构：
 
-- **页面内全中文浮层**：新增 `follow-overlay.js` / `follow-overlay.css`，由 manifest 第三段静态 `content_scripts`（ISOLATED world，仅匹配 x.com / twitter.com）注入；只在 `/following` 与 `/followers` 路径出现。提供「全量扫描」「增量续扫」「停止」、进度条、本机已存人数（F注中 / 粉丝分列）、收起 / 展开，以及可随时开F的「列表里标红未回F」（F闭即刻清除所有标记）。
-- **复用既有链路**：浮层只写 `followCapture`，`follow-bridge.js` 的 `storage.onChanged` 立即启用 MAIN world 被动采集与自动滚动，1.5.20 的「每批实时落盘 / F闭面板不丢」原样生效；桥接层按 `cap.mode` 决定从列表顶部重扫或从 `followScanAnchor` 记住的位置续扫，并在扫描过程中持续更新锚点。面板的 `startCapture()` 不写 `mode`，原有「继续采集」行为完全不变。
-- **行内标红有前提**：只有「F注中」和「粉丝」两个名单都非空的账号才参与判定，粉丝名单为空时**绝不标红**，避免把所有F注误判为未回F；标记只加在 X 自己的 `UserCell` 上，加 `tpf-row-notback` 类与「未回F」小徽标，F闭开F即刻清掉。
+- **页面内全中文浮层**：新增 `follow-overlay.js` / `follow-overlay.css`，由 manifest 第三段静态 `content_scripts`（ISOLATED world，仅匹配 x.com / twitter.com）注入；只在 `/following` 与 `/followers` 路径出现。提供「全量扫描」「增量续扫」「停止」、进度条、本机已存人数（F注中 / 粉丝分列）、收起 / 展开，以及可随时开关的「列表里标红未回F」（关闭即刻清除所有标记）。
+- **复用既有链路**：浮层只写 `followCapture`，`follow-bridge.js` 的 `storage.onChanged` 立即启用 MAIN world 被动采集与自动滚动，1.5.20 的「每批实时落盘 / 关闭面板不丢」原样生效；桥接层按 `cap.mode` 决定从列表顶部重扫或从 `followScanAnchor` 记住的位置续扫，并在扫描过程中持续更新锚点。面板的 `startCapture()` 不写 `mode`，原有「继续采集」行为完全不变。
+- **行内标红有前提**：只有「F注中」和「粉丝」两个名单都非空的账号才参与判定，粉丝名单为空时**绝不标红**，避免把所有F注误判为未回F；标记只加在 X 自己的 `UserCell` 上，加 `tpf-row-notback` 类与「未回F」小徽标，关闭开关即刻清掉。
 - **取F边界不变**：「从当前位置选未回F」只写一次性的 `followSelectionDraft`，把当前可见账号带进独立分析面板的 `state.selected`（等同手动勾选，过期 / 受保护账号不勾选），**仍须点「预演」并「我确认」才执行**；浮层绝不写 `followTask`、不设 `confirmed`、不自动确认 X 弹窗、不调用 X 任何写接口。
 - **开页走扩展内部消息**：内容脚本直接 `window.open('chrome-extension://…')` 会被 Chrome 拦，因此 `background.js` 在文件顶部同步注册 `TAPEFOLLOW_OPEN_PANEL`，由后台 `chrome.tabs.create` 打开扩展自带的 `follow.html`；不访问外部网址、不声明 `web_accessible_resources`、不新增权限。
-- **口径不变**：不主动发请求、不重放、不改参数、不读取请求头 / Cookie / ct0 / bearer / 签名；名单、锚点、界面开F与待选草稿只存本机 `chrome.storage.local`。权限仍 9 项 / 34 条，`content_scripts` 仍 3 段，不新增域名或第三方接收方；商店包 33 → **35 个文件**（新增 2 个静态脚本 / 样式，随包分发、无远程代码）。三份隐私政策、上架资料与 Obsidian 教程同步为 1.5.21；线上账本服务不重部署。新增 `test-follow.js` 第 9 节浮层离线模拟与静态不变量断言。
+- **口径不变**：不主动发请求、不重放、不改参数、不读取请求头 / Cookie / ct0 / bearer / 签名；名单、锚点、界面开关与待选草稿只存本机 `chrome.storage.local`。权限仍 9 项 / 34 条，`content_scripts` 仍 3 段，不新增域名或第三方接收方；商店包 33 → **35 个文件**（新增 2 个静态脚本 / 样式，随包分发、无远程代码）。三份隐私政策、上架资料与 Obsidian 教程同步为 1.5.21；线上账本服务不重部署。新增 `test-follow.js` 第 9 节浮层离线模拟与静态不变量断言。
 
-### 1.5.20：修复F注名单丢失（实时落盘 / F闭面板不丢 / 断点续采）
+### 1.5.20：修复F注名单丢失（实时落盘 / 关闭面板不丢 / 断点续采）
 
-用户反馈「抓取到的数据要实时记录到缓存中，我上次抓取一部分，重新打开粉丝分析就没有了」。根因在 `follow-bridge.js`：收到采集批次时要求 `followCapture.status === 'running'` 且来源等于 `cap.target` 才写 `chrome.storage.local`，采集一旦自动结束、或F掉面板让状态卡住，后续批次就被整批丢弃；面板写 `followData` 时又用打开时的旧快照整体覆盖，会把桥接层刚落盘的人抹掉。
+用户反馈「抓取到的数据要实时记录到缓存中，我上次抓取一部分，重新打开粉丝分析就没有了」。根因在 `follow-bridge.js`：收到采集批次时要求 `followCapture.status === 'running'` 且来源等于 `cap.target` 才写 `chrome.storage.local`，采集一旦自动结束、或关掉面板让状态卡住，后续批次就被整批丢弃；面板写 `followData` 时又用打开时的旧快照整体覆盖，会把桥接层刚落盘的人抹掉。
 
 - **实时落盘**：`follow-bridge.js` 每批到达立即 `mergeSnapshot` 并写入本机缓存，与采集状态完全解耦，按当前 X 标签页来源分类；写入前用「storage 最新值 + 内存副本」合并，检查 `chrome.runtime.lastError`，失败保留副本下批补写并把原因写进采集状态；大名单自动裁掉超长简介，避免触及 `storage.local` 配额导致静默失败。
 - **卸载不丢尾批**：`follow-capture.js` 在 `pagehide` / `beforeunload` / 切后台时强制 `flush()`；桥接层监听 `storage.onChanged`，面板点「开始采集」后立刻下发启用命令，不用等 1.5 秒滚动 tick，X 页面刷新后也会按已保存状态补发。
@@ -146,15 +169,15 @@
 
 - **问题**：用户反馈弹窗「TapeUP · $UP 我的资产」六格全是横杠、状态写「未采集」，并指出「应该是定时读资产的时候一起采集的」。1.5.13 只在用户**主动打开** tapeup.io 资产页时才采集，打开弹窗、点刷新、定时轮询都不会触发，所以本机缓存一直是空的。
 - **自动触发**：`background.js` 新增 `TAPEUP_AUTO` 区块：30 分钟 `chrome.alarms` 定时（安装 / 启动重注册）、价格轮询联动、打开弹窗（`WALLET_STATUS`）、点刷新资产（`ASSETS_GET`，强制）、点状态标签（`ASSETS_TAPEUP_COLLECT`，强制）都走统一入口 `tuCollect()`；内部有 30 分钟新鲜度节流与「正在采集」90 秒去重，已绑定钱包才会动手。
-- **标签生命周期**：已有 `/trade/assets` 标签时只发 `TAPUP_ASSETS_SCAN` 催内容脚本立即重扫，不新开、不导航、不干扰用户；否则静默创建 `active:false` 的后台标签（`?tpauto=1`），成功后自动F闭，25 秒超时或一次性清理 alarm 兜底收标签（防 MV3 service worker 被回收）；用户中途切到该标签就不F。
-- **状态机**：`tapeup-price.js` 失败也回传 `probe` 诊断（只有布尔与短文本），后台细分 `collecting / collected / need-wallet / no-fields / timeout / no-wallet`；失败**不覆盖**上次有效缓存，连续失败按 30 → 60 → 120 → 240 分钟降频。弹窗状态标签可点立即重采，`chrome.storage.onChanged` 自动回刷，不用反复开F弹窗。
-- **口径不变**：仍只读页面已显示的文本，白名单清洗后只存本机；不读取地址 / 凭据、不调用站内接口、不上传。不新增权限 / 主机权限 / 域名 / 数据接收方 / 运行时文件：**9 项 / 36 条 / 29 文件**。三份隐私政策新增 1.5.14 段如实披露「定时静默打开同一资产页并自动F闭标签」。
+- **标签生命周期**：已有 `/trade/assets` 标签时只发 `TAPUP_ASSETS_SCAN` 催内容脚本立即重扫，不新开、不导航、不干扰用户；否则静默创建 `active:false` 的后台标签（`?tpauto=1`），成功后自动关闭，25 秒超时或一次性清理 alarm 兜底收标签（防 MV3 service worker 被回收）；用户中途切到该标签就不F。
+- **状态机**：`tapeup-price.js` 失败也回传 `probe` 诊断（只有布尔与短文本），后台细分 `collecting / collected / need-wallet / no-fields / timeout / no-wallet`；失败**不覆盖**上次有效缓存，连续失败按 30 → 60 → 120 → 240 分钟降频。弹窗状态标签可点立即重采，`chrome.storage.onChanged` 自动回刷，不用反复开关弹窗。
+- **口径不变**：仍只读页面已显示的文本，白名单清洗后只存本机；不读取地址 / 凭据、不调用站内接口、不上传。不新增权限 / 主机权限 / 域名 / 数据接收方 / 运行时文件：**9 项 / 36 条 / 29 文件**。三份隐私政策新增 1.5.14 段如实披露「定时静默打开同一资产页并自动关闭标签」。
 - **自检**：新增 `test-tapeup-auto.js` **68/68**（vm 加载真实后台区块，验证 alarm 注册、标签生命周期、状态机、失败降频、不覆盖缓存）；`test-tapeup-assets.js` 同步到 **95/95**。
 
 ### 1.5.13：TapeUP「我的资产」接入面板
 
 - **问题与结论**：用户问「凭钱包地址能否读到 `https://tapeup.io/zh/trade/assets` 的我的资产」。实测该站整站 Cloudflare（后台 `fetch` 直接 403 `Just a moment...`），未连接钱包时页面只有「共 0 个代币 / 请先连接钱包」；且「待释放 / 可加速释放」是 PoB 引擎的站内买入预算、不是链上锁仓，标准 `balanceOf` 读不到。所以**只凭地址 + 后台请求读不到全量数据**，必须走页面会话。
-- **实现**：沿用 1.4.16 内盘价的老办法。`tapeup-price.js`（已通过 `content_scripts` 注入 `tapeup.io/*` 全部路径）在 `/trade/assets` 页读已渲染的文本，`price.js` 新增 `extractAssets()` 多策略解析：A 中文 / 英文表头后按列顺序取数（支持 `$31.81` / `USD 15.20` / `+19.44%`），B 卡片式「标签 + 邻近数字」兜底；表头整段先剥离，避免「持仓估值24H涨跌幅」里的 24 被当成持仓。认不出的列留空，绝不拿页面无F数字凑数。
+- **实现**：沿用 1.4.16 内盘价的老办法。`tapeup-price.js`（已通过 `content_scripts` 注入 `tapeup.io/*` 全部路径）在 `/trade/assets` 页读已渲染的文本，`price.js` 新增 `extractAssets()` 多策略解析：A 中文 / 英文表头后按列顺序取数（支持 `$31.81` / `USD 15.20` / `+19.44%`），B 卡片式「标签 + 邻近数字」兜底；表头整段先剥离，避免「持仓估值24H涨跌幅」里的 24 被当成持仓。认不出的列留空，绝不拿页面无关数字凑数。
 - **链路**：`TAPUP_ASSETS` 回传（先 `TAPE_WAKE` 防冷启动丢消息，失败 3 秒后自动重发）→ 后台只接受 tapeup.io 页面来源，经 `TapePrice.cleanAssets()` 白名单清洗（不留地址、不留页面长文本、raw 限 32 字）→ 写 `tapeupAssetsCache` 本机缓存 → `WALLET_STATUS` / `ASSETS_GET` 带出 → 弹窗新增独立「TapeUP · $UP 我的资产」组（持仓 / 待释放 / 可加速释放 / 持仓估值 / 24H 涨跌 / 代币数），标注来源、采集时间与「仅供参考」；30 分钟未刷新标 stale。未连接钱包或空表不覆盖上次有效缓存，断开钱包一并清除。
 - **口径**：这组是**页面展示值、不是按地址查的链上余额**，与 BSC / X Layer 两组明确分开；数据只在页面会话内采集、只存本机、不上传、不读取地址或凭据、不向该域发起任何额外请求、不调用站内接口。不新增权限 / 主机权限 / 域名 / 数据接收方 / 运行时文件：permissions 仍 9 项、host_permissions 仍 36 条、商店包仍 29 文件。三份隐私政策新增「1.5.13 TapeUP 我的资产」段落如实披露。
 - **顺带修两个既有小问题**：`tapeup-price.js` 里定义了却从未调用的 `ensureProbe()`（1.4.22 起的价格调试角标实际不显示）已补回；`ASSET_HEADERS` 模块级 `g` 正则的 `lastIndex` 未重置，会让第二次采集匹配失败、列数变少，已每次重置。
@@ -165,7 +188,7 @@
 
 - **问题**：用户反馈「视频去水印功能好像没有生效，水印依然存在」。根因是 `video-edit.js` 直接复用了 `inpaint.js` 为静态高清图片（1200×1466 / 648×1920）调的检测阈值（`lumStrong 175` / `deltaStrong 18` / `widthMin 90` / `jumpsConfirm 12` / `strongMin 0.08`），而视频帧被缩到 540~720p、经 H.264 压缩、水印多为半透明且只有十几像素高，检测几乎恒为「未检测到水印」。检测框为空时每一帧都把 `getImageData` 原样 `putImageData` 回去，导出的就是原画面；旧版还只在首帧检测、之后每 90 帧才重检，并且检不出也照样报「生成完成」，用户完全无从判断。
 - **视频链路单独调参**：新增 `VIDEO_WM_DEFAULTS`（只作用于视频，图片的 `TILE_DEFAULTS` 一字未动），放宽亮度 / 局部对比 / 最小宽度 / 列跳变 / 笔画密度门槛；片头每 3 帧扫一次避开黑帧与淡入（逐帧全图扫描会把 1080p 实时录制拖慢），之后约每 1 秒重检一次，可跟随移动水印；没命中立刻收手，避免偶然误检持续抹坏画面。
-- **手动兜底（F键）**：视频工作台新增「水印位置」区，提供自动检测 / 右上 / 右下 / 左上 / 左下 / 顶部整条 / 底部整条 / 中间预设（可多选），并支持「在预览上拖框」自定义；框以 0~1 归一化坐标随消息传入，导出时按实际画布换算，**每一帧无条件重建**，不依赖检测命中。预览因 CDN 限制加载不出来时预设仍然可用。
+- **手动兜底（关键）**：视频工作台新增「水印位置」区，提供自动检测 / 右上 / 右下 / 左上 / 左下 / 顶部整条 / 底部整条 / 中间预设（可多选），并支持「在预览上拖框」自定义；框以 0~1 归一化坐标随消息传入，导出时按实际画布换算，**每一帧无条件重建**，不依赖检测命中。预览因 CDN 限制加载不出来时预设仍然可用。
 - **重建算法**：图片版 `rebuildBand` 是按列取上下参考行插值，在运动画面上会把水印区拉出竖条纹、看起来像水印还在。视频改用同帧内「左右 + 上下」双向线性插值混合（`rebuildVideoBox`）＋边缘羽化，只取当前帧真实像素，框外像素一字节不动。
 - **不再静默失败**：结果返回 `wmMode` / `wm` 统计 / `wmNote`。自动一个框都没命中时，结果栏标红提示「未自动检出水印，成品仍是原画面！请在「水印位置」…后重新生成」，取代原来的「生成完成」；手动模式则明确回报「已按 N 个手动框逐帧重建 M 帧」。
 - **保持兼容**：不新增权限 / 域名 / 数据接收方 / 运行时文件，permissions 仍 9 项、host_permissions 仍 36 条、商店包仍 29 文件；三份隐私政策无数据流向变化，无需改动。新增专项自检 `test-video-watermark.js`（49/49，不进包）。
@@ -185,7 +208,7 @@
 
 - **标题 / 插件名**：用户要求「标题不要漏了 TapePost，插件名称是 TapePost信仰者工具」。工具栏弹窗与侧边栏面板标题统一显示完整名称（品牌字标 `TapePost` + 中文名「信仰者工具」，以 5px 视觉间距分层）；`manifest.json` 的 `name` / `short_name` / `default_title`、`store/listing.json` 的产品名与推广图文字、README 标题、三份隐私政策的品牌名全部同步。`panel.js` 会在运行时重写版本标签，也一并改为新名称，避免打开面板后名称被覆盖回旧值。
 - **设计系统**：两块面板共用一套内联设计令牌（品牌 / 语义色板、文本三级对比度、4pt 间距网格、圆角与阴影层级、动效缓动）；原 8/9/10/11/12/13/14/15/16/21/22/30px 的散乱字号收敛为 10（微标签）/ 11（辅助）/ 12（表单）/ 13（正文）/ 14 / 16 / 22 / 30（BEM 主数字，保持用户要求的最大化）有限字阶。
-- **交互与无障碍（UE）**：统一 hover / active / focus-visible / disabled 状态，按钮与输入补齐键盘焦点环，主按钮最小高度 38px、次级 ≥30px，增大 ↻ / 💾 / 🎨 的点击区域；统一滚动条、选中色、复选框；支持 `prefers-reduced-motion`（F闭跑道条纹无限动画）与 `prefers-contrast: more`（提高描边与辅助文字对比度）。
+- **交互与无障碍（UE）**：统一 hover / active / focus-visible / disabled 状态，按钮与输入补齐键盘焦点环，主按钮最小高度 38px、次级 ≥30px，增大 ↻ / 💾 / 🎨 的点击区域；统一滚动条、选中色、复选框；支持 `prefers-reduced-motion`（关闭跑道条纹无限动画）与 `prefers-contrast: more`（提高描边与辅助文字对比度）。
 - **缺陷修复**：① `panel.html` 跑道条纹原为 `z-index:-1`，被 body 不透明背景完全遮住，改为 `z-index:0` + `.wrap` 层级 1；② 全局 `details` / `summary` 选择器污染 `.rule` / `.hint` 内的嵌套折叠块（误加 30px 上边距与卡片背景），改为 `.wrap > details` 作用域限定；③ 弹窗 body 未重置 margin，Chrome 默认 8px 外边距可能撑出横向滚动，已 `margin:0` 并按 4pt 网格重排内边距。
 - **保持兼容**：HTML 结构、全部元素 id / class、脚本引用一字未动，行情 BEM 主数字 30px 与既有功能逻辑不变；纯界面与文案改动，permissions 仍 9 项、host_permissions 仍 36 条、商店包仍 29 文件，三份隐私政策除产品名外无需改动（无数据流向变化）。
 
@@ -293,7 +316,7 @@
 **④ $BEM 信仰者打卡 / 全网账本（`vote.js` + `vote-ledger/`）**
 - 「💪 支持 / 🤔 观望」每日一票，按**北京时间（UTC+8）**切天，所有用户看到同一张日账；界面给今日支持数、累计票数、连续打卡天数、近 7 天趋势条。当天没打卡显示红字提醒，并可在设置里开每日系统通知（默认 20:00，一天最多一次）。
 - 共享账本：零依赖 Node HTTP 服务 `vote-ledger/server.js`，已发布为在线服务，扩展默认指向它（设置里可改自建地址）。协议 `GET /api/state`、`POST /api/vote {day, stance, voterId}`、`GET /api/health`，网页版日账在 `/vote`，同一应用根路径仍是隐私政策独立副本。
-- 隐私边界：账本**只收日期、立场与「本机随机盐 + 日期」算出的 SHA-256 每日匿名去重哈希**（每天轮换，无法跨天F联同一个人），**绝不上传钱包地址 / API Key / 页面内容 / 身份信息**；同一天同一哈希只算一票，改立场是替换不是累加。断网 / 未配置账本时自动降级「本机账本」，界面标签明确写「本机」，联网后把待补投票补投并清掉本机叠加计数，不会假装是全网数据。
+- 隐私边界：账本**只收日期、立场与「本机随机盐 + 日期」算出的 SHA-256 每日匿名去重哈希**（每天轮换，无法跨天关联同一个人），**绝不上传钱包地址 / API Key / 页面内容 / 身份信息**；同一天同一哈希只算一票，改立场是替换不是累加。断网 / 未配置账本时自动降级「本机账本」，界面标签明确写「本机」，联网后把待补投票补投并清掉本机叠加计数，不会假装是全网数据。
 
 **⑤ 权限与合规**
 - `manifest.json`：`permissions` 7 → **9**（+`scripting`、+`activeTab`）；`host_permissions` 30 → **33**（+`https://tapeout.firsto.ai/*`、+`https://api.tapeapi.fun/*`、+`https://tapepost-privacy.app.workbuddy.host/*`）。
@@ -312,27 +335,27 @@
 **改动（全部在 `content.js`，纯本机 DOM）**
 - 视频卡片在 `injectIntoCard()` 里只记指纹后早退，**不再往卡片内部写任何按钮**；旧版可能残留的按钮组一并清掉，从源头消除指纹抖动与自激循环。
 - 新增 `VIDEO_BARS`（内容单元 → 固定条）与 `videoContentUnits()` / `updateVideoBars()`：微博视频内容的「一键转发 + 视频剪辑」入口挂在 **`document.body`**，用 `position:fixed` 按卡片 `getBoundingClientRect()` 定位到右上角。入口不进卡片 DOM，因此不受播放器图层、框架重渲染、overflow / stacking context 影响；卡片滚出视口自动隐藏，被页面删掉也能在下一轮扫描自愈重建。
-- 滚动（capture，覆盖微博内部滚动容器）、窗口缩放与 2.5 秒周期扫描都会即时更新位置，滚动时不进 150ms debounce，避免入口漂在旧位置；按钮点击直接把F联的真实 `<article>` 传给 `onRepost()` / `onVideoStudio()`，不依赖按钮 `closest()` 找卡片。
+- 滚动（capture，覆盖微博内部滚动容器）、窗口缩放与 2.5 秒周期扫描都会即时更新位置，滚动时不进 150ms debounce，避免入口漂在旧位置；按钮点击直接把关联的真实 `<article>` 传给 `onRepost()` / `onVideoStudio()`，不依赖按钮 `closest()` 找卡片。
 - 兼容 1.5.2 / 1.5.3 挂在卡片内部的旧悬浮条：重载扩展但没刷新页面时自动清理，不会两套入口并存。图文帖与其它站点仍走原来的卡片内标准按钮组。
 
 **校验**：20 个 JS `node --check` 全过；`node test-video-entry.js` **18/18 通过**（首页视频 article、/tv 网格单元、入口挂在 body、定位、二次扫描去重、旧条清理、模拟框架抹掉卡片内节点、滚动出视口隐藏 / 回视口复位、卡片移除后回收、图文帖不受影响）；`test-harness.js` 489/532，与 1.5.3 基线完全一致（视频场景的两项旧口径断言已按新行为改写）；`test-deepseek.js` 30/30。**修复后的真机效果需在 `chrome://extensions` 重新加载扩展并刷新微博页验证** —— 浏览器不会自动热更新，本轮无法代替用户执行重载。
 
 ### 1.5.3：AI 回复新增 DeepSeek API 模式
 
-用户要求「AI 回复增加可以配置 DeepSeek 的 API 模式」。此前 AI 只有「自动 / 站内直连 X 自带 Grok / xAI API / 页面模式」，换供应商只能手填兼容网F。1.5.3 把 DeepSeek 做成**第五种独立运行模式**，与 xAI 的 Key / 模型 / 网F完全隔离；切换后「X 一键评论」「链接真伪查询」和「测试当前模式」都走 DeepSeek。
+用户要求「AI 回复增加可以配置 DeepSeek 的 API 模式」。此前 AI 只有「自动 / 站内直连 X 自带 Grok / xAI API / 页面模式」，换供应商只能手填兼容网关。1.5.3 把 DeepSeek 做成**第五种独立运行模式**，与 xAI 的 Key / 模型 / 网关完全隔离；切换后「X 一键评论」「链接真伪查询」和「测试当前模式」都走 DeepSeek。
 
 **设置**（插件图标 →「运行模式」选「DeepSeek API」，页面会展开专属配置块）
 - 4 项：API Key、模型 ID、接口地址、强制 JSON 输出。默认地址 `https://api.deepseek.com`（也接受 `/v1` 或完整 `/chat/completions`），默认模型 `deepseek-v4-flash`，可换 `deepseek-v4-pro`；旧的 `deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 弃用。
-- 「强制 JSON 输出」对应官方 `response_format: {type:'json_object'}`，让 3 条候选与链接判定更稳；用不认这个参数的兼容网F时F掉即可。官方要求提示词里出现 `json` 字样（默认提示词与 `SYSTEM_HINT` 已带），若你自定义提示词把它删了，后台会自动补一条要求 JSON 输出的 system 提示，「预览实际发送内容」与真实请求保持一致。
+- 「强制 JSON 输出」对应官方 `response_format: {type:'json_object'}`，让 3 条候选与链接判定更稳；用不认这个参数的兼容网关时关掉即可。官方要求提示词里出现 `json` 字样（默认提示词与 `SYSTEM_HINT` 已带），若你自定义提示词把它删了，后台会自动补一条要求 JSON 输出的 system 提示，「预览实际发送内容」与真实请求保持一致。
 - 模型 ID 可自由填写；除默认的 `deepseek-v4-flash` / `deepseek-v4-pro`，官方另有实验性的 `deepseek-v4-flash-vision-exp`（支持图片输入）。接口地址、模型名与弃用时间已按 2026-11-14 的官方文档核对。
-- 四项都存 `chrome.storage.local`（本机、不同步），与 xAI Key 分开；「允许网F域名」按钮按当前模式申请对应域名权限。
+- 四项都存 `chrome.storage.local`（本机、不同步），与 xAI Key 分开；「允许网关域名」按钮按当前模式申请对应域名权限。
 
 **实现**（`grok.js` / `background.js` / `popup.js` / `popup.html` / `manifest.json`）
 - `pickGrokMode()` 新增 `deepseek`，显式选择后直接返回、**不降级**到站内直连或页面模式，避免 DeepSeek 的 Key / 模型错误被 X 页面报错盖住。
 - `getGrokConfig()` 按模式给出 `aiProvider = deepseek | xai`；`callGrok()` 据此选 Key、端点、请求体与错误文案。DeepSeek 走 OpenAI 兼容 `POST /chat/completions`，复用原有 `parseThreeComments()` / `parseVerdict()` 本机解析，提示词仍是用户可编辑的那两套；「预览实际发送内容」也改为按 API 模式显示原始 system + user 消息。
 - 只新增一条主机权限 `https://api.deepseek.com/*`，**仅在用户主动选 DeepSeek 并发起 AI 请求时使用**。默认站内直连、既有 xAI 设置、图片 / 视频 / 行情链路均未改动；设置页只在选中该模式时展开配置块，保持紧凑。
 
-**数据流（如实披露）**：DeepSeek 模式下，扩展后台把你点选的推文正文（≤1200 字符）或待核验链接、本地判定结论、少量相F清单条目与设定提示词，发给你填写的地址（默认 `api.deepseek.com`），用你自己的 Key 认证；接收方是 DeepSeek（或你自填的兼容网F），开发者不接收、不留存。调用费用与内容处理受 DeepSeek 隐私政策与其服务条款约束。`store/listing.json` 的第三方 AI 服务、数据使用披露、主机权限理由与两份隐私政策已同步。
+**数据流（如实披露）**：DeepSeek 模式下，扩展后台把你点选的推文正文（≤1200 字符）或待核验链接、本地判定结论、少量相关清单条目与设定提示词，发给你填写的地址（默认 `api.deepseek.com`），用你自己的 Key 认证；接收方是 DeepSeek（或你自填的兼容网关），开发者不接收、不留存。调用费用与内容处理受 DeepSeek 隐私政策与其服务条款约束。`store/listing.json` 的第三方 AI 服务、数据使用披露、主机权限理由与两份隐私政策已同步。
 
 **校验**：`node --check` 全部 JS 通过；`test-harness.js` 489/532，与 1.5.2 基线完全一致（43 项失败均为 1.4.x 历史断言旧口径，本次未新增）；新增 `node test-deepseek.js` 专项自检 **30/30 通过**，覆盖模式判定与 `aiProvider` 分派、三种端点写法、请求体 / JSON Output 兜底、认证头与 xAI Key 隔离、401/404/429/5xx 错误文案、`GROK_TEST` / `GROK_COMMENTS` / `GROK_VERIFY` / `GROK_PAGE_RESET` 四个入口，并确认 xAI 模式与 auto 模式不受影响。该脚本不进商店包。按用户要求未跑真机测试，重载扩展后在设置里点「测试当前模式」即可验证。
 
@@ -359,7 +382,7 @@
 
 - 含视频的卡片除了橙色「一键转发」，多一个蓝色「视频剪辑」按钮，点它直接开工作台（跳过图片流程，只解析视频地址）。
 - 点「一键转发」时若本条含视频，后台**只解析地址不再重复下载几十 MB 原片**，也不自动打开 X；右下角弹「视频工作台」，由工作台上的按钮再打开 X（正文照常预填）。
-- 工作台：原片预览、1~4 段起止秒（留空 = 到片尾，按顺序拼接成一段）、逐帧去水印开F、静音、540/720/1080/原画上限、生成干净片段、成品预览、复制成品、存到下载目录、下载原片、打开 X 发推。ESC / × F闭；多图托盘会自动让位并排显示。
+- 工作台：原片预览、1~4 段起止秒（留空 = 到片尾，按顺序拼接成一段）、逐帧去水印开关、静音、540/720/1080/原画上限、生成干净片段、成品预览、复制成品、存到下载目录、下载原片、打开 X 发推。ESC / × 关闭；多图托盘会自动让位并排显示。
 
 **实现要点**：新增 `video-edit.js`，在离屏文档里把视频 `fetch` 成同源 `blob:`（避免 canvas 跨域污染），用 `<video>` + `canvas` + `requestVideoFrameCallback` 逐帧绘制，`canvas.captureStream(30)` + `MediaRecorder` 实时录制；多段之间 `pause/resume` 拼接。去水印首帧走 `Inpaint.removeWatermarks()` 拿到条带框并缓存，后续帧只对缓存框调 `Inpaint.rebuildBand()` 做局部纹理重建，每 90 帧重检一次，不会逐帧全图扫描。优先 `video/mp4`（Chrome 126+），旧版回退 WebM(VP9/VP8)；片段合计上限 90 秒、成品回传上限 24MB，超出只落本机临时目录。导出进度经 background 转发到来源标签页显示。
 
@@ -379,10 +402,10 @@
 
 ### 1.5 正式版：Chrome Web Store 上架包
 
-- **交付物**：`store/TapePost_1.5_store.zip`（正式首发）／`store/TapePost_1.5.1_store.zip`（水印修复版）／`store/TapePost_1.5.26_store.zip`（**当前唯一上架包**，38 个文件，根目录即 `manifest.json`，不含 `.git` / 文档 / 测试 / 商店素材）；版本 `1.5.26`，UI 各处显示 `v1.5.26`（`popup.html` / `panel.html` / `content.js` 的写死值只作兜底，运行时一律读 `chrome.runtime.getManifest().version`）。1.5.5 起新增 `wallet.js` / `tapeout-api.js` / `vote.js`、1.5.6 再增 `bem-quotes.js`、1.5.26 再增 `growth-core.js` / `growth.html` / `growth.js` 共七个运行时文件；专项自检脚本 `test-video-watermark.js` / `test-wallet-vote-assets.js` / `test-bg-reconnect.js` / `test-tapeup-removed.js` / `test-comment-write.js` / `test-video-caption.js` / `test-follow.js` / `test-growth.js` 与账本自检 `vote-ledger/test-ledger.js` **不进包**。此前误标为大版本号的同名包一律作废，请勿提交。
+- **交付物**：`store/TapePost_1.5_store.zip`（正式首发）／`store/TapePost_1.5.1_store.zip`（水印修复版）／`store/TapePost_1.5.27_store.zip`（**当前唯一上架包**，39 个文件，根目录即 `manifest.json`，不含 `.git` / 文档 / 测试 / 商店素材）；版本 `1.5.27`，UI 各处显示 `v1.5.27`（`popup.html` / `panel.html` / `content.js` 的写死值只作兜底，运行时一律读 `chrome.runtime.getManifest().version`）。1.5.5 起新增 `wallet.js` / `tapeout-api.js` / `vote.js`、1.5.6 再增 `bem-quotes.js`、1.5.26 再增 `growth-core.js` / `growth.html` / `growth.js` 共七个运行时文件；专项自检脚本 `test-video-watermark.js` / `test-wallet-vote-assets.js` / `test-bg-reconnect.js` / `test-tapeup-removed.js` / `test-comment-write.js` / `test-video-caption.js` / `test-follow.js` / `test-growth.js` 与账本自检 `vote-ledger/test-ledger.js` **不进包**。此前误标为大版本号的同名包一律作废，请勿提交。
 - **相对商店首次提交的 1.4.2，正式版包含**：TapeOut 实时行情（TapeUP 内盘动态价 / 矿机日产 / BEM，含上下限提醒）、7 站所有图片逐张全图去水印与 4K PNG 无损输出、多图托盘点缩略图放大浏览、AI 评论提示词对齐站内 Grok、界面两行紧凑布局。全部为既有链路的本机能力，**没有新增第三方数据接收方**。
 - **上架资料已同步**：`store/listing.json` 版本号、摘要与详细描述、`scripting` / `activeTab` / `alarms` / `notifications` 权限理由、34 条主机权限（含 `api.deepseek.com` AI 接口、`api-tapeout.firsto.ai` 只读行情；1.5.16 起 `tapeup.io` 两条已移除、`api.tapeapi.fun` / `tapeout.firsto.ai` 钱包资产、`api.fabx.tech` / `rpc.xlayer.tech` / `xlayerrpc.okx.com` X Layer 资产、投票账本服务）、第三方数据接收方披露与 `pre_submit_checklist`；`docs/privacy.html` / `store/privacy-site/index.html` / `vote-ledger/privacy.html` 三份副本同步为 1.5.26 口径（新增扫描结束判定的本机诊断字段与页面内响应心跳，仍只在本机、不新增权限 / 域名 / 接收方；1.5.21 新增 X 页面内中文扫描浮层：全量 / 增量续扫 / 行内标红 / 待选带入面板，只在本机读写、不新增权限 / 域名 / 接收方；1.5.20 新增 X F注F系分析的本机数据流向与批量取F写操作边界；1.5.18 发 X 预填文案末尾改带插件商店链接、不再带账本页 sharecode；1.5.17 仅修本机写入逻辑，账本数据种类与接收方始终不变）；1.5.10 另补上 Dashboard 两个必填权限理由框的正式文案（`dashboard_permission_justifications`，中英双版、各 ≤1000 字符）并把发布清单里的待上传包修正为 1.5.10。
-- **上架前必做**（与 zip 无F，在 Developer Dashboard 完成）：确认 Privacy practices 勾 3 项（Authentication information / User activity / Website content）、Remote code 选 No、「数据传出设备」选是、publisher contact email 已验证、隐私政策 URL 指向 GitHub Pages 最新版、Privacy 页两个标 * 的必填框 `scripting justification` / `activeTab justification` 分别粘入 `dashboard_permission_justifications.fields[0/1].en`（中文对照为同字段 `zh`）；首次提交或含 `https://*/*` 可选权限会进入 in-depth review。详见 `store/listing.json` 的 `pre_submit_checklist` 与 `review_warning_note`。
+- **上架前必做**（与 zip 无关，在 Developer Dashboard 完成）：确认 Privacy practices 勾 3 项（Authentication information / User activity / Website content）、Remote code 选 No、「数据传出设备」选是、publisher contact email 已验证、隐私政策 URL 指向 GitHub Pages 最新版、Privacy 页两个标 * 的必填框 `scripting justification` / `activeTab justification` 分别粘入 `dashboard_permission_justifications.fields[0/1].en`（中文对照为同字段 `zh`）；首次提交或含 `https://*/*` 可选权限会进入 in-depth review。详见 `store/listing.json` 的 `pre_submit_checklist` 与 `review_warning_note`。
 - **验证**：所有 JS 通过 `node --check`，manifest 中 `content_scripts` / `background` / `offscreen` / 弹窗引用的文件逐一核对存在，zip 内版本与源码一致；`test-harness.js` 维持 489/532 历史基线（44 条 FAIL 与 `/tmp/wbx-baseline` 的 v1.5.4 源码逐行一致，新增失败 0），`test-deepseek.js` 30/30、`test-video-entry.js` 18/18、`test-wallet-vote-assets.js` **212/212**（加 `--live` **221/221**，含 FabX 索引与 X Layer RPC 真实只读冒烟）、`vote-ledger/test-ledger.js` 51/51、`test-comment-write.js` 68/68、`bem-quotes.js` 自检 10000 条全唯一。按用户要求不跑真机完整回归，交付后由用户在 `chrome://extensions` 重载 / 加载新版 `unpacked/` 自测。
 
 ### 1.4.30：TapeUP 卡片去掉重复的美元价
@@ -394,18 +417,18 @@
 - **兜底**：美元价没采到时主值会退回 BEM/UP 原值，此时副行只补 `BEM/UP` 单位，不再重复同一数字。
 - 采集链路、缓存、提醒阈值全部不变；`tapeup-price.js` 的页面诊断浮层仍完整显示页头三数，便于核对。纯本机渲染，不新增权限、域名或网络请求。
 
-### 1.4.29：多图托盘缩略图可放大浏览、可F闭
+### 1.4.29：多图托盘缩略图可放大浏览、可关闭
 
-> 起因：真机反馈「多张图片时候，右下角弹窗点击图片应该可以放大浏览和F闭」——托盘里只有 96px 方图，去水印 / 4K 后的细节看不清，也没法核对哪张该复制。
+> 起因：真机反馈「多张图片时候，右下角弹窗点击图片应该可以放大浏览和关闭」——托盘里只有 96px 方图，去水印 / 4K 后的细节看不清，也没法核对哪张该复制。
 
 - **点击缩略图 → 全屏灯箱**：复用托盘已生成的 `blob:` / `data:` URL 直接显示大图，自适应窗口、不裁切；顶栏显示「第 N / M 张 · 宽×高」。缩略图 hover 有微放大与放大镜光标，看得出能点。
 - **多图浏览**：左右两侧 ‹ › 按钮或键盘 ← → 循环切换，单图时自动不显示箭头。
 - **看细节**：点大图或顶栏「1:1 原图」切到原始像素（容器可滚动），再点一次回到适应窗口；4K 大图也能逐像素核对水印是否去干净。
-- **F闭**：右上 ×、ESC、点遮罩 / 底部空白处都能F；F托盘时连带F灯箱，不会留下孤立浮层。键盘监听只在灯箱打开期间挂在捕获阶段，F闭即移除，不干扰 X / 微博自身快捷键。
-- **顺带**：F闭托盘时释放本轮 `blob:` URL，多次转发不会把 4K 图的内存一直占着；托盘提示改成一句「点缩略图放大浏览（ESC F闭）」。
+- **关闭**：右上 ×、ESC、点遮罩 / 底部空白处都能F；F托盘时连带F灯箱，不会留下孤立浮层。键盘监听只在灯箱打开期间挂在捕获阶段，关闭即移除，不干扰 X / 微博自身快捷键。
+- **顺带**：关闭托盘时释放本轮 `blob:` URL，多次转发不会把 4K 图的内存一直占着；托盘提示改成一句「点缩略图放大浏览（ESC 关闭）」。
 - **纯本机渲染**：不重新解码上传、不新增权限、域名或网络接收方，图片数据一个字节都不改。
 
-> 真机验证：到 `chrome://extensions` 重新加载 → 打开有多张配图的内容页点「一键转发」→ 右下角托盘点任意缩略图看大图，按 ← → 切换、点图片看 1:1、按 ESC 或点空白处F闭。
+> 真机验证：到 `chrome://extensions` 重新加载 → 打开有多张配图的内容页点「一键转发」→ 右下角托盘点任意缩略图看大图，按 ← → 切换、点图片看 1:1、按 ESC 或点空白处关闭。
 
 ### 1.4.28：重写水印检测，中间 / 多帧重复水印不再漏掉
 
@@ -426,7 +449,7 @@
 - **全图 5 区域检测**（这部分已被 1.4.28 的瓦片扫描取代）：右下角 / 左下角 / 右上角 / 左上角 / **中间**，各区域独立判定；偏白、低饱和、明显亮于局部背景的像素才算疑似水印，实心亮块、复杂纹理、异常大包围盒一律放过。
 - **无痕填充**：只替换疑似水印像素 + 1px 抗锯齿描边，按同列上下背景插值并在端点羽化，非水印像素一个字节都不改；检测基于原图快照，避免区域间连锁误检。未检出水印的图原像素不动。
 - **4K 输出**：`createImageBitmap` 的 `resizeQuality:'high'` 分步重采样到长边 3840，PNG 无损；原图已达 4K 保持原尺寸。带像素上限（8.4M）、单张 18MB 与多图 60MB 体积保护，超预算自动回退原尺寸，转发不会卡死。
-- 新增设置项「4K 高清输出」（默认开），原「对所有图片去水印」开F保留（默认开）。
+- 新增设置项「4K 高清输出」（默认开），原「对所有图片去水印」开关保留（默认开）。
 - **全部在本机完成**：不上传图片、不新增权限、域名或网络接收方。
 
 > 口径说明：这是纯本地插值重建 + 高保真重采样，不是云端 AI 修复 / AI 超分。简单与渐变背景上基本看不出痕迹，压在复杂纹理上的中间水印无法保证像素级完美；4K 提升的是分辨率与再缩放画质，不会凭空生成原图没有的细节。
@@ -440,7 +463,7 @@
 
 ### 1.4.25：移除昆哥个人介绍
 
-- 弹窗里那块「昆哥」个人介绍卡（头像、名字、@handle、X 主页链接、复制主页链接按钮、社区徽章）整体删除，相F CSS 与 `renderAccount()` 渲染逻辑一并移除。
+- 弹窗里那块「昆哥」个人介绍卡（头像、名字、@handle、X 主页链接、复制主页链接按钮、社区徽章）整体删除，相关 CSS 与 `renderAccount()` 渲染逻辑一并移除。
 - 生态面板顶部的「TapeOut社区成员：昆哥」徽章一并删除，`panel.js` 里对应的赋值也移除（避免元素不存在时报错）。
 - `account.js` 保留：署名功能仍需要内置账号信息；「打开 TapeOut 生态面板」按钮保留。
 - **只改本机界面**，数据链路、权限、域名、网络接收方均无变化。
@@ -467,10 +490,10 @@
 | 布局 | 360px 弹窗、每块四行、19px 大字 | **330px 弹窗**，字号 / 内边距下调，矿机与 BEM 各压到两行，UP 多一行给三数 |
 | 排错 | 采集明细只有页头字段 | 明细新增 `livePrice / liveSource / liveNote / liveChangePct` 与 K 线锚点 |
 
-1. **采集**（`price.js`）：新增 `extractChartLive()`，只认「开/高/低/收」四连或带 `Vol` 上下文的「收=」；价格轴刻度画在 canvas 上，本来就不在页面文本里，因此不会误抓 `0.35000000`。抓到的值与页头折算价相差超过 5 倍 / 低于 0.2 倍时判定为鼠标悬停历史 K 线或无F数字，直接丢弃并退回页头（`liveSource:'header'`）。页头三项字段 `value / usdValue / changePct` 完全不变，提醒阈值仍按 BEM/UP 填。
+1. **采集**（`price.js`）：新增 `extractChartLive()`，只认「开/高/低/收」四连或带 `Vol` 上下文的「收=」；价格轴刻度画在 canvas 上，本来就不在页面文本里，因此不会误抓 `0.35000000`。抓到的值与页头折算价相差超过 5 倍 / 低于 0.2 倍时判定为鼠标悬停历史 K 线或无关数字，直接丢弃并退回页头（`liveSource:'header'`）。页头三项字段 `value / usdValue / changePct` 完全不变，提醒阈值仍按 BEM/UP 填。
 2. **透传**（`tapeup-price.js` / `background.js` / `mergeUp`）：新增 `livePrice / liveChangePct / liveNote / liveSource`，变化即回传并缓存；只有动态价、页头 BEM/UP 暂缺时也算有效采集，不再把主值闪成空。右下角探测浮层首行直接显示动态价、第二行完整显示页头三数。
 3. **渲染**（`popup.html` / `popup.js`）：UP 主值用最多 8 位小数完整显示，副行整串显示页头三数；来源、更新时间、实时/缓存、K 线涨跌、阈值口径仍在明细行；矿机 / BEM 把副行与明细拼成一行。
-4. **口径不变**：BEM / 矿机日产价仍来自 Firsto，TapeUP 仍来自 tapeup.io（与 Firsto 无F）。**不新增权限、域名、网络请求或数据接收方**。
+4. **口径不变**：BEM / 矿机日产价仍来自 Firsto，TapeUP 仍来自 tapeup.io（与 Firsto 无关）。**不新增权限、域名、网络请求或数据接收方**。
 5. **验证**：`chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1`（右下角浮层首行即为动态价）→ 打开弹窗，标题旁显示 `v1.4.27`，UP 块主值应与图上绿框一致，副行三数完整。
 
 > 注：下方 1.4.22 章节描述的「360px / 每块四行 / 主值为页头折算价」已被 1.4.23 收紧与替换，仅保留作为改版过程记录。
@@ -491,7 +514,7 @@
 1. **布局**（`popup.html`）：`.price-grid` 改为 `grid-template-columns:1fr`，三张卡加左侧色条与 ① ② ③ 序号，视觉上就是上中下三块；新增 `pc-unit`（单位）、`pc-sub`（另一计价 / 口径）、`pc-meta`（来源 / 时间 / 缓存 / 点击去向）三行，`pc-badge` 显示涨跌（涨红跌绿）或「挂单参考价」。所有 `white-space:nowrap` 去掉，改 `white-space:normal` + `overflow-wrap:anywhere`。
 2. **渲染**（`popup.js`）：`renderPriceSnapshot` 按块写 badge / 主值 / 单位 / 副行 / 明细；`priceErrorsFor` 把「TapeUP 未采集」「矿机沿用缓存」等后台错误分发到对应块，不再只挂在更新时间的 title 上；`renderPriceDebug` 把整份快照的原始字段与 `extractUp` 的诊断候选写进折叠区。
 3. **TapeUP 页面探测浮层**（`tapeup-price.js`）：收起态的 `maxHeight:22px + overflow:hidden` 会把 `0.0264 BEM/UP · $0.3181 · +19.44%` 截成一行，改为完整显示三个数字 + 来源；展开态改为可滚动，列出锚点、采集时间与最多 24 条候选（回传后台的候选也从 6 条放宽到 20 条）。
-4. **数据口径不变**：BEM / 矿机日产价仍来自 Firsto，TapeUP 内盘价仍来自 tapeup.io（与 Firsto 无F）；阈值仍按 BEM/UP 计价填写。**不新增权限、域名、网络请求或数据接收方**，只改本机界面与文案。
+4. **数据口径不变**：BEM / 矿机日产价仍来自 Firsto，TapeUP 内盘价仍来自 tapeup.io（与 Firsto 无关）；阈值仍按 BEM/UP 计价填写。**不新增权限、域名、网络请求或数据接收方**，只改本机界面与文案。
 5. **验证**：`chrome://extensions` 点「重新加载」→ 打开弹窗，标题旁显示 `v1.4.22`、行情区是上中下三块，TapeUP 块能同时看到三个数字与来源 → 点 ↻ 刷新行情，必要时展开「采集明细」核对候选。
 
 ### 1.4.16：TapeUP $UP 价格改用 tapeup.io 内盘价
@@ -500,7 +523,7 @@
 
 1. **数据源切换**：移除 DexScreener 依赖与 `api.dexscreener.com` 主机权限；新增 `tapeup.io` 主机权限，仅用于在交易页注入内容脚本（`tapeup-price.js`）读取页面显示的内盘价。tapeup.io 整站 Cloudflare 防护，后台直接 `fetch` 会返回 403/502，因此改由用户浏览器里已通过 CF 的会话去读——这是真正的内盘价格，不猜接口、不依赖第三方 DEX。
 2. **采集 + 缓存**：`tapeup-price.js` 用 `MutationObserver` + 3 秒轮询，从页面 DOM 抽价（多策略正则，按置信度打分），变化时才 `sendMessage({type:'TAPUP_PRICE'})` 回传；后台 `localSet('tapeupPriceCache')` 缓存。PRICE_GET / PRICE_REFRESH 用 `withUp()` 把缓存并入快照；超过 30 分钟未刷新标记为 `stale`，不直接拿旧值误报。
-3. **展示 / 跳转**：UP 卡片、浮层、通知点击都打开 `tapeup.io/zh/trade/token?id=1`；其余两项仍打开 Firsto 数据页。F闭交易页后沿用缓存，缓存为空时引导「请打开 tapeup.io 交易页」。
+3. **展示 / 跳转**：UP 卡片、浮层、通知点击都打开 `tapeup.io/zh/trade/token?id=1`；其余两项仍打开 Firsto 数据页。关闭交易页后沿用缓存，缓存为空时引导「请打开 tapeup.io 交易页」。
 4. **手动重载**：到 `chrome://extensions` 点「重新加载」→ 打开 `tapeup.io/zh/trade/token?id=1` 让扩展采集内盘价（页面右下角浮层会显示抽到的 `BEM/UP · $美元 · 涨跌`）→ 刷新 X 页面 → 弹窗标题旁 / T 按钮左侧直接显示当前版本号。
 
 ### 1.4.21：按真机页面重新校准 TapeUP 内盘价（BEM/UP 锚点）
@@ -516,7 +539,7 @@
 
 1. **只认明确锚点**（`price.js` 的 `extractUp`）：详情页 `(\d+\.\d+) BEM/UP` 标签（最高分），并在其后 120 字符内取 `$` 美元折算价与百分比；交易列表行用 `TapeUP UP <ID> <价> $<美元> <涨跌%>` 三连（正则回溯避开代币 ID 与价格粘连的 `…UP10.0264…`），另留一条「价 + 美元 + 百分比」通用退路。页面上的其它「数字 BEM」只作为 `debug` 诊断候选列出（score 0，不参与选价）；**认不出锚点就返回 `null` 显示未采集，绝不拿随机小数凑数**。
 2. **两个数字都给**（`popup.js` / `popup.html`）：UP 卡主值显示页面那个大号美元价 `$0.3181`，副行显示 `0.0264 BEM/UP · +19.44%`；`usdValue` 从内容脚本 → 后台 `tapeupPriceCache` → `mergeUp` → 面板全程透传。调试浮层同步显示三个数字，真机可当场核对。
-3. **来源标注**：BEM 与矿机日产价两项都来自 **Firsto**（`api-tapeout.firsto.ai` / `tapeout.firsto.ai`），TapeUP 内盘价来自 **tapeup.io**，与 Firsto 无F。三张卡片的标签直接写明来源，行情说明与隐私文档同步。
+3. **来源标注**：BEM 与矿机日产价两项都来自 **Firsto**（`api-tapeout.firsto.ai` / `tapeout.firsto.ai`），TapeUP 内盘价来自 **tapeup.io**，与 Firsto 无关。三张卡片的标签直接写明来源，行情说明与隐私文档同步。
 4. **不新增权限/域名**：仍是在已授权的 `tapeup.io` 页面注入同一份内容脚本读 DOM，无新网络请求。
 
 ### 1.4.20：矿机日产价改从 `/circuits/other` 取实时参考价
@@ -581,7 +604,7 @@ simple lunch. If you...
 
 ### 1.4.17：修正内盘价抽取（UP 以 BEM 计价，非 UP/USDT）
 
-> ⚠️ **此章结论已被 1.4.21 推翻**：当时把页面上的「数字 BEM」当成盘面实时价特征，并误记 `0.286182409 BEM` 为真实价格；真机核对后，页面头部其实是 `0.0264 BEM/UP · $0.3181 · +19.44%`，`0.286…` 是图表坐标一类的无F数字。1.4.21 已改为按 `BEM/UP` 标签 / 「价 + 美元 + 百分比」锚点取价。以下保留为当时的排查记录。
+> ⚠️ **此章结论已被 1.4.21 推翻**：当时把页面上的「数字 BEM」当成盘面实时价特征，并误记 `0.286182409 BEM` 为真实价格；真机核对后，页面头部其实是 `0.0264 BEM/UP · $0.3181 · +19.44%`，`0.286…` 是图表坐标一类的无关数字。1.4.21 已改为按 `BEM/UP` 标签 / 「价 + 美元 + 百分比」锚点取价。以下保留为当时的排查记录。
 
 用户反馈「内盘价格不对」。核查真实 tapeup.io 交易页后发现根因：内盘交易对是 **UP/BEM**（用 BEM 买 UP），而上一版误以为是 UP/USDT，正则全在找「最新价 / UP-USDT」等页面上根本不存在的标签，于是兜底抽到了钱包余额或交易记录里的错数字。
 
@@ -649,7 +672,7 @@ simple lunch. If you...
 - 正文与推广句之间用 `\n\n` 单独成段；写后按「去掉所有空白后的字符序列」校验（X 会把 `\n` 变成 `<br>`，而文本节点收集跳过 `<br>`），并确认推广句只出现一次、正文前缀一字未动。异常时**自动把原文写回去** + 复制推广句。
 - `replyHasRichContent()`：正文里有 @ 提及、emoji 图片、链接卡片、配图时一律降级为「只复制、不写 DOM」，避免全量纯文本重写弄丢它们。
 - 新增 **T 安全模式**（`promoCopyOnly`，默认F）：开启后 T 永远只复制 + 聚焦回复框，用户自己 Cmd/Ctrl+V，100% 不会弄乱正文。
-- **AI 评论快速模式**（`grokFastMode`，默认开）：`enableSideBySide: false`（原来并排跑两份回答，耗时翻倍）、`disableReasoning` / `disableDeepSearch`、快速模式跳过 XVM 的长提示词通道、提示词明确「不要思考、凭第一反应写短评」；流式读取加心跳：拿到 final 答案后连续 1.2 秒无新增就主动 `cancel()` 收尾，不再空等思考尾帧；后台超时 90s → 30s。F掉开F可恢复完整模式。
+- **AI 评论快速模式**（`grokFastMode`，默认开）：`enableSideBySide: false`（原来并排跑两份回答，耗时翻倍）、`disableReasoning` / `disableDeepSearch`、快速模式跳过 XVM 的长提示词通道、提示词明确「不要思考、凭第一反应写短评」；流式读取加心跳：拿到 final 答案后连续 1.2 秒无新增就主动 `cancel()` 收尾，不再空等思考尾帧；后台超时 90s → 30s。关掉开关可恢复完整模式。
 - **未新增任何 manifest 权限**。把鼠标悬在 T 按钮上看到 `v1.4.11`，即确认重载生效。
 
 下载：`store/TapePost_1.4.11_store.zip`。
@@ -717,7 +740,7 @@ simple lunch. If you...
 1.4.5 只在 AI 生成的候选里自动附加推广句，自己手写评论时没有入口。1.4.6 补上手动通道：
 
 - **回复填写区右侧新增一排小按钮**（AI 评论按钮左边）：默认 `T1 T2 T3 T4`，外加 `↻`（随机换一句）和 `×`（去掉推广句）。每个 T 按钮固定对应一句，鼠标悬停可看全文；点一下就把这句带到**当前评论末尾**。
-- **与 AI 完全解耦**：不用 AI 评论、也不勾「自动附加」照样能用；反过来把「AI 评论」开FF掉，T 按钮仍在。设置页可单独F闭快捷按钮、把数量改成 2 / 3 / 4 / 6。
+- **与 AI 完全解耦**：不用 AI 评论、也不勾「自动附加」照样能用；反过来把「AI 评论」开关关掉，T 按钮仍在。设置页可单独关闭快捷按钮、把数量改成 2 / 3 / 4 / 6。
 - **换句不叠加**：再点别的 T 按钮会先剥掉末尾旧推广句（也兼容「先选了 AI 候选已自动带一句」的情况），再写入新句；`×` 只留你自己写的正文。（1.4.6 当时是整体替换写回，1.4.7 已改为局部 Range 替换，见上。）
 - **不破坏已贴的附件**：回复框里有图 / 视频时退回追加模式。（该兜底会叠加，1.4.7 起已移除：局部替换本身不会碰附件。）
 - 仍只作用于 X 评论 / 回复框，不改一键转发正文；最后一步始终由你手动点「回复」。**未新增任何 manifest 权限**，回归测试 **311/311 全通过**。
@@ -726,7 +749,7 @@ simple lunch. If you...
 
 ### 1.4.5：可勾选的「评论末尾推广」（TapeOut / $BEM 随机话术）
 
-在设置页「🤖 Grok 设置」里新增 **📣 评论末尾推广**，**默认F闭**，勾上后才生效：
+在设置页「🤖 Grok 设置」里新增 **📣 评论末尾推广**，**默认关闭**，勾上后才生效：
 
 - **3 条 AI 评论候选各随机附一句**推广短句，追加在候选末尾；选「交替随机」时两个主题都会出现，也可只推 TapeOut 或只推 `$BEM`。
 - **话术可改**：内置两组各 8 句（共 16 句），只讲生态与技术，不含价格、收益、买入建议，也不塞外链；在「✏️ 自定义话术」里按主题每行填一句即可覆盖内置，设置页可「🎲 随机预览一句」。
@@ -741,7 +764,7 @@ simple lunch. If you...
 ### 1.4.4：修复重新加载后 popup 的 `Unchecked runtime.lastError`
 
 **真机报错**（chrome://extensions → 错误）：`Unchecked runtime.lastError: The message port closed before a response was received. Context: popup.html`。
-原因是 1.4.3 新增的「临时文件状态 / 立即清理」两个回调没有读取 `chrome.runtime.lastError`：popup 一打开就会发 `TMP_STATUS`，用户很快F掉弹窗时，端口在后台 `sendResponse` 之前F闭，Chrome 把未检查的 `lastError` 记成扩展错误。
+原因是 1.4.3 新增的「临时文件状态 / 立即清理」两个回调没有读取 `chrome.runtime.lastError`：popup 一打开就会发 `TMP_STATUS`，用户很快关掉弹窗时，端口在后台 `sendResponse` 之前关闭，Chrome 把未检查的 `lastError` 记成扩展错误。
 
 - **统一消息通道**：popup 内所有 `chrome.runtime.sendMessage` 改走 `sendBg()`，回调第一行同步读取 `chrome.runtime.lastError`；后台没回包时只显示为「状态不可用 / 清理失败」，不再往错误面板写日志。
 - **状态查询零消息**：`refreshTmpStatus()` 直接读 `chrome.storage.local` 的 `tapeTmpDownloads`，popup 打开时不再向后台发消息；只有用户主动点「立即清理」才发 `TMP_CLEAN`。
@@ -752,7 +775,7 @@ simple lunch. If you...
 
 ### 1.4.3：转发不再自动落盘，临时文件到期自动清理
 
-- **图片默认走剪贴板**：旧版转发时会把「其余图 / 剪贴板没带上的首图」自动下载到下载目录。1.4.3 起该下载兜底默认F闭（`autoDownloadBackup: false`），多图用托盘逐张复制或拼长图，正常转发**零落盘**。
+- **图片默认走剪贴板**：旧版转发时会把「其余图 / 剪贴板没带上的首图」自动下载到下载目录。1.4.3 起该下载兜底默认关闭（`autoDownloadBackup: false`），多图用托盘逐张复制或拼长图，正常转发**零落盘**。
 - **必要的落盘统一进 `TapePost_tmp/`**：视频必须用文件拖进 X（剪贴板不支持 mp4），托盘「下载到临时目录」同理；两者都写入下载目录下的 `TapePost_tmp/` 子目录、`xpost_` 前缀，便于识别与整目录清理。
 - **到期自动清理**：后台记录 `downloadId` + 时间戳，保留时长（默认 30 分钟，可选 15 / 60 / 120 分钟或「不自动清理」）到期后调用 `chrome.downloads.erase()` 同时删除**磁盘文件与下载历史记录**；老版本 Chrome 回退 `removeFile()`。扩展启动、每次新下载、打开设置、Service Worker 唤醒时都会顺带清一次，不依赖定时器。
 - **手动清理**：设置面板「🧹 立即清理临时文件」与图片托盘「🧹 清理临时文件」一键清空，并显示剩余数量。
@@ -797,7 +820,7 @@ if (mode !== 'auto') return mode;   // page 直接返回，后面的直连判断
 
 **修复（三层保险，任意一层生效即可）**：
 
-- `grok.js` / `pickGrokMode()`：显式 `page` 只要没F「优先站内直连」、没填 API Key、且消息来自 X 标签，就升级为 `native`；非 X 标签或用户F掉开F时仍是 `page`。
+- `grok.js` / `pickGrokMode()`：显式 `page` 只要没F「优先站内直连」、没填 API Key、且消息来自 X 标签，就升级为 `native`；非 X 标签或用户关掉开关时仍是 `page`。
 - `background.js` / `getGrokConfig()`：**运行时归一化** —— 每次读配置都把遗留 `page` 视作 `auto` 的免 Key 语义。不依赖 storage 迁移是否成功，**重载扩展后必定生效**。
 - `content.js` / `popup.js`：**一次性设置迁移** —— 把 `grokMode:"page"` 写成 `"auto"` 并打标记；用户之后手动改回页面模式会被 `save()` 标记，不再被覆盖。popup 打开时会显示「✅ 已自动修复运行模式」。
 
@@ -814,10 +837,10 @@ if (mode !== 'auto') return mode;   // page 直接返回，后面的直连判断
 **参考**：本机已安装的 X Viral Monitor v1.18.17（`lib/grok-reply.js`）之所以稳定，是因为它和 X 网页客户端一样**直接调用 X 内置 Grok 接口**，完全不做 DOM 自动化。TapePost 1.4.0 按同一原理独立实现：
 
 - 新增 `grok-native.js`（MAIN world，`document_start`）与 `grok-native-bridge.js`（ISOLATED world 消息桥），后台把请求路由到**当前这个 X 标签**，不再新开/刷新 Grok 标签。
-- 端点 `POST https://grok.x.com/2/grok/add_response.json`，请求体与 X「快速」模式一致（`isTemporaryChat: true`、F闭搜索/引用/服务器历史，不写进你的 Grok 历史）。
+- 端点 `POST https://grok.x.com/2/grok/add_response.json`，请求体与 X「快速」模式一致（`isTemporaryChat: true`、关闭搜索/引用/服务器历史，不写进你的 Grok 历史）。
 - 签名 `x-client-transaction-id` 三条路径：① 借用页面上已有的 X 原生签名器（X Viral Monitor 的 `__xvmXct`）；② 自己从 X 的 webpack `ondemand.s` 模块构建；③ 捕获 X 自己在 `/i/grok` 发出的真实请求头。`authorization` 优先用捕获的实时 bearer，兜底 X 网页客户端公开 bearer；`ct0` 从页面 cookie 读。
 - 只解析 NDJSON 流里 `sender=ASSISTANT` + `messageTag=final` 的最终回答块；候选优先取 3 个 Markdown 代码块，其次 JSON 数组 / 编号列表。**思考过程、UI 词、任务标记一律不当候选**，解析不出就明确报错，不拿页面文字凑数。
-- 模式路由：`auto` 且消息来自 X 标签时优先直连；`auto` 失败安静降级 `page`；显式 `native` 失败给中文错误；填了 API Key 仍走 `api`。设置里新增「优先站内直连」开F，`GROK_TEST` 会自检直连通道。
+- 模式路由：`auto` 且消息来自 X 标签时优先直连；`auto` 失败安静降级 `page`；显式 `native` 失败给中文错误；填了 API Key 仍走 `api`。设置里新增「优先站内直连」开关，`GROK_TEST` 会自检直连通道。
 - 回归测试扩到 **224 个场景**（新增 54 个：NDJSON / 代码块 / JSON / 噪声解析、请求体与请求头、签名捕获、模式路由、端到端直连 / 降级 / 自检）。
 
 > 升级后必须在 `chrome://extensions` 点 TapePost「重新加载」（manifest 新增了 MAIN world content script），再**刷新 X 页面**；之后点设置里的「测试当前模式」应显示「已确认 X 会话与站内 Grok 签名可用」。
@@ -867,7 +890,7 @@ if (mode !== 'auto') return mode;   // page 直接返回，后面的直连判断
 - 提示词首尾加 `PROMPT_TAG / PROMPT_END`，读回页面文本时整段切掉提示词区块，并按行丢弃 `History / Usage / Share / Thought for 7s` 等 UI 噪声。
 - `parsePageAnswer()` 只接受清洗后的回答文本：严格 JSON → **裸引号列表**（网页版 Grok 实测会输出 `"…", "…", "…"` 而不带方括号）→ 编号列表 → 3 行独立候选；解析不出就明确报错，**不再把页面文字伪装成候选**。
 - 自动发送后校验 `promptSent / hasAnswer / changed`，任一不满足就带诊断信息报错；候选面板顶部显示「✅ 已确认读到 Grok 回答」。
-- **点击即弹出等待浮层**：spinner、随耗时推进的阶段文案、「F闭等待提示」按钮；结果回来或报错才自动F闭。手动「复制提示词 / 读取 Grok 回答」同样有等待反馈。
+- **点击即弹出等待浮层**：spinner、随耗时推进的阶段文案、「关闭等待提示」按钮；结果回来或报错才自动关闭。手动「复制提示词 / 读取 Grok 回答」同样有等待反馈。
 
 该版本回归测试扩到 **151 个场景**，含 1.3.1 事故回放、提示词污染拒绝发送、裸引号列表解析、真机整页噪声回放、等待浮层 DOM（1.3.3 扩到 163 个、1.3.4 扩到 170 个、1.4.0 扩到 224 个、1.4.1 扩到 237 个、1.4.2 扩到 253 个、文案精简后 262 个）。
 
@@ -906,7 +929,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 - 扩展**不调用任何 AI 接口、不产生费用、不接触 X 登录态**；对话完全发生在 X 自己的页面里。后台优先复用「已经有 Grok 输入框」的 X 标签，没有才在后台新开一个 `/i/grok` 标签（不抢焦点）。
 - 两套提示词在两种模式下共用；页面模式会把 system 指令合并进同一条消息，并额外追加「只输出最终 JSON、不要展示思考过程」的约束（实测网页版 Grok 会先吐一段思考过程）。还可写「页面模式附加要求」，并用「预览实际发送内容」查看完整文本。
 - 实测选择器（2026-11-08）：输入框 `div[aria-label="Ask anything"][role="textbox"]`、发送 `button[aria-label="Send"]`、对话区 `div[aria-label="Grok"]`、回答锚点 `button[aria-label="Copy"]`。全部可在设置里改，X 改版不用升级扩展。
-- **手动兜底**：F掉「自动点发送」，或直接用面板 / 评论浮层里的「复制提示词 → 自己粘贴发送 → 读取 Grok 回答」，选择器失效时照样能用。
+- **手动兜底**：关掉「自动点发送」，或直接用面板 / 评论浮层里的「复制提示词 → 自己粘贴发送 → 读取 Grok 回答」，选择器失效时照样能用。
 - 需要 Chrome 已登录 `x.com` 且账号可用 Grok；X 的 Grok 有使用额度与权限限制，插件无法绕过。页面模式生成速度取决于 X，比 API 慢（默认最多等 60 秒）。
 
 ### TapeOut 生态面板（1.2.0：生态导航全量收录）
@@ -917,13 +940,13 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 | --- | ---: | --- |
 | 项目方官方 | 5 | 导航站带 `OFFICIAL` 标记的官方入口 |
 | 生态导航收录认可 | 56 | 导航站编辑收录的第三方交易、数据、工具、社区、链游等 |
-| 链上容器 · 已索引 | 234 | `web.tapeout.link` 扫描索引到的 DeWeb 容器，按官方网F精确子域比对 |
+| 链上容器 · 已索引 | 234 | `web.tapeout.link` 扫描索引到的 DeWeb 容器，按官方网关精确子域比对 |
 
 三档**都算导航认可并给绿标**，但界面明确区分等级 —— 链上容器的内容由容器所有者部署，**不代表项目方背书**。清单核验日期 2026-11-08，内置在 `grok.js` 的 GENERATED 区块里。
 
-- **链接真伪查询**：粘贴任意链接 → 本地清单先精确比对 → Grok 按设定提示词结合本地权威结论给出解释与仿冒风险（形近域名、Punycode、短链、非 HTTPS、第三方网F）；
+- **链接真伪查询**：粘贴任意链接 → 本地清单先精确比对 → Grok 按设定提示词结合本地权威结论给出解释与仿冒风险（形近域名、Punycode、短链、非 HTTPS、第三方网关）；
 - **防伪底线**：结论以本地清单为准，Grok 不能把清单外的链接判成认可平台；两者冲突会在界面标红提示。即使 Grok 不可用，本地判定依然有效；
-- **安全边界**：只有 4 个独立官网域名允许「同域任意路径 / 子域」，网F域名一律精确比对；未索引的容器子域、其它 X 账号 / Telegram 群、形近域名都拿不到绿标；
+- **安全边界**：只有 4 个独立官网域名允许「同域任意路径 / 子域」，网关域名一律精确比对；未索引的容器子域、其它 X 账号 / Telegram 群、形近域名都拿不到绿标；
 - 面板提供搜索、三档筛选、一键核验与「复制 / 打开」；一次最多渲染 120 张卡片，其余用搜索定位，但**全部 295 条都参与核验**。
 
 清单是**本地内置静态数据**，运行时不联网拉取。要刷新清单：`node tools/refresh-sites.mjs`（从 `https://tapeout.link/data/sites.js` 与 `https://web.tapeout.link/api/sites` 重新生成，断网可加 `--offline` 用缓存），然后提升扩展版本号。
@@ -942,7 +965,7 @@ X 推文右上角多一个紫色「AI 评论」按钮。点击后：
 | 小红书 | 支持 | 全部内容图 | 图片地址带时效签名，失败请刷新重试 |
 | X / Twitter | 支持 | 原图参数升级 | `article[data-testid="tweet"]`，发布/登录/注册页不注入；另有「AI 评论」 |
 
-每个站点都有独立的选择器、图床域名、Referer 与水印策略，并可在设置里逐个开F；未配置的网站不会注入任何界面。
+每个站点都有独立的选择器、图床域名、Referer 与水印策略，并可在设置里逐个开关；未配置的网站不会注入任何界面。
 
 ## 安装
 
@@ -970,8 +993,8 @@ zip -q store/TapePost_1.4.2_store.zip \
 
 点工具栏图标打开设置面板：
 
-- **转发**：图片去水印（默认开）、视频取原片、正文 `#` 话题的三种处理方式、附原推链接、附个人署名、X 域名、7 个站点开F；
-- **Grok**：运行模式（自动 / X 站内 Grok / xAI API）、两套可编辑提示词 + 页面模式附加要求 + 「预览实际发送内容」、页面选择器与自动发送/新建对话开F、打开 Grok 页面；API 模式专属：xAI API Key、接口协议、模型 ID、接口地址、测试连接、允许自定义网F域名；
+- **转发**：图片去水印（默认开）、视频取原片、正文 `#` 话题的三种处理方式、附原推链接、附个人署名、X 域名、7 个站点开关；
+- **Grok**：运行模式（自动 / X 站内 Grok / xAI API）、两套可编辑提示词 + 页面模式附加要求 + 「预览实际发送内容」、页面选择器与自动发送/新建对话开关、打开 Grok 页面；API 模式专属：xAI API Key、接口协议、模型 ID、接口地址、测试连接、允许自定义网关域名；
 - **行情 / 钱包 / 打卡**：行情区 BEM 置顶大数字、上下限提醒；「👛 我的 TapeOut 钱包」连接注入式钱包（OKX / 币安 / TP / MetaMask 等）或手动填地址，只读展示矿机 / 日产 / 持仓 / 已领取 / BNB / 市值；「🔥 $BEM 信仰者打卡」每日一票、全网按天累计、连续打卡与定时提醒，账本地址与提醒时间可改；
 - **工具**：「🔍 运行环境自检」（Service Worker / DNR 规则 / 离屏文档状态）、「打开 TapeOut 生态面板」。
 
@@ -1029,7 +1052,7 @@ node test-video-entry.js              # 18 项
 
 **转发链路纯本地**：无账号、无遥测、无远程代码；所有提取、去水印、剪贴板写入与下载都发生在本机。**1.5.5 起有一个例外**：$BEM 信仰者投票使用一个由开发者运营的公开共享账本（只收日期 / 立场 / 每日匿名哈希），以及两个按公开地址查询资产的只读接口；完整口径见第 3 节与隐私政策。钱包地址本身加密后只留在本机，从不上传。
 
-**转发全链路纯本地**。**AI 功能分两种模式**：① `api` 模式：只有你主动点「AI 评论」/「核验链接」并填了自己的 Key，扩展才把推文正文或待核验链接（连同本地结论、清单摘要、提示词）发给 `api.x.ai` 或自填网F；② `page` 模式（免 Key）：扩展**不向任何 AI 服务发请求**，只把提示词填进你已登录的 X 站内 Grok 页面、由 X 完成对话，再读取该页回答文本在本机解析 —— 这段对话受 X 的条款与隐私政策约束。两种模式都不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容；插件也不读取或存储 X 的登录凭据。
+**转发全链路纯本地**。**AI 功能分两种模式**：① `api` 模式：只有你主动点「AI 评论」/「核验链接」并填了自己的 Key，扩展才把推文正文或待核验链接（连同本地结论、清单摘要、提示词）发给 `api.x.ai` 或自填网关；② `page` 模式（免 Key）：扩展**不向任何 AI 服务发请求**，只把提示词填进你已登录的 X 站内 Grok 页面、由 X 完成对话，再读取该页回答文本在本机解析 —— 这段对话受 X 的条款与隐私政策约束。两种模式都不发送浏览历史、Cookie、登录态、图片文件或其它标签页内容；插件也不读取或存储 X 的登录凭据。
 
 完整说明见 [隐私政策](https://kenter1643.github.io/TapePost/privacy.html)（源码 `docs/privacy.html`）。
 
@@ -1037,12 +1060,12 @@ node test-video-entry.js              # 18 项
 
 - X 视频通常是 HLS / blob 流，暂不能导出干净 mp4；其它站点只能取页面里出现的图片 / 视频直链。
 - 各站水印样式不同，检测不到时一律原图保留，不会强行抹图。
-- AI 功能默认不需要 Key：走 X 站内 Grok 页面模式（需登录 X 且账号可用 Grok）；若要走官方 API，才需自备 xAI Key 与可用网络，国内直连 `api.x.ai` 可能失败，需代理或兼容网F。API 调用费用由你承担。
+- AI 功能默认不需要 Key：走 X 站内 Grok 页面模式（需登录 X 且账号可用 Grok）；若要走官方 API，才需自备 xAI Key 与可用网络，国内直连 `api.x.ai` 可能失败，需代理或兼容网关。API 调用费用由你承担。
 - 页面模式依赖 X 网页版 Grok 的 DOM 结构（输入框 / 发送按钮 / 回答复制按钮）。X 改版可能导致自动填词或读取失效：设置里所有选择器都可编辑，另有「复制提示词 → 自己粘贴发送 → 读取 Grok 回答」的手动兜底，不会静默失败。网页版 Grok 会输出思考过程且不一定严守 JSON 格式，插件已做宽松 JSON 提取，解析失败会在界面明确提示。
 - 官方清单是 2026-11-08 从 TapeOut.link 抓取的静态快照，官方后续增删条目需手动更新 `grok.js`；Grok 的核验结论仅供参考，访问链上平台前请再次核对地址。
 - 需要你已登录 X；商店截图目前是功能示意图，正式上架建议替换为真机截图。
 
-转载他人内容前请确认授权，建议开启「附原推链接」标注来源。TapePost 与 X、xAI、TapeOut 官方及上述任何站点均无官方F联，绿标清单不构成背书或投资建议。
+转载他人内容前请确认授权，建议开启「附原推链接」标注来源。TapePost 与 X、xAI、TapeOut 官方及上述任何站点均无官方关联，绿标清单不构成背书或投资建议。
 
 ## 许可
 

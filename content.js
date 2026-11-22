@@ -14,7 +14,7 @@ const WBX_VERSION = (function () {
       if (m && m.version) return 'v' + m.version;
     }
   } catch (e) {}
-  return 'v1.5.26';
+  return 'v1.5.27';
 })();
 
 /* ==================== 1.5.11：后台连接自愈 ====================
@@ -167,12 +167,16 @@ function growthHash(s) {
   }
   return h.toString(36);
 }
-function growthPing(kind, content, target) {
+/* 1.5.27：target 是被评论帖子的作者 handle（用于自动给大 V 清单记进度），
+ * post 是帖子 id（用于和之后检测到的「真的点了回复」对上号，不重复计数）。
+ * 旧版把帖子 id 当成 target 传，清单里的大 V 永远不会自动 +1。 */
+function growthPing(kind, content, target, post) {
   try {
     if (!bgRuntimeOk()) return;
     var ref = kind + ':' + growthHash(content) + ':' + Math.floor(Date.now() / 60000);
     var p = chrome.runtime.sendMessage({
-      type: 'GROWTH_RECORD', kind: kind, ref: ref, target: String(target || '')
+      type: 'GROWTH_RECORD', kind: kind, ref: ref, target: String(target || ''),
+      post: String(post || '')
     });
     if (p && typeof p.catch === 'function') p.catch(function () {});
   } catch (e) {}
@@ -199,27 +203,27 @@ const PAGE_PATH = (typeof location !== 'undefined' && location && location.pathn
   || (typeof WBX_TEST_PATH !== 'undefined' ? WBX_TEST_PATH : '/');
 
 const SETTINGS_DEFAULT = {
-  // 已取消「需去水印作者 UID」列表，图片/视频都由全局开F控制
+  // 已取消「需去水印作者 UID」列表，图片/视频都由全局开关控制
   inpaintImages: true,           // 1.4.28：所有站点所有图片逐张去水印（全图多区域）
   hd4k: true,                    // 1.4.28：逐张高保真放大到 4K（长边 3840），PNG 无损
   inpaintVideo: true,            // 对所有视频去水印（优先取 HD 原片）
   xDomain: 'x.com',
   hashMode: 'truncate',          // truncate(删 # 及后) | stripTopics(只删话题块) | keep(不动)
   appendSignature: false,        // 是否在清洗后的正文末尾附上「昆哥 + 主页链接」
-  appendSource: false,           // X 来源时是否在正文末尾附上原推文链接（默认F闭）
+  appendSource: false,           // X 来源时是否在正文末尾附上原推文链接（默认关闭）
   enableAiComment: true,         // X 回复填写区右侧是否显示「AI 评论」按钮
   replyInputSelector: '',        // X 改版时可覆盖回复框选择器（留空用 sites.js 内置）
-  enabledSites: {},              // 各站点开F；默认全部启用（值为 false 才F闭）
+  enabledSites: {},              // 各站点开关；默认全部启用（值为 false 才关闭）
   // 1.4.3：临时文件 / 落盘策略
   autoDownloadBackup: false,     // 转发时自动下载图片备份（默认F：图片走剪贴板不落盘）
   tmpCleanup: true,              // 必要的临时文件（视频 / 手动下载）到期自动清理
   tmpKeepMinutes: 30,            // 保留时长（分钟），0 = 不自动清理
-  // 1.4.5：AI 评论末尾的 TapeOut / $BEM 推广尾巴（默认F闭）
+  // 1.4.5：AI 评论末尾的 TapeOut / $BEM 推广尾巴（默认关闭）
   promoEnabled: false,
   promoTarget: 'both',           // both | tapeout | bem
   promoCustomTapeOut: '',
   promoCustomBEM: '',
-  // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无F，自己写完评论也能点）
+  // 1.4.8：回复框右侧只有一个 T 按钮（与 AI 评论无关，自己写完评论也能点）
   promoQuickButtons: true,
   promoQuickCount: 4,            // 兼容旧配置；1.4.8 起固定一个按钮，不再读取
   // 1.4.11：安全模式 —— T 只复制推广句、绝不碰 X 编辑器（100% 不会弄乱正文）
@@ -300,7 +304,7 @@ function migrateGrokMode141() {
         try {
           void (chrome.runtime && chrome.runtime.lastError); // 1.5.23
           if (!m || String(m.grokMode || '').toLowerCase() !== 'page') return;
-          if (m.grokPreferNative === false) return;      // 用户显式F掉直连，尊重
+          if (m.grokPreferNative === false) return;      // 用户显式关掉直连，尊重
           if (m.grokModeMigrated141 === true) return;    // 只迁移一次，不覆盖之后的选择
           chrome.storage.sync.set({ grokMode: 'auto', grokModeMigrated141: true }, function () {
             void (chrome.runtime && chrome.runtime.lastError);
@@ -433,7 +437,7 @@ function injectStyle() {
     font-size:11px;padding:7px 5px;cursor:pointer;font-weight:600;
   }
   .wbx-c-manual button:hover{background:#f1ebff;}
-  /* 1.3.2：点击 AI 评论立即出现的等待浮层，结果回来才F闭 */
+  /* 1.3.2：点击 AI 评论立即出现的等待浮层，结果回来才关闭 */
   #wbx-ai-busy{
     position:fixed !important;left:50% !important;top:50% !important;transform:translate(-50%,-50%) !important;
     z-index:2147483647 !important;width:340px !important;max-width:90vw !important;box-sizing:border-box !important;
@@ -744,7 +748,7 @@ function upgradeImageUrl(url) {
     if (re.test(u)) u = u.replace(re, '$1' + q.value);
     else u += (u.indexOf('?') >= 0 ? '&' : '?') + (q.fallback || q.key + '=' + q.value);
   }
-  // 微博 large 图的 query 是无F参数；其他站（小红书签名、知乎图片参数、
+  // 微博 large 图的 query 是无关参数；其他站（小红书签名、知乎图片参数、
   // X 的 format）的 query 含鉴权/格式信息，必须完整保留，否则请求会 403。
   return (!SITE || SITE.id === 'weibo') ? u.split('?')[0] : u;
 }
@@ -892,7 +896,7 @@ function cleanRepostText(raw, mode) {
 
 /*
  * 可选署名：在清洗后的正文末尾附上内置账号信息。
- * 默认F闭，保证「删掉 # 后内容」得到的正文保持干净；
+ * 默认关闭，保证「删掉 # 后内容」得到的正文保持干净；
  * 开启后由 X intent 一起预填，并做长度保护避免超出推文上限。
  */
 function withSignature(text) {
@@ -2274,7 +2278,7 @@ function injectIntoReplyComposers() {
   if (!SITE || SITE.id !== 'x') return;
   const aiOn = settings.enableAiComment !== false;
   const quickOn = settings.promoQuickButtons !== false;
-  // F掉开F时只清自己那一类，不动页面上其它插件的按钮
+  // 关掉开关时只清自己那一类，不动页面上其它插件的按钮
   if (!aiOn) injectedReplyButtons().forEach((n) => { if (n.remove) n.remove(); });
   if (!quickOn) injectedPromoBars().forEach((n) => { if (n.remove) n.remove(); });
   if (!aiOn && !quickOn) return;
@@ -2289,7 +2293,7 @@ function injectIntoReplyComposers() {
     });
   });
   if (!host) return;
-  /* 1.3.4 F键修复：host.children 是 HTMLCollection，没有 .filter！
+  /* 1.3.4 关键修复：host.children 是 HTMLCollection，没有 .filter！
    * 每轮扫描都往回复框里再塞按钮会累积到 33 个，按钮文字还会被当成推文正文。 */
   ['wbx-reply-btn', 'wbx-promo-bar'].forEach((cls) => {
     const mine = Array.prototype.filter.call(host.children || [],
@@ -2462,7 +2466,7 @@ function makeVideoBar(card) {
   fwd.title = 'TapePost · 视频一键转发（剪接 + 逐帧去水印后发到 X）· ' + WBX_VERSION;
   fwd.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
-    // 固定条挂在 body 下，按钮 closest() 找不到卡片，必须直接用F联的 card
+    // 固定条挂在 body 下，按钮 closest() 找不到卡片，必须直接用关联的 card
     return onRepost(card, fwd);
   });
 
@@ -2648,6 +2652,25 @@ function extractXStatusId(card) {
   return '';
 }
 
+/* 1.5.27：被回复帖子的作者 handle，从 /handle/status/id 形式的链接里取。 */
+function xStatusAuthorFrom(href) {
+  const m = /(?:^|\/\/[^/]+)?\/([A-Za-z0-9_]{1,20})\/status\/\d+/.exec(String(href || ''));
+  if (!m) return '';
+  const h = m[1].toLowerCase();
+  return ['i', 'home', 'search', 'explore', 'intent', 'compose'].indexOf(h) >= 0 ? '' : h;
+}
+function extractXStatusAuthor(card, scope) {
+  try { const a = xStatusAuthorFrom(extractPermalink(card)); if (a) return a; } catch (e) {}
+  try {
+    const link = scope && scope.querySelector && scope.querySelector('a[href*="/status/"]');
+    const a = link ? xStatusAuthorFrom(link.getAttribute('href') || link.href) : '';
+    if (a) return a;
+  } catch (e) {}
+  try { return xStatusAuthorFrom(PAGE_PATH); } catch (e) {}
+  return '';
+}
+const growthAuthorByStatus = Object.create(null);
+
 /* 回复弹窗页 URL 是 /compose/post，没有 status id；从弹窗里的原推链接取。 */
 function extractXStatusIdFromScope(scope) {
   try {
@@ -2720,7 +2743,7 @@ async function copyTextFallback(text) {
   } catch (e) { return false; }
 }
 
-/* 1.3.2：等待浮层 —— 点击即出现，结果回来 / 报错后才F闭。
+/* 1.3.2：等待浮层 —— 点击即出现，结果回来 / 报错后才关闭。
  * 网页版 Grok 会先输出思考过程，经常十几秒无反馈，之前只有一个 6 秒 toast，
  * 用户根本看不出「到底有没有在跑」。 */
 let aiBusyTimer = null;
@@ -2747,14 +2770,14 @@ function showAiBusy(label, provider, count) {
   box.appendChild(time);
   box.appendChild(makeCommentEl('div', 'wbx-busy-hint',
     settings.grokFastMode === false ? '完整模式，最长约 90 秒。' : '快速模式：不思考、通常 5~15 秒，最长约 30 秒。'));
-  const cancel = makeCommentEl('button', 'wbx-busy-cancel', 'F闭等待提示');
+  const cancel = makeCommentEl('button', 'wbx-busy-cancel', '关闭等待提示');
   cancel.type = 'button';
   cancel.title = '只F提示，不中断后台生成';
   cancel.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     hideAiBusy();
-    showToast('已F闭提示，后台仍在生成。', 3500);
+    showToast('已关闭提示，后台仍在生成。', 3500);
   });
   box.appendChild(cancel);
   document.body.appendChild(box);
@@ -2766,13 +2789,13 @@ function showAiBusy(label, provider, count) {
     [1500, '提示词已发出，等待 ' + who + ' 回答…'],
     [4000, who + ' 正在写 ' + n + ' 条短评…'],
     [12000, '还在等 ' + who + ' 收尾…'],
-    [24000, '接近超时，可F闭提示改用手动模式。']
+    [24000, '接近超时，可关闭提示改用手动模式。']
   ] : [
     [0, '正在连接 ' + who + '…'],
     [2500, '提示词已写入，等待 ' + who + ' 开始回答…'],
     [8000, who + ' 正在生成 ' + n + ' 条候选…'],
     [22000, '还在等 ' + who + ' 输出，请稍候…'],
-    [45000, '接近超时，可F闭提示改用手动模式。']
+    [45000, '接近超时，可关闭提示改用手动模式。']
   ];
   aiBusyTimer = setInterval(() => {
     if (document.getElementById && document.getElementById('wbx-ai-busy') !== box) {
@@ -2809,6 +2832,7 @@ async function onAiComment(card, btn) {
     return;
   }
   const statusId = extractXStatusId(card) || extractXStatusIdFromScope(scope);
+  try { if (statusId) growthAuthorByStatus[statusId] = extractXStatusAuthor(card, scope); } catch (e) {} // 1.5.27
   let permalink = '';
   try { permalink = card ? extractPermalink(card) : ''; } catch (e) {}
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中'; }
@@ -2830,7 +2854,7 @@ async function onAiComment(card, btn) {
       const tip = apiAi
         ? '建议：再点一次「AI 评论」；仍失败请到 AI 设置点「测试当前模式」看诊断，检查 Key / 接口地址 / 模型与额度，或换一条更短的推文重试。'
         : parseIssue
-          ? '建议：再点一次「AI 评论」；仍失败可到 AI 设置F掉「AI 快速模式」重试，或用「复制提示词（手动）」兜底。'
+          ? '建议：再点一次「AI 评论」；仍失败可到 AI 设置关掉「AI 快速模式」重试，或用「复制提示词（手动）」兜底。'
           : '建议：刷新 X 页面 → 设置里「测试当前模式」看诊断；也可用「复制提示词（手动）」兜底。';
       showNotice('生成失败', briefError(rawErr) + '，点「详情」看原因。',
         rawErr + '\n\n' + tip);
@@ -2893,7 +2917,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, 
   head.appendChild(makeCommentEl('span', '', `${who} 生成的 ${comments.length} 条回复候选`));
   const close = makeCommentEl('button', 'wbx-c-close', '×');
   close.type = 'button';
-  close.title = 'F闭';
+  close.title = '关闭';
   close.addEventListener('click', () => { if (panel.remove) panel.remove(); });
   head.appendChild(close);
   panel.appendChild(head);
@@ -2967,7 +2991,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, 
       const wrote = applyCommentToReply(c, btn);
       if (wrote) {
         // 1.5.26：写入成功即计一条评论（辅助动作口径），最终发送仍由用户点「回复」
-        try { if (typeof growthPing === 'function') growthPing('comment', c, statusId); } catch (e) {} // 1.5.26
+        try { if (typeof growthPing === 'function') growthPing('comment', c, growthAuthorByStatus[statusId] || '', statusId); } catch (e) {} // 1.5.26 / 1.5.27 作者归属
         showToast('已写入回复框，可继续手动修改，再点「回复」。', 3500);
         copyTextFallback(c);
         if (panel.remove) panel.remove();
@@ -2992,7 +3016,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, 
       const url = 'https://' + domain + '/intent/tweet?' + params.toString();
       // window.open 必须放在任何 await 之前：否则用户手势丢失，弹窗会被 Chrome 拦掉
       const win = window.open(url, '_blank', 'noopener,noreferrer');
-      if (win) { try { if (typeof growthPing === 'function') growthPing('comment', c, statusId); } catch (e) {} } // 1.5.26：intent 兜底也计一条
+      if (win) { try { if (typeof growthPing === 'function') growthPing('comment', c, growthAuthorByStatus[statusId] || '', statusId); } catch (e) {} } // 1.5.26：intent 兜底也计一条
       if (!win) {
         showNotice('发布页被拦截', '文字可手动复制。', '请允许本站弹出窗口；候选卡片里的文字可直接复制。');
       }
@@ -3027,7 +3051,7 @@ function showCommentPicker(comments, statusId, card, btn, postText, mode, diag, 
       : ((btn && btn.closest && btn.closest(CARD_SELECTORS.join(','))) || card);
     return onAiComment(liveCard, btn);
   });
-  const dismiss = makeCommentEl('button', '', 'F闭');
+  const dismiss = makeCommentEl('button', '', '关闭');
   dismiss.type = 'button';
   dismiss.addEventListener('click', () => { if (panel.remove) panel.remove(); });
   foot.appendChild(again);
@@ -3310,9 +3334,9 @@ async function makeCollage(images) {
  * 托盘里是 96px 的方形缩略图，去水印 / 4K 效果看不清。这里复用托盘已经
  * 生成好的 blob: / data: URL 直接显示大图：不重新解码、不上传、不发请求，
  * 图片数据本身一个字节都不改。
- * F闭：右上 ×、点遮罩空白、ESC；多图：左右按钮或 ← → 切换。
+ * 关闭：右上 ×、点遮罩空白、ESC；多图：左右按钮或 ← → 切换。
  * 键盘监听放 document 的捕获阶段并 stopPropagation，避免 X / 微博自身的
- * 快捷键抢先响应（灯箱F掉后监听立即移除，不影响页面原有行为）。
+ * 快捷键抢先响应（灯箱关掉后监听立即移除，不影响页面原有行为）。
  */
 let wbxLightbox = null;
 let wbxGalleryUrls = [];
@@ -3359,7 +3383,7 @@ function openLightbox(srcList, index) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'wbx-lb-btn wbx-lb-x';
   closeBtn.textContent = '×';
-  closeBtn.title = 'F闭（ESC）';
+  closeBtn.title = '关闭（ESC）';
   bar.appendChild(info);
   bar.appendChild(zoomBtn);
   bar.appendChild(closeBtn);
@@ -3374,7 +3398,7 @@ function openLightbox(srcList, index) {
 
   const foot = document.createElement('div');
   foot.className = 'wbx-lb-foot';
-  foot.textContent = '← → 切换 · ESC F闭 · 点空白处F闭 · 点图片看 1:1 原图';
+  foot.textContent = '← → 切换 · ESC 关闭 · 点空白处关闭 · 点图片看 1:1 原图';
 
   root.appendChild(bar);
   root.appendChild(stage);
@@ -3473,7 +3497,7 @@ function showGallery(text, images, b64List, xUrl) {
   const close = document.createElement('button');
   close.className = 'wbx-g-close';
   close.textContent = '×';
-  close.title = 'F闭图片托盘';
+  close.title = '关闭图片托盘';
   close.addEventListener('click', closeGallery);
   head.appendChild(title);
   head.appendChild(progress);
@@ -3500,7 +3524,7 @@ function showGallery(text, images, b64List, xUrl) {
 
   const tip = document.createElement('div');
   tip.className = 'wbx-g-tip';
-  tip.textContent = '点缩略图放大浏览（ESC F闭）｜① 复制 / 拼长图 → ② 打开 X → ③ Ctrl+V。默认不落盘，需要文件再点「下载到临时目录」。';
+  tip.textContent = '点缩略图放大浏览（ESC 关闭）｜① 复制 / 拼长图 → ② 打开 X → ③ Ctrl+V。默认不落盘，需要文件再点「下载到临时目录」。';
   panel.appendChild(tip);
 
   const list = document.createElement('div');
@@ -3569,7 +3593,7 @@ function showGallery(text, images, b64List, xUrl) {
   clean.addEventListener('click', () => {
     try {
       chrome.runtime.sendMessage({ type: 'TMP_CLEAN' }, (r) => {
-        // 1.4.4：端口可能在后台回包前F闭，必须同步读取 lastError
+        // 1.4.4：端口可能在后台回包前关闭，必须同步读取 lastError
         const err = chrome.runtime && chrome.runtime.lastError;
         showToast(!err && r && r.ok
           ? `已清理 ${r.removed || 0} 个文件${r.remaining ? `，剩 ${r.remaining} 个` : '，本机无残留'}`
@@ -3926,7 +3950,7 @@ function showVideoStudio(opts) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'wbx-vs-close';
   closeBtn.textContent = '×';
-  closeBtn.title = 'F闭视频工作台（ESC）';
+  closeBtn.title = '关闭视频工作台（ESC）';
   closeBtn.addEventListener('click', wbxCloseVideoStudio);
   head.appendChild(title);
   head.appendChild(closeBtn);
@@ -4321,7 +4345,7 @@ function showVideoStudio(opts) {
     if (total > 90) status.textContent = '合计超过 90 秒，将自动截到 90 秒。';
     busy = true;
     mainBtn.disabled = true;
-    mainBtn.textContent = '正在剪接 / 去水印…（请勿F闭）';
+    mainBtn.textContent = '正在剪接 / 去水印…（请勿关闭）';
     lastProgressKey = '';
     barFill.style.width = '2%';
     status.textContent = '准备中…';
@@ -4468,7 +4492,7 @@ try {
 
 // ---------- 初始化 ----------
 function init() {
-  // 未适配的站点不注入任何按钮；已适配但在设置里被F掉也不注入
+  // 未适配的站点不注入任何按钮；已适配但在设置里被关掉也不注入
   if (!SITE) return;
   migrateGrokMode141();   // 一次性把老设置 grokMode="page" 升级为 auto（刷新页面即生效）
   injectStyle();

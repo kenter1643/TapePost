@@ -74,19 +74,10 @@
     return { me: '', following: {}, followers: {},
       updatedAt: { following: 0, followers: 0 }, savedAt: 0, version: 1, source: 'passive' };
   }
-  function normalizeData(raw) {
-    var d = raw && typeof raw === 'object' ? raw : emptyData();
-    var u = d.updatedAt && typeof d.updatedAt === 'object' ? d.updatedAt : {};
-    return {
-      me: Core.lowerHandle(d.me || ''),
-      following: d.following && typeof d.following === 'object' ? d.following : {},
-      followers: d.followers && typeof d.followers === 'object' ? d.followers : {},
-      updatedAt: { following: Number(u.following) || 0, followers: Number(u.followers) || 0 },
-      savedAt: Number(d.savedAt) || 0, version: 1, source: 'passive'
-    };
-  }
+  // 1.5.27：与桥接层共用 FollowCore 的数据口径（保留墓碑 / 基线 / 变化记录）
+  function normalizeData(raw) { return Core.normalizeData(raw); }
   // 任何写 followData 都必须「先读最新再合并」：面板内存里的旧快照不能覆盖
-  // 桥接层在面板F闭期间实时落盘的新用户（1.5.20 修复数据丢失的F键）。
+  // 桥接层在面板关闭期间实时落盘的新用户（1.5.20 修复数据丢失的关键）。
   async function writeData(patch) {
     var r = await get([K.data]);
     var d = normalizeData(r[K.data]);
@@ -159,7 +150,7 @@
     c.status = 'interrupted';
     c.finishedAt = Date.now();
     c.message = '上次采集中断，本机已保留 ' + kept + ' 人。点「继续采集」从已保存的名单往下补，' +
-      '已抓到的人不会重复；F闭面板不会丢失数据。';
+      '已抓到的人不会重复；关闭面板不会丢失数据。';
     var w = {}; w[K.capture] = c;
     await set(w);
     state.capture = c;
@@ -208,7 +199,49 @@
     renderAll();
   }
 
+  // ---------------------------------------------------------------- 1.5.27 变化记录
+  function userChip(u) {
+    return '<a class="chip" href="https://x.com/' + encodeURIComponent(u.handle) +
+      '" target="_blank" rel="noopener noreferrer" title="粉丝 ' + fmt(u.followers) + '">@' + esc(u.handle) +
+      (u.name && u.name !== u.handle ? ' · ' + esc(String(u.name).slice(0, 16)) : '') + '</a>';
+  }
+  function renderHistory() {
+    if (!$('lostList')) return;
+    var d = state.data;
+    var lost = Core.recentLostFollowers(d, 30, Date.now());
+    $('lostBadge').textContent = lost.length + ' 人';
+    $('lostList').innerHTML = lost.length ? lost.slice(0, 200).map(function (u) {
+      return '<div class="item"><div class="main"><div class="line1">' +
+        '<a class="hd" href="https://x.com/' + encodeURIComponent(u.handle) + '" target="_blank" rel="noopener noreferrer">@' +
+        esc(u.handle) + '</a><span class="nm">' + esc(u.name || '') + '</span>' +
+        (u.followingThem ? '<span class="tag lowratio">你还F注着 TA</span>' : '') + '</div>' +
+        '<div class="meta">发现时间 ' + esc(when(u.at)) + ' · 粉丝 ' + fmt(u.followers) + '</div></div></div>';
+    }).join('') : '<div class="empty-list">' + (d.baseline.followers
+      ? '最近 30 天的粉丝全量扫描里没有发现取F你的人。'
+      : '还没有粉丝基线：在 X「粉丝」页用浮层点一次「全量扫描」并扫到底，之后每次全量扫描都会自动对比。') + '</div>';
+    var hist = d.history.slice().reverse().slice(0, 30);
+    $('histList').innerHTML = hist.length ? hist.map(function (e) {
+      var title = e.kind === 'unfollow' ? '批量取F（TapePost 执行）'
+        : (e.source === 'followers' ? '粉丝全量扫描' : 'F注中全量扫描');
+      var parts = [];
+      if (e.added.length) parts.push((e.source === 'followers' ? '新粉丝 ' : '新F注 ') + e.added.length);
+      if (e.removed.length) parts.push(e.kind === 'unfollow' ? '已取F ' + e.removed.length
+        : (e.source === 'followers' ? '取F了你 ' : '已不在列表 ') + e.removed.length);
+      var names = function (arr, label) {
+        if (!arr.length) return '';
+        return '<div class="meta">' + label + '：</div><div class="chips">' + arr.slice(0, 40).map(userChip).join('') +
+          (arr.length > 40 ? '<span class="hint">…另 ' + (arr.length - 40) + ' 人</span>' : '') + '</div>';
+      };
+      return '<details class="item hist"><summary><b>' + esc(when(e.at)) + '</b> · ' + esc(title) + ' · ' +
+        esc(parts.join(' · ')) + (e.total ? ' · 现有 ' + fmt(e.total) + ' 人' : '') + '</summary>' +
+        names(e.added, e.source === 'followers' ? '新粉丝' : '新F注') +
+        names(e.removed, e.kind === 'unfollow' ? '已取F' : (e.source === 'followers' ? '取F了你' : '已不在列表')) +
+        '</details>';
+    }).join('') : '<div class="empty-list">还没有变化记录。全量扫描到底、或用 TapePost 批量取F后会自动记录。</div>';
+  }
+
   function renderAll() {
+    renderHistory();
     renderCapture();
     renderCards();
     renderChips();
@@ -228,7 +261,7 @@
     var lastWrite = d.savedAt || Math.max(d.updatedAt.following, d.updatedAt.followers);
     $('saveHint').textContent = '实时保存：本机已存 ' + fmt(nf + nr) + ' 人（F注中 ' + fmt(nf) +
       ' / 粉丝 ' + fmt(nr) + '）· 最后写入 ' + when(lastWrite) +
-      ' · 每批数据立即写盘，F闭面板或中途停止都不会丢，下次打开自动恢复';
+      ' · 每批数据立即写盘，关闭面板或中途停止都不会丢，下次打开自动恢复';
     var c = state.capture || {};
     if (c.storageError) {
       $('saveHint').textContent += ' ｜ ⚠ 本机写入异常：' + c.storageError + '（请检查浏览器存储空间后重试）';
@@ -506,7 +539,7 @@
   async function startCapture(target) {
     var me = meHandle();
     if (!me) return;
-    // 从最新缓存起步：面板F闭期间桥接层实时写入的人也算进来，实现断点续采
+    // 从最新缓存起步：面板关闭期间桥接层实时写入的人也算进来，实现断点续采
     var fresh = await get([K.data]);
     var d = normalizeData(fresh[K.data]);
     state.data = d;
@@ -562,21 +595,20 @@
   }
 
   // ---------------------------------------------------------------- 预演 / 执行
+  /* 弹窗的确认回调只保存一份：旧版按 Esc / 点遮罩关闭时没摘掉确认按钮的监听器，
+   * 下次打开别的弹窗点「确认」会把上一个弹窗的动作一起执行（例如关掉取F预演后
+   * 去确认「清空名单」，会顺带启动那批取F）。现在任何关闭方式都清空回调。 */
+  var modalAction = null;
+  function closeModal() {
+    modalAction = null;
+    $('modal').classList.remove('show');
+  }
   function openModal(title, warn, body, onConfirm) {
     $('modalTitle').textContent = title;
     $('modalWarn').innerHTML = warn;
     $('modalBody').textContent = body;
+    modalAction = onConfirm;
     $('modal').classList.add('show');
-    var cancel = $('modalCancel'), ok = $('modalConfirm');
-    function close() {
-      $('modal').classList.remove('show');
-      cancel.removeEventListener('click', cancelFn);
-      ok.removeEventListener('click', okFn);
-    }
-    var cancelFn = function () { close(); };
-    var okFn = function () { close(); onConfirm(); };
-    cancel.addEventListener('click', cancelFn);
-    ok.addEventListener('click', okFn);
   }
 
   async function dryRun() {
@@ -613,6 +645,12 @@
     if (!task || !task.handles.length) return;
     var me = meHandle();
     if (!me) return;
+    // 上一批还在跑时不能另起一批：新任务会覆盖 followTask，旧循环的进度会混进来
+    var curTask = (await get([K.task]))[K.task] || {};
+    if (curTask.phase === 'running' && Date.now() - (Number(curTask.beatAt || curTask.startedAt) || 0) < 30000) {
+      status('taskStatus', '上一批取F还在执行中，请等它完成，或先点「停止」再开始新的一批。', 'warn');
+      return;
+    }
     var cfg = settingsFromUi();
     var w = {}; w[K.settings] = {
       minDelay: cfg.minDelay, jitter: cfg.jitter, batchLimit: cfg.batchLimit,
@@ -648,12 +686,32 @@
     var r = await get([K.task]);
     var t = r[K.task];
     if (!t) { status('taskStatus', '当前没有运行中的任务。', 'warn'); return; }
+    var tab = null;
+    if (phase === 'running') {
+      // 1.5.27：「继续」要真的把执行循环重新跑起来。旧版只改状态，暂停超过
+      // 5 分钟或执行页刷新后循环早已退出，点继续什么都不会发生。
+      if (!t.confirmed || t.dryRun !== false) { status('taskStatus', '这个任务没有经过确认，不能继续。', 'err'); return; }
+      tab = await findXTab('/following');
+      var pong = tab ? await sendToTab(tab.id, { type: 'FOLLOW_PING' }) : null;
+      if (!pong || !pong.ok || pong.source !== 'following') {
+        status('taskStatus', '请先打开（或刷新）自己的「F注中」页，再点「继续」。任务保持暂停，剩下的人不会丢。', 'err');
+        return;
+      }
+    }
     t.phase = phase;
-    t.message = phase === 'paused' ? '用户暂停' : phase === 'stopped' ? '用户停止' : '用户继续';
+    t.beatAt = Date.now();
+    t.message = phase === 'paused' ? '用户暂停' : phase === 'stopped' ? '用户停止' : '用户继续，从剩下的人接着处理';
     var w = {}; w[K.task] = t;
     await set(w);
     state.task = t;
     renderTask();
+    if (tab) {
+      sendToTab(tab.id, { type: 'FOLLOW_TASK_START' }).then(function (res) {
+        if (res && res.ok === false && !/已有一个任务在运行/.test(res.error || '')) {
+          status('taskStatus', '继续失败：' + (res.error || '未知原因'), 'err');
+        }
+      }).catch(swallow);
+    }
   }
 
   function exportCsv() {
@@ -693,7 +751,8 @@
         '确定要清空吗？清空后需要重新执行两步采集。', safe(async function () {
           // 覆盖式写入（不用 remove）：面板与桥接层都能看到一次明确的「已清空」状态
           await writeData({ me: $('meHandle').value, following: {}, followers: {},
-            updatedAt: { following: 0, followers: 0 }, savedAt: 0 });
+            updatedAt: { following: 0, followers: 0 }, savedAt: 0,
+            gone: {}, baseline: {}, history: [] });
           var w = {}; w[K.capture] = {}; w[K.task] = {};
           await set(w);
           state.capture = {}; state.task = {}; state.selected = Object.create(null);
@@ -725,11 +784,17 @@
     $('pauseTask').addEventListener('click', function () { setPhase('paused').catch(swallow); });
     $('resumeTask').addEventListener('click', function () { setPhase('running').catch(swallow); });
     $('stopTask').addEventListener('click', function () { setPhase('stopped').catch(swallow); });
+    $('modalCancel').addEventListener('click', closeModal);
+    $('modalConfirm').addEventListener('click', function () {
+      var fn = modalAction;
+      closeModal();
+      if (typeof fn === 'function') fn();
+    });
     $('modal').addEventListener('click', function (e) {
-      if (e.target === $('modal')) $('modal').classList.remove('show');
+      if (e.target === $('modal')) closeModal();
     });
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') $('modal').classList.remove('show');
+      if (e.key === 'Escape') closeModal();
     });
   }
 
@@ -738,7 +803,7 @@
       if (area !== 'local') return;
       if (changes[K.data]) {
         state.data = normalizeData(changes[K.data].newValue || state.data);
-        renderCapture(); renderCards(); renderList();
+        renderCapture(); renderCards(); renderList(); renderHistory();
       }
       if (changes[K.capture]) { state.capture = changes[K.capture].newValue || {}; renderCapture(); }
       if (changes[K.task]) { state.task = changes[K.task].newValue || {}; renderTask(); }

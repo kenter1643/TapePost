@@ -72,11 +72,11 @@
     // 1.4.22：收起态只隐藏候选列表，价格数字始终完整显示，不再设 22px 截断
     if (!el.__open) {
       el.textContent = head + '\n' + trio +
-        '\n来源 tapeup.io 交易页（与 Firsto 无F） · 点开看全部候选 ▾';
+        '\n来源 tapeup.io 交易页（与 Firsto 无关） · 点开看全部候选 ▾';
       return;
     }
     var lines = [head + ' ▴', trio,
-      '来源 tapeup.io 交易页 · 与 Firsto 无F',
+      '来源 tapeup.io 交易页 · 与 Firsto 无关',
       '动态价 ' + (r.liveNote || '—') +
         (r.liveChangePct != null ? ' · 涨跌 ' + (r.liveChangePct >= 0 ? '+' : '') + r.liveChangePct + '%' : '') +
         ' · 来源口径 ' + (r.liveSource || '—'),

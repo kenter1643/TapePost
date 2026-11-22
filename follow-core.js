@@ -1,5 +1,5 @@
 /*
- * TapePost · F注F系分析内核（1.5.23）
+ * TapePost · F注F系分析内核（1.5.23 · 1.5.27 数据层）
  * ---------------------------------------------------------------
  * 纯函数模块，不依赖 DOM / chrome.* / 网络，可同时被三个环境加载：
  *   1) MAIN world     follow-capture.js：从 X 自己加载的 JSON 里提取用户；
@@ -155,13 +155,23 @@
     return Object.keys(found).map(function (k) { return found[k]; });
   }
 
-  /* 把新采集到的一批用户合并进某个来源的快照（不修改入参）。 */
-  function mergeSnapshot(prev, users) {
+  /* 把新采集到的一批用户合并进某个来源的快照（不修改入参）。
+   * 1.5.27：传 now 时给本批用户打 seenAt（最近一次在列表里出现的时间）并保留
+   * firstSeenAt（第一次出现的时间）。全量扫描完成后据此清理「已不在列表」的人、
+   * 生成「新增 / 取F」变化记录；不传 now 时行为与旧版完全一致。 */
+  function mergeSnapshot(prev, users, now) {
     var out = {};
+    var stamp = num(now);
     Object.keys(prev || {}).forEach(function (k) { out[k] = prev[k]; });
     (users || []).forEach(function (u) {
       if (!u || !validHandle(u.handle)) return;
       var old = out[u.handle] || {};
+      if (stamp) {
+        u = Object.assign({}, u, {
+          seenAt: stamp,
+          firstSeenAt: num(old.firstSeenAt) || (out[u.handle] ? num(old.seenAt) || stamp : stamp)
+        });
+      }
       // 后到的分页数据更完整时覆盖空值，但不丢已有资料
       var merged = sanitizeUser(Object.assign({}, u, old));
       Object.keys(u).forEach(function (k) {
@@ -240,7 +250,7 @@
     return '10w+';
   }
 
-  /* 保护名单：白名单 + 认证/大 V（开F）+ 锁推账号。
+  /* 保护名单：白名单 + 认证/大 V（开关）+ 锁推账号。
    * 批量取F在面板层和桥接层各校验一次，防止单层漏判。 */
   function protectedReasons(u, opts) {
     var o = Object.assign({}, DEFAULTS, opts || {});
@@ -314,7 +324,7 @@
   /* 1.5.22：扫描结束判定（纯函数，不碰 DOM / chrome.*，便于离线模拟）。
    * 旧版只看「名单人数连续 idleRounds 轮没涨」就判 done。X 分页请求经常
    * 要十几秒；全量重扫时返回的全是已存账号，人数也不涨，但 X 明明还在
-   * 一页页往下加载 —— 结果就是没扫完就停、采集器被F掉。
+   * 一页页往下加载 —— 结果就是没扫完就停、采集器被关掉。
    * 现在必须同时满足：① 已过最短扫描时长；② 距最后一次「X 响应到达 /
    * 名单新增 / 页面变高」足够久；③ 连续若干轮完全静默；④ 页面确实滚到底；
    * ⑤ 页面没有加载指示器（且指示器有宽限时间，防常驻 progressbar 卡死）。
@@ -353,6 +363,188 @@
       return { action: 'continue', reason: 'bottomUnstable' };
     }
     return { action: 'done', reason: 'bottom' };
+  }
+
+  /* ------------------------------------------------------------------
+   * 1.5.27：本机名单的数据层（面板 / 桥接层共用同一套口径）
+   *   followData = { me, following, followers, updatedAt, savedAt,
+   *                  gone:{following:{h:ts}, followers:{h:ts}},   // 墓碑
+   *                  baseline:{following:ts, followers:ts},       // 上次完整全量扫描
+   *                  history:[{id, at, source, kind, added, removed}] }
+   * 墓碑的作用：取F成功 / 全量清理删掉的人，不会被另一个 X 标签页的内存副本
+   * 「复活」；除非之后又在列表里真的看到他（seenAt 晚于墓碑时间）。
+   * ------------------------------------------------------------------ */
+  var MAX_HISTORY = 60;
+  var MAX_HISTORY_NAMES = 500;
+  var PRUNE_MIN_COVERAGE = 0.85;   // 本轮看到的人数 ≥ 旧名单 85% 才允许清理
+
+  function isMap(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function tsMap(v) {
+    var out = {};
+    if (!isMap(v)) return out;
+    Object.keys(v).forEach(function (k) {
+      var h = lowerHandle(k), t = num(v[k]);
+      if (validHandle(h) && t) out[h] = t;
+    });
+    return out;
+  }
+  function briefUser(u) {
+    u = u || {};
+    return { handle: lowerHandle(u.handle), name: str(u.name || u.handle).slice(0, 60),
+      followers: num(u.followers), verified: !!(u.verified || u.blue) };
+  }
+  function normalizeHistory(list) {
+    var arr = Array.isArray(list) ? list : [];
+    var seen = {}, out = [];
+    arr.forEach(function (e) {
+      if (!isMap(e) || !e.id || seen[e.id]) return;
+      seen[e.id] = true;
+      out.push({
+        id: str(e.id), at: num(e.at),
+        source: e.source === 'followers' ? 'followers' : 'following',
+        kind: ['scan', 'unfollow'].indexOf(e.kind) >= 0 ? e.kind : 'scan',
+        added: (Array.isArray(e.added) ? e.added : []).slice(0, MAX_HISTORY_NAMES).map(briefUser),
+        removed: (Array.isArray(e.removed) ? e.removed : []).slice(0, MAX_HISTORY_NAMES).map(briefUser),
+        total: num(e.total)
+      });
+    });
+    out.sort(function (a, b) { return a.at - b.at; });
+    return out.slice(-MAX_HISTORY);
+  }
+
+  function normalizeData(raw) {
+    var d = isMap(raw) ? raw : {};
+    var u = isMap(d.updatedAt) ? d.updatedAt : {};
+    var g = isMap(d.gone) ? d.gone : {};
+    var b = isMap(d.baseline) ? d.baseline : {};
+    return {
+      me: lowerHandle(d.me || ''),
+      // 浅拷贝名单：ingestUsers / removeHandles / finishFullScan 会增删条目，
+      // 不能改到调用方手里的原对象（否则「只算一下」也会悄悄改掉已存名单）
+      following: isMap(d.following) ? Object.assign({}, d.following) : {},
+      followers: isMap(d.followers) ? Object.assign({}, d.followers) : {},
+      updatedAt: { following: num(u.following), followers: num(u.followers) },
+      savedAt: num(d.savedAt),
+      gone: { following: tsMap(g.following), followers: tsMap(g.followers) },
+      baseline: { following: num(b.following), followers: num(b.followers) },
+      history: normalizeHistory(d.history),
+      version: 1, source: 'passive'
+    };
+  }
+
+  /* storage 最新值 + 某个标签页的内存副本合并：
+   * 内存里有、storage 里没有的人照旧补回（防写入失败丢人），
+   * 但被墓碑标记、且之后没再出现过的人不补回（防取F后被复活）。 */
+  function mergeData(fromStore, fromMemory) {
+    var out = normalizeData(fromStore);
+    var mem = normalizeData(fromMemory);
+    ['following', 'followers'].forEach(function (src) {
+      Object.keys(mem.gone[src]).forEach(function (k) {
+        out.gone[src][k] = Math.max(out.gone[src][k] || 0, mem.gone[src][k]);
+      });
+      Object.keys(mem[src]).forEach(function (k) {
+        if (out[src][k]) return;
+        var u = mem[src][k] || {};
+        var tomb = out.gone[src][k] || 0;
+        if (tomb && num(u.seenAt) <= tomb) return;
+        out[src][k] = u;
+      });
+      // storage 里残留的旧副本也要按墓碑过滤（另一个标签页刚取F / 刚清理）
+      Object.keys(out[src]).forEach(function (k) {
+        var tomb2 = out.gone[src][k] || 0;
+        if (tomb2 && num((out[src][k] || {}).seenAt) <= tomb2) delete out[src][k];
+      });
+      out.updatedAt[src] = Math.max(out.updatedAt[src], mem.updatedAt[src]);
+      out.baseline[src] = Math.max(out.baseline[src], mem.baseline[src]);
+    });
+    out.history = normalizeHistory(out.history.concat(mem.history));
+    if (!out.me) out.me = mem.me;
+    out.savedAt = Math.max(out.savedAt, mem.savedAt);
+    return out;
+  }
+
+  /* 一批新用户入库：打 seenAt、真的再次出现就撤销墓碑（说明又F注 / 又被F注了）。 */
+  function ingestUsers(data, src, users, now) {
+    var d = normalizeData(data);
+    var key = src === 'followers' ? 'followers' : 'following';
+    var t = num(now) || Date.now();
+    var before = Object.keys(d[key]).length;
+    d[key] = mergeSnapshot(d[key], users, t);
+    (users || []).forEach(function (u) {
+      var h = u && lowerHandle(u.handle);
+      if (h && d.gone[key][h] && d.gone[key][h] < t) delete d.gone[key][h];
+    });
+    d.updatedAt[key] = t;
+    return { data: d, gained: Object.keys(d[key]).length - before };
+  }
+
+  function pushHistory(d, entry) {
+    if (!entry.added.length && !entry.removed.length) return;
+    d.history = normalizeHistory(d.history.concat([entry]));
+  }
+
+  /* 取F成功：从「F注中」移除并立墓碑，同时记一条变化记录。 */
+  function removeHandles(data, src, handles, now, kind) {
+    var d = normalizeData(data);
+    var key = src === 'followers' ? 'followers' : 'following';
+    var t = num(now) || Date.now();
+    var removed = [];
+    (handles || []).forEach(function (h0) {
+      var h = lowerHandle(h0);
+      if (!validHandle(h)) return;
+      if (d[key][h]) { removed.push(briefUser(d[key][h])); delete d[key][h]; }
+      else removed.push({ handle: h, name: h, followers: 0, verified: false });
+      d.gone[key][h] = t;
+    });
+    if (kind) {
+      pushHistory(d, { id: kind + '-' + key + '-' + t, at: t, source: key, kind: kind,
+        added: [], removed: removed, total: Object.keys(d[key]).length });
+    }
+    return { data: d, removed: removed };
+  }
+
+  /* 全量扫描「真正完成」后调用：清理本轮没再出现的人，生成新增 / 减少记录。
+   * 安全阀：本轮看到的人数不足旧名单的 85% 时不清理（多半是扫描没覆盖全），
+   * 第一次全量扫描只建立基线、不生成「新增」记录（否则全员都是新增）。 */
+  function finishFullScan(data, src, scanStartedAt, now) {
+    var d = normalizeData(data);
+    var key = src === 'followers' ? 'followers' : 'following';
+    var start = num(scanStartedAt), t = num(now) || Date.now();
+    var all = Object.keys(d[key]);
+    var seen = all.filter(function (h) { return num(d[key][h].seenAt) >= start; });
+    var stale = all.filter(function (h) { return num(d[key][h].seenAt) < start; });
+    var coverage = all.length ? seen.length / all.length : 1;
+    var hadBaseline = d.baseline[key] > 0;
+    if (!start || !seen.length || coverage < PRUNE_MIN_COVERAGE) {
+      return { data: d, pruned: false, coverage: coverage, removed: [], added: [],
+        reason: !seen.length ? 'empty' : 'coverage' };
+    }
+    var removed = stale.map(function (h) { return briefUser(d[key][h]); });
+    stale.forEach(function (h) { delete d[key][h]; d.gone[key][h] = t; });
+    var added = hadBaseline ? seen.filter(function (h) {
+      return num(d[key][h].firstSeenAt) >= start;
+    }).map(function (h) { return briefUser(d[key][h]); }) : [];
+    d.baseline[key] = t;
+    pushHistory(d, { id: 'scan-' + key + '-' + t, at: t, source: key, kind: 'scan',
+      added: added, removed: removed, total: Object.keys(d[key]).length });
+    return { data: d, pruned: true, coverage: coverage, removed: removed, added: added,
+      firstBaseline: !hadBaseline };
+  }
+
+  /* 面板用：最近 N 天里「取F了我」的人（粉丝全量扫描时发现减少的）。 */
+  function recentLostFollowers(data, days, now) {
+    var d = normalizeData(data);
+    var since = (num(now) || Date.now()) - (num(days) || 30) * DAY_MS;
+    var out = [], seen = {};
+    d.history.slice().reverse().forEach(function (e) {
+      if (e.source !== 'followers' || e.kind !== 'scan' || e.at < since) return;
+      e.removed.forEach(function (u) {
+        if (seen[u.handle] || d.followers[u.handle]) return;
+        seen[u.handle] = true;
+        out.push(Object.assign({ at: e.at, followingThem: !!d.following[u.handle] }, u));
+      });
+    });
+    return out;
   }
 
   function csvEscape(v) {
@@ -398,6 +590,13 @@
     sanitizeUser: sanitizeUser,
     pickUsers: pickUsers,
     mergeSnapshot: mergeSnapshot,
+    normalizeData: normalizeData,
+    mergeData: mergeData,
+    ingestUsers: ingestUsers,
+    removeHandles: removeHandles,
+    finishFullScan: finishFullScan,
+    recentLostFollowers: recentLostFollowers,
+    PRUNE_MIN_COVERAGE: PRUNE_MIN_COVERAGE,
     mapToList: mapToList,
     relationSets: relationSets,
     parseDate: parseDate,

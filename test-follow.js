@@ -13,6 +13,11 @@ const zlib = require('zlib');
 const DIR = __dirname;
 const read = (f) => fs.readFileSync(path.join(DIR, f), 'utf8');
 const exists = (f) => fs.existsSync(path.join(DIR, f));
+// 当前版本一律读 manifest.json，升补丁号时不用逐个改测试
+const CUR = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'manifest.json'), 'utf8')).version;
+const CUR_RE = CUR.replace(/\./g, '\\.');
+const vRe = (pre, post) => new RegExp((pre || '') + CUR_RE + (post || ''));
+
 
 let passed = 0;
 let failed = 0;
@@ -27,6 +32,10 @@ function eq(name, actual, expected) {
 const Core = require('./follow-core.js');
 const manifest = JSON.parse(read('manifest.json'));
 const listing = JSON.parse(read('store/listing.json'));
+// 上架详细描述按版本号查找，不按数组下标（每次新版本插到最前，下标就会整体后移）
+const D = (v) => String((listing.detailed_description || []).find((x) => String(x).startsWith('【' + v)) || '');
+const descOrderOk = (vs) => vs.every((v, i) => i === 0 || listing.detailed_description.findIndex((x) => String(x).startsWith('【' + vs[i - 1])) <
+  listing.detailed_description.findIndex((x) => String(x).startsWith('【' + v)));
 const popHtml = read('popup.html');
 const panelHtml = read('panel.html');
 const popJs = read('popup.js');
@@ -42,20 +51,24 @@ const bgSrc = read('background.js');
 const readme = read('README.md');
 const privs = [
   read('docs/privacy.html'),
-  read('store/privacy-site/index.html'),
-  fs.readFileSync(path.join(DIR, '..', 'vote-ledger', 'privacy.html'), 'utf8')
+  read('store/privacy-site/index.html')
 ];
-const tutorialPath = '/Users/kentermacbook/Documents/Obsidian Vault/文章创作/X文章/TapePost信仰者工具小白教程-2026-11-14.md';
+// 账本服务的隐私页在仓库外（../vote-ledger），本机没有时跳过这一份，不让整个自检崩掉
+const ledgerPrivPath = path.join(DIR, '..', 'vote-ledger', 'privacy.html');
+if (fs.existsSync(ledgerPrivPath)) privs.push(fs.readFileSync(ledgerPrivPath, 'utf8'));
+else console.log('  SKIP  ../vote-ledger/privacy.html 不在本机，跳过该份隐私政策断言');
+const tutorialPath = process.env.TAPEPOST_TUTORIAL ||
+  '/Users/kentermacbook/Documents/Obsidian Vault/文章创作/X文章/TapePost信仰者工具小白教程-2026-11-14.md';
 const tutorial = fs.existsSync(tutorialPath) ? fs.readFileSync(tutorialPath, 'utf8') : '';
 
 const NEW_FILES = ['follow-core.js', 'follow-capture.js', 'follow-bridge.js', 'follow.html', 'follow.js'];
 const OVERLAY_FILES = ['follow-overlay.js', 'follow-overlay.css'];
-const GROWTH_FILES = ['growth-core.js', 'growth.html', 'growth.js'];
+const GROWTH_FILES = ['growth-core.js', 'growth.html', 'growth.js', 'growth-watch.js'];
 
 // ---------------------------------------------------------------- 1. 版本与接线
 console.log('== 1. 版本与接线 ==');
-eq('manifest 版本', manifest.version, '1.5.26');
-eq('listing 版本', listing.version, '1.5.26');
+ok('manifest 版本为 1.5.x 补丁号（' + CUR + '）', /^1\.5\.\d+$/.test(manifest.version));
+eq('listing 版本与 manifest 一致', listing.version, CUR);
 ok('manifest.description ≤132 且含F注分析', manifest.description.length <= 132 &&
   /F注互F分析/.test(manifest.description));
 ok('listing.summary_132 ≤132 且含F注分析', listing.summary_132.length <= 132 &&
@@ -119,15 +132,15 @@ ok('主入口有显眼的渐变卡样式（flex 布局 + 渐变 + hover）',
   /linear-gradient\(100deg,rgba\(34,211,238/.test(popHtml) &&
   /#openFollow:hover/.test(popHtml));
 ok('README / 教程 / 上架资料 / 隐私政策口径同步为「互F管理」入口',
-  /互F管理/.test(readme) && /互F管理/.test(tutorial) &&
+  /互F管理/.test(readme) && (!tutorial || /互F管理/.test(tutorial)) &&
   listing.detailed_description.some((x) => /互F管理/.test(x)) &&
   privs.every((p) => /互F管理/.test(p)));
 ok('popup.js 打开 follow.html', /getURL\('follow\.html'\)/.test(popJs));
 ok('follow.html 先引 core 再引面板脚本',
   followHtml.indexOf('<script src="follow-core.js"></script>') < followHtml.indexOf('<script src="follow.js"></script>'));
-ok('follow.html 版本兜底 v1.5.26', /v1\.5\.26/.test(followHtml));
-ok('四处 UI 兜底统一 v1.5.26', /v1\.5\.26/.test(popHtml) && /v1\.5\.26/.test(panelHtml) &&
-  /v1\.5\.26/.test(contentJs) && /v1\.5\.26/.test(popJs));
+ok('follow.html 版本兜底 v' + CUR, vRe('v').test(followHtml));
+ok('四处 UI 兜底统一 v' + CUR, vRe('v').test(popHtml) && vRe('v').test(panelHtml) &&
+  vRe('v').test(contentJs) && vRe('v').test(popJs));
 ok('两段 Dashboard justification 仍 ≤1000 且 en_chars 对得上',
   listing.dashboard_permission_justifications.fields.every((f) =>
     f.en.length <= 1000 && f.en_chars === f.en.length));
@@ -136,63 +149,66 @@ ok('consistency_note 已说明 follow-capture.js 是静态 MAIN world 脚本',
 
 // ---------------------------------------------------------------- 2. 合规资料
 console.log('== 2. 合规资料与文档 ==');
-ok('详细描述首条为 1.5.26，依次保留 1.5.25 / 1.5.24 / 1.5.23 / 1.5.22 / 1.5.21 / 1.5.20 历史说明',
-  String(listing.detailed_description[0]).startsWith('【1.5.26') &&
-  String(listing.detailed_description[1]).startsWith('【1.5.25') &&
-  String(listing.detailed_description[2]).startsWith('【1.5.24') &&
-  String(listing.detailed_description[3]).startsWith('【1.5.23') &&
-  String(listing.detailed_description[4]).startsWith('【1.5.22') &&
-  String(listing.detailed_description[5]).startsWith('【1.5.21') &&
-  String(listing.detailed_description[6]).startsWith('【1.5.20'));
+ok('详细描述首条为当前版本（' + CUR + '），其后按版本从新到旧保留 1.5.26 / 1.5.25 … 历史说明',
+  String(listing.detailed_description[0]).startsWith('【' + CUR) &&
+  descOrderOk([CUR, '1.5.26', '1.5.25', '1.5.24', '1.5.23', '1.5.22', '1.5.21', '1.5.20']));
 ok('详细描述含「不主动发任何请求 / 不读取登录凭证 / 只存本机」',
-  /不主动发任何请求/.test(listing.detailed_description[3]) &&
-  /不读取 Authorization/.test(listing.detailed_description[3]) &&
-  /只存本机/.test(listing.detailed_description[3]));
-ok('single_purpose 增列 1.5.26', /1\.5\.26/.test(listing.single_purpose));
+  /不主动发任何请求/.test(D('1.5.23')) &&
+  /不读取 Authorization/.test(D('1.5.23')) &&
+  /只存本机/.test(D('1.5.23')));
+ok('single_purpose 增列 ' + CUR, vRe().test(listing.single_purpose));
 ok('主机访问理由以 1.5.26 补充开头且仍写 34 条 / 9 项',
-  listing.host_access_justification.startsWith('【1.5.26 补充') &&
+  listing.host_access_justification.startsWith('【' + CUR + ' 补充') &&
   /仍 34 条/.test(listing.host_access_justification) &&
   /仍 9 项/.test(listing.host_access_justification));
 ok('逐项权限理由（storage / host_permissions）同步 1.5.26',
-  /1\.5\.26/.test(listing.permission_justifications.storage) &&
-  /1\.5\.26/.test(listing.permission_justifications.host_permissions));
+  vRe().test(listing.permission_justifications.storage) &&
+  vRe().test(listing.permission_justifications.host_permissions));
 ok('数据使用披露 what_is_transmitted / not_transmitted 同步 1.5.26',
-  /1\.5\.26/.test(listing.data_use_disclosure.what_is_transmitted) &&
-  /1\.5\.26/.test(listing.data_use_disclosure.what_is_not_transmitted));
-ok('第三方接收方明确「无新增」', /【1\.5\.26】无新增第三方接收方/.test(listing.data_use_disclosure.third_party_data_recipients));
+  vRe().test(listing.data_use_disclosure.what_is_transmitted) &&
+  vRe().test(listing.data_use_disclosure.what_is_not_transmitted));
+ok('第三方接收方明确「无新增」', vRe('【', '】无新增第三方接收方').test(listing.data_use_disclosure.third_party_data_recipients));
 ok('credential_handling_note 说明 follow-capture / follow-overlay 不读凭证',
   /follow-capture\.js/.test(listing.credential_handling_note) &&
   /follow-overlay\.js/.test(listing.credential_handling_note) &&
   /不读取任何请求头/.test(listing.credential_handling_note));
-ok('data_usage_form_answers 以 1.5.26 补充开头', listing.data_usage_form_answers.startsWith('【1.5.26 补充】'));
+ok('data_usage_form_answers 以 1.5.26 补充开头', listing.data_usage_form_answers.startsWith('【' + CUR + ' 补充】'));
 ok('发布清单指向 1.5.26 包 / 35 文件', listing.pre_submit_checklist.some((x) =>
-  /TapePost_1\.5\.26_store\.zip（38 文件/.test(x)));
+  vRe('TapePost_', '_store\\.zip（39 文件').test(x)));
 ok('发布清单新增页面扫描浮层核对项', listing.pre_submit_checklist.some((x) =>
   /页面内扫描浮层/.test(x) && /绝不自动取F/.test(x)));
 ok('发布清单新增F注分析核对项', listing.pre_submit_checklist.some((x) =>
   /只被动读取/.test(x) && /先预演后确认/.test(x)));
 ok('上架资料保留 1.5.22 多信号判定与响应心跳，且不新增权限 / 接收方',
-  /scanVerdict\(\)/.test(listing.detailed_description[4]) &&
-  /TAPEFOLLOW_PULSE/.test(listing.detailed_description[4]) &&
-  /不新增权限/.test(listing.detailed_description[4]) &&
-  /第三方数据接收方/.test(listing.detailed_description[4]));
-ok('上架资料首条为 1.5.26 增长计划，并保留高亮 / DOM 兼容 / ERROR 防护历史段',
-  /每日 40 条发推/.test(listing.detailed_description[0]) &&
-  /1000 条评论/.test(listing.detailed_description[0]) &&
-  /growth-core\.js/.test(listing.detailed_description[0]) &&
-  /Follows you/.test(listing.detailed_description[1]) &&
-  /MutationObserver/.test(listing.detailed_description[1]) &&
-  /findUserCells\(\)/.test(listing.detailed_description[2]) &&
-  /Unchecked runtime\.lastError/.test(listing.detailed_description[3]));
+  /scanVerdict\(\)/.test(D('1.5.22')) &&
+  /TAPEFOLLOW_PULSE/.test(D('1.5.22')) &&
+  /不新增权限/.test(D('1.5.22')) &&
+  /第三方数据接收方/.test(D('1.5.22')));
+ok('上架资料保留 1.5.26 增长计划段，以及高亮 / DOM 兼容 / ERROR 防护历史段',
+  /每日 40 条发推/.test(D('1.5.26')) &&
+  /1000 条评论/.test(D('1.5.26')) &&
+  /growth-core\.js/.test(D('1.5.26')) &&
+  /Follows you/.test(D('1.5.25')) &&
+  /MutationObserver/.test(D('1.5.25')) &&
+  /findUserCells\(\)/.test(D('1.5.24')) &&
+  /Unchecked runtime\.lastError/.test(D('1.5.23')));
+ok('上架资料首条为 1.5.27 互F管理 / 增长计划完善，并写明发送成功才计数、发送日志、不代点',
+  /逐屏往下查找/.test(D('1.5.27')) && /谁取F了你|取F了你的人/.test(D('1.5.27')) &&
+  /growth-watch\.js/.test(D('1.5.27')) && /确认发送成功才 \+1/.test(D('1.5.27')) &&
+  /发送日志/.test(D('1.5.27')) && /不代点、不读未发送的草稿、不发请求/.test(D('1.5.27')));
 ok('发布清单新增「扫描不会提前结束」核对项', listing.pre_submit_checklist.some((x) =>
   /扫描不会提前结束/.test(x) && /标「中断」/.test(x)));
 privs.forEach((html, i) => {
-  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 1.5.26', /适用版本：1\.5\.26/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 适用版本 ' + CUR, vRe('适用版本：').test(html));
   ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.22 扫描结束判定段',
     /1\.5\.22 扫描结束判定/.test(html) && /TAPEFOLLOW_PULSE/.test(html) &&
     /只含响应计数与时间戳/.test(html));
   ok('隐私政策副本 ' + (i + 1) + ' 保留 1.5.23 运行时错误防护段',
     /1\.5\.23 运行时错误防护/.test(html) && /Unchecked runtime\.lastError/.test(html));
+  ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.27 旁听发送按钮披露（不代点 / 读取发出文字 / 发送日志存本地数据库 90 天）',
+    /1\.5\.27 互F管理与增长计划完善/.test(html) && /growth-watch\.js/.test(html) &&
+    /不阻止、不代点/.test(html) && /最多 280 字/.test(html) && /保留最近 90 天/.test(html) && /IndexedDB/.test(html) &&
+    /X 确认发送成功才计数/.test(html));
   ok('隐私政策副本 ' + (i + 1) + ' 含 1.5.26 增长计划段并保留 1.5.25 DOM 兼容修复段',
     /1\.5\.26 X 增长计划/.test(html) && /40 条发推/.test(html) &&
     /1\.5\.25/.test(html) && /UserCell/.test(html));
@@ -206,7 +222,8 @@ ok('README 保留 1.5.23 错误防护章节与 1.5.22 / 1.5.21 / 1.5.20 / 1.5.19
   /### 1\.5\.21：X 页面内中文/.test(readme) &&
   /### 1\.5\.20：修复F注名单丢失/.test(readme) &&
   /### 1\.5\.19：新增 X F注F系分析/.test(readme) && /35 个文件/.test(readme) &&
-  /### 1\.5\.26：新增 X 增长计划/.test(readme) && /38 个文件/.test(readme));
+  /### 1\.5\.26：新增 X 增长计划/.test(readme) && /### 1\.5\.27：互F管理与 X 增长计划完善/.test(readme) &&
+  /39 个文件/.test(readme));
 ok('README 说明多信号判定 / 响应心跳 / 上限标中断',
   /scanVerdict\(\)/.test(readme) && /TAPEFOLLOW_PULSE/.test(readme) &&
   /上限绝不冒充完成/.test(readme));
@@ -344,7 +361,7 @@ console.log('== 5. 白名单 / 预演 / 限速 ==');
 ok('白名单账号被保护', Core.protectedReasons(a, { whitelist: ['@Alice'] }).includes('白名单'));
 ok('认证 / 大 V 受 skipProtected 保护', Core.protectedReasons(a, { skipProtected: true }).length >= 2);
 ok('锁推账号始终受保护', Core.protectedReasons({ handle: 'z', locked: true }, { skipProtected: false }).includes('锁推账号'));
-ok('F掉 skipProtected 后认证与大 V 不再保护，白名单仍保护', (() => {
+ok('关掉 skipProtected 后认证与大 V 不再保护，白名单仍保护', (() => {
   const r = Core.protectedReasons(a, { skipProtected: false, whitelist: [] });
   return r.length === 0 && Core.protectedReasons(a, { skipProtected: false, whitelist: ['alice'] }).length === 1;
 })());
@@ -382,10 +399,10 @@ ok('CSV 带主页 URL 与 @handle', /@bob/.test(Core.toCsv([b])) && /https:\/\/x
 
 // ---------------------------------------------------------------- 6. 安全不变量（源码级）
 console.log('== 6. 安全不变量 ==');
-ok('采集器默认F闭（stats.enabled = false）', /enabled:\s*false/.test(capture));
+ok('采集器默认关闭（stats.enabled = false）', /enabled:\s*false/.test(capture));
 ok('采集器只在收到 TAPEFOLLOW_CMD start 时启用',
   /action === 'start'\)\s*\{\s*stats\.enabled = true/.test(capture));
-ok('采集器收到 stop 立即F闭', /action === 'stop'\)\s*\{\s*stats\.enabled = false/.test(capture));
+ok('采集器收到 stop 立即关闭', /action === 'stop'\)\s*\{\s*stats\.enabled = false/.test(capture));
 ok('采集器只读响应体，用 clone().text() 不消耗原响应', /res\.clone\(\)\.text\(\)/.test(capture));
 ok('采集器不读取 authorization / ct0 / cookie / transaction-id',
   !/headers\.get\(['"](?:authorization|ct0|cookie|x-client-transaction-id)/i.test(capture) &&
@@ -400,9 +417,9 @@ ok('桥接层要求 confirmed === true 且 dryRun === false',
 ok('桥接层只在「F注中」页执行',
   /pageSource\(\) !== 'following'/.test(bridge));
 ok('桥接层二次校验受保护账号',
-  /Core\.protectedReasons\(u,/.test(bridge));
+  /Core\.protectedReasons\(byHandle\[h\] \|\| \{ handle: h \}, protOpts\)/.test(bridge));
 ok('桥接层定位到行后校验 handle 一致性，不匹配就跳过',
-  /cellHandle\(cell\) !== handle/.test(bridge));
+  /if \(!rowHandleOk\(cell, handle\)\) return \{ ok: false/.test(bridge) && /function rowHandleOk/.test(bridge));
 ok('桥接层点击后校验按钮状态变成「F注」',
   /looksUnfollowed\(cell\)/.test(bridge) && /FOLLOW_WORDS/.test(bridge));
 ok('连续 3 次定位失败自动停机', /MAX_FAIL_STREAK = 3/.test(bridge) &&
@@ -410,7 +427,7 @@ ok('连续 3 次定位失败自动停机', /MAX_FAIL_STREAK = 3/.test(bridge) &&
 ok('桥接层不调用任何 X 写接口 / 不发 fetch 请求',
   !/fetch\(/.test(bridge) && !/XMLHttpRequest/.test(bridge));
 ok('桥接层支持 paused / stopped 中断',
-  /ph === 'paused'/.test(bridge) && /ph === 'stopped'/.test(bridge));
+  /if \(ph !== 'running'\) \{ stopReason = ph; break; \}/.test(bridge) && /fin\.phase === 'paused'/.test(bridge));
 ok('预演函数只生成名单并弹确认层，不写任务',
   /openModal\('批量取F预演/.test(followJs) && /state\.pending = task/.test(followJs));
 ok('确认执行写 confirmed:true / dryRun:false',
@@ -447,11 +464,11 @@ ok('任务状态兜底不会露出英文 phase', /\|\| '任务状态'/.test(foll
 ok('采集完成提示用中文，不再直接输出 following / followers',
   /'采集完成：' \+ \(src === 'followers' \? '粉丝' : 'F注中'\)/.test(bridge) &&
   !/'采集完成：' \+ src/.test(bridge));
-ok('品牌名与版本号作为专有名词保留', /v1\.5\.26/.test(followHtml) && /TapePost信仰者工具/.test(followHtml));
+ok('品牌名与版本号作为专有名词保留', vRe('v').test(followHtml) && /TapePost信仰者工具/.test(followHtml));
 
 // ---------------------------------------------------------------- 7. 商店包
 console.log('== 7. 商店包 ==');
-const zipPath = path.join(DIR, 'store', 'TapePost_1.5.26_store.zip');
+const zipPath = path.join(DIR, 'store', 'TapePost_' + CUR + '_store.zip');
 if (fs.existsSync(zipPath)) {
   // 极简 zip 中央目录解析（沿用 test-tapeup-removed.js 的做法）
   const buf = fs.readFileSync(zipPath);
@@ -468,8 +485,8 @@ if (fs.existsSync(zipPath)) {
     off = start + csize;
   }
   const names = Object.keys(entries);
-  eq('商店包 38 文件', names.length, 38);
-  ok('十个新运行时文件都进包', NEW_FILES.concat(OVERLAY_FILES, GROWTH_FILES).every((f) => names.includes(f)));
+  eq('商店包 39 文件（1.5.27 新增 growth-watch.js）', names.length, 39);
+  ok('十一个新运行时文件都进包', NEW_FILES.concat(OVERLAY_FILES, GROWTH_FILES).every((f) => names.includes(f)));
   ok('测试脚本不进包', names.every((n) => !n.startsWith('test-')));
   ok('根目录即 manifest.json', names.includes('manifest.json'));
   const manEntry = entries['manifest.json'];
@@ -477,7 +494,7 @@ if (fs.existsSync(zipPath)) {
     const text = manEntry.method === 8
       ? zlib.inflateRawSync(manEntry.data).toString('utf8')
       : manEntry.data.toString('utf8');
-    eq('包内 manifest 版本', JSON.parse(text).version, '1.5.26');
+    eq('包内 manifest 版本', JSON.parse(text).version, CUR);
   }
   ok('包内文件与工作区逐字节一致', NEW_FILES.concat(OVERLAY_FILES, GROWTH_FILES).every((f) => {
     const e = entries[f];
@@ -658,7 +675,7 @@ async function persistenceChecks() {
   ok('模拟：写入失败原因写进采集状态供面板提示',
     /QUOTA/.test(String((s4.db.followCapture || {}).storageError || '')));
 
-  // 场景 5：用户F掉面板再重新打开 —— 名单必须还在，且卡住的采集中断但不丢数据
+  // 场景 5：用户关掉面板再重新打开 —— 名单必须还在，且卡住的采集中断但不丢数据
   const reopen = makeStore(s1.db);
   const p1 = await runPanel(reopen);
   ok('模拟：重新打开面板仍显示已抓到的 3 人', p1.getEl('cntFollowing').textContent === '3');
@@ -839,15 +856,15 @@ async function overlayChecks() {
   ok('模拟：点「停止」只改状态，名单完整保留',
     db.followCapture.status === 'stopped' && Object.keys(db.followData.following).length === 2);
 
-  // 打开「标红」开F：只有 bob 是未回F，carol 不应被标
+  // 打开「标红」开关：只有 bob 是未回F，carol 不应被标
   const ch = ov.els.tpfMark.handlers.change || [];
   if (ch.length) ch[0]({ target: { checked: true } });
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  ok('模拟：标红开F只给未回F行加类 / 徽标',
+  ok('模拟：标红开关只给未回F行加类 / 徽标',
     cells[0].classes.indexOf('tpf-row-notback') !== -1 &&
     cells[1].classes.indexOf('tpf-row-notback') === -1 &&
     ov.created.some((e) => e.className === 'tpf-badge' && e.textContent === '未回F'));
-  ok('模拟：标红开F状态只存本机',
+  ok('模拟：标红开关状态只存本机',
     db.followOverlayUi && db.followOverlayUi.markEnabled === true);
 
   await click('tpfPick');
@@ -889,8 +906,8 @@ async function overlayChecks() {
   ok('面板消费待选草稿但绝不自动确认取F',
     /async function adoptDraft/.test(followJs) && /state\.selected\[k\] = true/.test(followJs) &&
     /protectedReasons/.test(followJs) && /id="draftHint"/.test(followHtml));
-  ok('面板版本与提示同步 1.5.26',
-    /v1\.5\.26/.test(followHtml) && /页面内扫描浮层/.test(followHtml));
+  ok('面板版本与提示同步 ' + CUR,
+    vRe('v').test(followHtml) && /页面内扫描浮层/.test(followHtml));
 }
 
 
@@ -1059,6 +1076,22 @@ async function scanChecks() {
     ok('全量重扫：已存名单没有被删', Object.keys(h.db.followData.following).length === 2);
   }
 
+  // 1.5.27：真实桥接源码跑完一轮「全量扫描到底」→ 本轮没出现的人被清理，并写入变化记录
+  {
+    const seed = Array.from({ length: 20 }, (_, i) => 'p' + i);
+    const h = makeScanBridge({ seed: seed });
+    const seen = seed.filter((x) => x !== 'p5').map((x) => ({ handle: x, name: x }));
+    await h.emit(seen);
+    await h.emit([{ handle: 'fresh', name: 'fresh' }]);
+    for (let i = 0; i < 40 && h.cap().status === 'running'; i++) await h.tick(1500);
+    const fd = h.db.followData;
+    ok('1.5.27 全量扫描到底：状态 done 且记录清理结果', h.cap().status === 'done' && h.cap().prune && h.cap().prune.pruned === true);
+    ok('1.5.27 全量扫描到底：本轮没出现的人从本机名单移除并立墓碑', !fd.following.p5 && fd.gone.following.p5 > 0 &&
+      !!fd.following.p4 && !!fd.following.fresh);
+    ok('1.5.27 全量扫描到底：首次只建基线、提示下次会自动对比', h.cap().prune.firstBaseline === true &&
+      /已建立基线/.test(h.cap().message) && fd.baseline.following > 0);
+  }
+
   // 只收到心跳、一个用户都没解析出来，也不能误停
   {
     const h = makeScanBridge({});
@@ -1149,7 +1182,7 @@ function errorGuardChecks() {
     /function syncGet\(key\)[\s\S]{0,300}lastError/.test(bgSrc) &&
     /function localGet\(key, fallback\)[\s\S]{0,300}lastError/.test(bgSrc) &&
     /function localSet\(obj\)[\s\S]{0,300}lastError/.test(bgSrc));
-  ok('弹窗 / 内容脚本 / 生态面板的F键回调同步读取 lastError',
+  ok('弹窗 / 内容脚本 / 生态面板的关键回调同步读取 lastError',
     (popJs.match(/void \(chrome\.runtime && chrome\.runtime\.lastError\)/g) || []).length >= 8 &&
     /void \(chrome\.runtime && chrome\.runtime\.lastError\)/.test(contentJs) &&
     (panelJs.match(/void \(chrome\.runtime && chrome\.runtime\.lastError\)/g) || []).length >= 2);
@@ -1204,7 +1237,7 @@ function visualChecks() {
       /未互F账号会显示红色渐变高亮/.test(privs[0]) &&
       privs.every((h) => /不会直接取F、不会自动确认弹窗/.test(h)) &&
       /未互F账号会显示红色渐变高亮/.test(listing.detailed_description[0]) === false &&
-      /红色渐变高亮 \+ 发光徽标/.test(listing.detailed_description[3]) &&
+      /红色渐变高亮 \+ 发光徽标/.test(D('1.5.23')) &&
       (!tutorial || /未互F的人一眼就能看到/.test(tutorial));
   })());
   ok('未互F账号头像 + 用户名在两处都有特殊标识（纯 CSS，不改 DOM / 文案）', (() => {
@@ -1318,7 +1351,7 @@ function newDomChecks() {
   sandbox.window.location = sandbox.location;
   vm.createContext(sandbox);
   vm.runInContext(overlayJs, sandbox, { filename: 'follow-overlay.js' });
-  // 等 overlay 初始化（build + 绑定事件）完成后再打开标红开F
+  // 等 overlay 初始化（build + 绑定事件）完成后再打开标红开关
   return Promise.resolve().then(() => Promise.resolve()).then(() => {
     const ch = els.tpfMark.handlers.change || [];
     if (ch.length) ch[0]({ target: { checked: true } });
@@ -1491,7 +1524,7 @@ function autoMarkChecks() {
       bob.badgeHost.children.length === 1 &&
       carol.cl.contains('tpf-row-notback') === false &&
       bob.badgeHost.children[0].textContent === '未回F');
-    ok('默认勾选即时高亮，不依赖用户先打开开F', els.tpfMark.checked === true);
+    ok('默认勾选即时高亮，不依赖用户先打开开关', els.tpfMark.checked === true);
 
     // 模拟 X hover 重绘：class 被冲掉但徽标还在（1.5.24 的老 bug）
     bob.cl.remove('tpf-row-notback');
@@ -1513,7 +1546,7 @@ function autoMarkChecks() {
         const ch = els.tpfMark.handlers.change || [];
         if (ch.length) ch[0]({ target: { checked: false } });
         return settle().then(() => {
-          ok('手动F闭开F仍即刻清除全部标记',
+          ok('手动关闭开关仍即刻清除全部标记',
             bob.cl.contains('tpf-row-notback') === false &&
             bob.avatarCl.contains('tpf-nb-avatar') === false &&
             bob.badgeHost.children.length === 0);
@@ -1523,7 +1556,297 @@ function autoMarkChecks() {
   });
 }
 
-persistenceChecks().then(overlayChecks).then(scanChecks).then(visualChecks).then(newDomChecks).then(autoMarkChecks).then(errorGuardChecks).then(function () {
+// ---------------------------------------------------------------- 15. 1.5.27 批量取F：虚拟列表逐屏查找 / 断点续跑 / 名单同步
+// X 的F注列表是虚拟滚动：同一时刻只渲染十来行。用真实 follow-bridge.js 源码 +
+// 「按 scrollY 只渲染可见行」的假 DOM 复现：旧版只在当前屏幕里找人，
+// 勾了不在屏上的账号就「没找到这一行」→ 连续 3 次停机。
+function makeSweepEnv(opts) {
+  opts = opts || {};
+  const N = opts.n || 300, ROW = 80, VH = 800;
+  const T0 = 1800000000000;
+  let fakeNow = T0;
+  const RealDate = Date;
+  const FakeDate = new Proxy(RealDate, {
+    construct(t, a) { return a.length ? new t(...a) : new t(fakeNow); },
+    get(t, p) { return p === 'now' ? () => fakeNow : Reflect.get(t, p); }
+  });
+  const all = Array.from({ length: N }, (_, i) => 'u' + i);
+  const followingSet = new Set(all);
+  const clicks = [];
+  let pendingConfirm = null;
+  let scrollY = opts.startY || 0;
+  const maxY = N * ROW - VH;
+  const cache = {};
+  const cell = (h) => cache[h] || (cache[h] = {
+    querySelectorAll(sel) {
+      if (sel.indexOf('a[') === 0) return [{ getAttribute: () => '/' + h }];
+      if (sel.indexOf('role') >= 0) return followingSet.has(h) ? [] : [{ innerText: 'Follow' }];
+      return [];
+    },
+    querySelector(sel) {
+      if (sel === '[data-testid$="-unfollow"]') {
+        return followingSet.has(h) ? { click() { pendingConfirm = h; } } : null;
+      }
+      return null;
+    }
+  });
+  const visible = () => {
+    const first = Math.max(0, Math.floor(scrollY / ROW) - 1);
+    const out = [];
+    for (let i = first; i < Math.min(N, first + Math.ceil(VH / ROW) + 2); i++) out.push(cell(all[i]));
+    return out;
+  };
+  const following = {};
+  all.forEach((h) => { following[h] = { handle: h, name: h, followers: 10, seenAt: T0 - 1000 }; });
+  const db = Object.assign(Object.create(null), {
+    followData: { me: 'alice', following: following, followers: { u1: { handle: 'u1' } },
+      updatedAt: { following: T0, followers: T0 }, savedAt: T0, version: 1, source: 'passive' },
+    followWhitelist: opts.whitelist || [],
+    followSettings: { minDelay: 5000, jitter: 3000, batchLimit: 50, skipProtected: true },
+    followTask: Object.assign({ id: 'ft-1', phase: 'running', dryRun: false, confirmed: true,
+      handles: opts.handles || [], settings: { minDelay: 5000, jitter: 3000, batchLimit: 50 },
+      ok: [], fail: [], log: [], index: 0, startedAt: T0, beatAt: T0 }, opts.task || {})
+  });
+  let onClick = null;
+  const msgListeners = [];
+  const timers = [];
+  const sandbox = {
+    console: console, Promise: Promise, Object: Object, Array: Array,
+    String: String, Number: Number, RegExp: RegExp, JSON: JSON, Math: Math,
+    Date: FakeDate,
+    setTimeout: (fn, ms) => { timers.push({ fn: fn, ms: ms || 0 }); setImmediate(() => { fakeNow += (ms || 0); fn(); }); return 0; },
+    clearTimeout: () => {},
+    setInterval: () => 0,
+    location: { pathname: '/alice/following' },
+    document: {
+      querySelector(sel) {
+        if (sel === '[data-testid="confirmationSheetConfirm"]') {
+          return pendingConfirm ? { click() {
+            followingSet.delete(pendingConfirm); clicks.push(pendingConfirm);
+            pendingConfirm = null; if (onClick) onClick(clicks.length);
+          } } : null;
+        }
+        if (sel === '[data-testid="primaryColumn"]') return { querySelector: () => null };
+        return null;
+      },
+      querySelectorAll(sel) { return sel === '[data-testid="UserCell"]' ? visible() : []; },
+      body: { scrollHeight: N * ROW },
+      documentElement: { scrollHeight: N * ROW },
+      addEventListener() {}
+    },
+    innerHeight: VH,
+    addEventListener: () => {},
+    postMessage: () => {},
+    scrollTo: (x, y) => { scrollY = Math.max(0, Math.min(maxY, y)); },
+    scrollBy: (x, dy) => { scrollY = Math.max(0, Math.min(maxY, scrollY + dy)); },
+    chrome: {
+      storage: {
+        local: {
+          get(keys, cb) {
+            const out = {};
+            (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in db) out[k] = JSON.parse(JSON.stringify(db[k])); });
+            cb(out);
+          },
+          set(obj, cb) { Object.keys(obj).forEach((k) => { db[k] = JSON.parse(JSON.stringify(obj[k])); }); cb(); }
+        },
+        onChanged: { addListener() {} }
+      },
+      runtime: { lastError: null, onMessage: { addListener(fn) { msgListeners.push(fn); } },
+        getManifest: () => ({ version: '1.5.27' }) }
+    }
+  };
+  Object.defineProperty(sandbox, 'scrollY', { get: () => scrollY });
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  sandbox.FollowCore = Core;
+  vm.createContext(sandbox);
+  vm.runInContext(bridge, sandbox, { filename: 'follow-bridge.js' });
+  const start = () => new Promise((resolve) => {
+    let r = null;
+    msgListeners.forEach((fn) => { r = fn({ type: 'FOLLOW_TASK_START' }, {}, resolve) || r; });
+  });
+  const settle = async (n) => { for (let i = 0; i < (n || 20); i++) await new Promise((r) => setImmediate(r)); };
+  return { db: db, clicks: clicks, start: start, settle: settle,
+    onClick(fn) { onClick = fn; }, now: () => fakeNow, T0: T0,
+    setPhase(ph) { db.followTask.phase = ph; },
+    stillFollowing: (h) => followingSet.has(h) };
+}
+
+async function sweepChecks() {
+  console.log('== 15. 1.5.27 批量取F：虚拟列表逐屏查找 / 断点续跑 / 名单同步 ==');
+  // A. 目标分散在 300 行的不同位置 + 一个不在列表 + 一个白名单
+  {
+    const targets = ['u3', 'u80', 'u150', 'u220', 'u299', 'ghost', 'u10'];
+    const env = makeSweepEnv({ handles: targets, whitelist: ['u10'], startY: 12000 });
+    const r = await env.start();
+    await env.settle();
+    const t = env.db.followTask;
+    eq('A. 返回 ok', r && r.ok, true);
+    eq('A. 分散在整张列表里的 5 人全部取F成功', (t.ok || []).slice().sort().join(','), 'u150,u220,u299,u3,u80');
+    ok('A. 只点了这 5 人，没有误点别人', env.clicks.slice().sort().join(',') === 'u150,u220,u299,u3,u80');
+    ok('A. 白名单账号没被点，记为受保护', env.stillFollowing('u10') &&
+      (t.fail || []).some((f) => f.handle === 'u10' && /受保护/.test(f.reason)));
+    ok('A. 不在列表的人记「列表里没找到」而不是触发停机', t.phase === 'done' &&
+      (t.fail || []).some((f) => f.handle === 'ghost' && /列表里没找到/.test(f.reason)));
+    eq('A. index 与处理人数一致', t.index, 7);
+    await env.settle(40);
+    const d = env.db.followData;
+    ok('A. 取F成功的人已从本机「F注中」移除', ['u3', 'u80', 'u150', 'u220', 'u299'].every((h) => !d.following[h]) &&
+      !!d.following.u4 && !!d.following.u10);
+    ok('A. 取F成功的人立了墓碑，不会被另一标签页的旧副本复活',
+      ['u3', 'u299'].every((h) => d.gone && d.gone.following && d.gone.following[h] > 0) &&
+      !Core.mergeData(d, { following: { u3: { handle: 'u3', seenAt: env.T0 } } }).following.u3);
+    ok('A. 变化记录里有一条「批量取F」', (d.history || []).some((e) => e.kind === 'unfollow' &&
+      e.removed.some((u) => u.handle === 'u80')));
+    ok('A. 心跳 beatAt 随执行更新', t.beatAt > env.T0);
+  }
+  // B. 中途暂停 → 循环退出 → 点继续从剩下的人接着跑，不重复处理
+  {
+    const targets = ['u5', 'u60', 'u120', 'u200', 'u280'];
+    const env = makeSweepEnv({ handles: targets });
+    env.onClick((n) => { if (n === 2) env.setPhase('paused'); });
+    const r1 = await env.start();
+    await env.settle();
+    const t1 = env.db.followTask;
+    ok('B. 暂停后执行循环退出，状态保持「已暂停」并写明剩余人数',
+      t1.phase === 'paused' && r1.remaining === 3 && /还剩 3 人/.test(t1.message || ''));
+    eq('B. 暂停前只处理了 2 人', (t1.ok || []).length, 2);
+    env.onClick(null);
+    env.setPhase('running');
+    const r2 = await env.start();
+    await env.settle();
+    const t2 = env.db.followTask;
+    ok('B. 点继续后把剩下 3 人处理完，状态变为完成', r2.ok && t2.phase === 'done' && (t2.ok || []).length === 5);
+    ok('B. 断点续跑不重复点同一个人', env.clicks.length === 5 && new Set(env.clicks).size === 5);
+  }
+  // C. 执行页刷新：任务停在 running 但心跳过期 → 加载时自动改为暂停，绝不自动续跑
+  {
+    const env = makeSweepEnv({ handles: ['u1'], task: { beatAt: 1800000000000 - 120000, startedAt: 1800000000000 - 120000 } });
+    await env.settle(40);
+    ok('C. 心跳过期的 running 任务在页面加载时被改成「已暂停」', env.db.followTask.phase === 'paused' &&
+      /自动暂停/.test(env.db.followTask.message || ''));
+    eq('C. 页面加载后没有自动点任何人', env.clicks.length, 0);
+  }
+  // D. 未经确认的任务仍被拒绝（安全不变量保留）
+  {
+    const env = makeSweepEnv({ handles: ['u1'], task: { confirmed: false } });
+    const r = await env.start();
+    ok('D. 未确认任务拒绝执行', r && r.ok === false && /未经确认/.test(r.error) && env.clicks.length === 0);
+  }
+  // E. 面板「继续」会重新下发 FOLLOW_TASK_START（旧版只改状态）
+  ok('E. 面板 setPhase(running) 重新发送 FOLLOW_TASK_START', /phase === 'running'[\s\S]{0,900}FOLLOW_PING[\s\S]{0,1400}FOLLOW_TASK_START/.test(followJs));
+}
+
+// ---------------------------------------------------------------- 16. 1.5.27 全量扫描清理 / 谁取F了我
+async function freshnessChecks() {
+  console.log('== 16. 1.5.27 全量扫描清理 / 谁取F了我 ==');
+  const U = (n, p) => Array.from({ length: n }, (_, i) => ({ handle: (p || 'f') + i, name: 'N' + i, followers: i }));
+  let d = Core.normalizeData({});
+  d = Core.ingestUsers(d, 'followers', U(40), 1000).data;
+  const first = Core.finishFullScan(d, 'followers', 900, 1100);
+  ok('第一次全量扫描只建立基线，不生成「全员新增」', first.pruned && first.firstBaseline &&
+    first.added.length === 0 && first.data.baseline.followers === 1100);
+  d = first.data;
+  const again = U(40).filter((u) => ['f3', 'f7'].indexOf(u.handle) < 0).concat([{ handle: 'newfan', name: 'New' }]);
+  d = Core.ingestUsers(d, 'followers', again, 2000).data;
+  const second = Core.finishFullScan(d, 'followers', 1900, 2100);
+  eq('第二次全量扫描：取F了我的人', second.removed.map((u) => u.handle).sort().join(','), 'f3,f7');
+  eq('第二次全量扫描：新粉丝', second.added.map((u) => u.handle).join(','), 'newfan');
+  ok('取F了我的人已从本机粉丝名单移除', !second.data.followers.f3 && !second.data.followers.f7 &&
+    !!second.data.followers.newfan);
+  eq('recentLostFollowers 列出最近取F我的人', Core.recentLostFollowers(second.data, 30, 2200)
+    .map((u) => u.handle).sort().join(','), 'f3,f7');
+  ok('之后又F注回来就不再算「取F了我」', (() => {
+    const back = Core.ingestUsers(second.data, 'followers', [{ handle: 'f3' }], 3000).data;
+    return !back.gone.followers.f3 && Core.recentLostFollowers(back, 30, 3100).every((u) => u.handle !== 'f3');
+  })());
+  // 覆盖不足：只扫到一半就「到底」→ 不清理
+  let d2 = Core.ingestUsers(second.data, 'followers', U(10), 5000).data;
+  const partial = Core.finishFullScan(d2, 'followers', 4900, 5100);
+  ok('本轮覆盖不足 85% 时不清理、不误报', partial.pruned === false && partial.reason === 'coverage' &&
+    Object.keys(partial.data.followers).length === Object.keys(d2.followers).length);
+  ok('旧数据（没有 seenAt）兼容：normalizeData 补全新字段', (() => {
+    const n = Core.normalizeData({ following: { a: { handle: 'a' } } });
+    return n.gone.following && n.gone.followers && Array.isArray(n.history) && n.baseline.following === 0 && !!n.following.a;
+  })());
+  ok('面板与桥接层共用 FollowCore 的数据口径', /function normalizeData\(raw\) \{ return Core\.normalizeData\(raw\); \}/.test(followJs) &&
+    /function mergeData\(fromStore, fromMemory\) \{ return Core\.mergeData/.test(bridge));
+  ok('桥接层只在「全量扫描 + 真正到底」时清理', /cap\.mode === 'full'[\s\S]{0,120}Core\.finishFullScan/.test(bridge));
+  ok('面板有「谁取F了我」与变化记录区', /id="lostList"/.test(followHtml) && /id="histList"/.test(followHtml) &&
+    /recentLostFollowers/.test(followJs));
+  ok('清空本机名单同时清掉墓碑 / 基线 / 变化记录', /gone: \{\}, baseline: \{\}, history: \[\]/.test(followJs));
+}
+
+/* 1.5.27 复查修正：输入不被改写 / 采集缓存补发 / 弹窗回调 / 任务替换 / 新版 DOM 取F */
+async function reviewFixChecks() {
+  console.log('== 17. 1.5.27 复查修正 ==');
+  // 1) 内核函数不改调用方的原对象
+  const raw = Core.normalizeData({ following: { a: { handle: 'a', seenAt: 1 }, b: { handle: 'b', seenAt: 5000 } } });
+  const before = JSON.stringify(raw);
+  Core.finishFullScan(raw, 'following', 4000, 6000);
+  Core.removeHandles(raw, 'following', ['b'], 7000, 'unfollow');
+  Core.ingestUsers(raw, 'following', [{ handle: 'c' }], 8000);
+  ok('finishFullScan / removeHandles / ingestUsers 不改调用方传入的名单', JSON.stringify(raw) === before);
+
+  // 2) MAIN 采集器：开始采集前已加载的人，开始时补发一次
+  const posted = [];
+  const listeners = [];
+  const fakeRes = (body) => ({ headers: { get: () => 'application/json' },
+    clone: () => ({ text: () => Promise.resolve(body) }) });
+  const body = JSON.stringify({ data: { users: [
+    { rest_id: '1', legacy: { screen_name: 'early1', name: 'E1', followers_count: 5 } },
+    { rest_id: '2', legacy: { screen_name: 'early2', name: 'E2', followers_count: 9 } }] } });
+  const win = {
+    FollowCore: Core,
+    fetch: () => Promise.resolve(fakeRes(body)),
+    addEventListener: (t, fn) => { if (t === 'message') listeners.push(fn); },
+    postMessage: (m) => posted.push(m)
+  };
+  const sb = { window: win, location: { pathname: '/alice/following' },
+    document: { addEventListener() {}, querySelector: () => null, hidden: false },
+    setTimeout: (fn) => { fn(); return 1; }, clearTimeout() {}, console: console };
+  win.window = win;
+  vm.createContext(sb);
+  vm.runInContext(capture, sb, { filename: 'follow-capture.js' });
+  await win.fetch('https://x.com/i/api/graphql/abc/Following');
+  for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r));
+  const dataMsgs = () => posted.filter((m) => m.type === 'TAPEFOLLOW_DATA');
+  ok('未开始采集：不向扩展传任何名单数据', dataMsgs().length === 0);
+  const send = (action) => listeners.forEach((fn) => fn({ source: win,
+    data: { __tapeFollow: true, type: 'TAPEFOLLOW_CMD', action: action } }));
+  send('start');
+  const got = dataMsgs().reduce((a, m) => a.concat(m.batches.reduce((b, x) => b.concat(x.users), [])), []);
+  ok('开始采集时补发本页已加载过的人（全量扫描不会把列表顶部的人误判为取F）',
+    got.map((u) => u.handle).sort().join(',') === 'early1,early2');
+  const n1 = dataMsgs().length;
+  send('start'); send('start');
+  ok('桥接层重复发 start 不会重复补发', dataMsgs().length === n1);
+
+  // 3) 面板弹窗：任何关闭方式都清掉确认回调
+  ok('面板弹窗只保留一份确认回调，Esc / 点遮罩关闭也清空',
+    /var modalAction = null;/.test(followJs) && /function closeModal\(\) \{\s*modalAction = null;/.test(followJs) &&
+    !/ok\.addEventListener\('click', okFn\)/.test(followJs));
+  ok('上一批还在执行时不能另起一批', /上一批取F还在执行中/.test(followJs));
+  ok('执行循环发现任务被替换就退出，不把旧结果写进新任务',
+    /runningTaskId && cur\.id !== runningTaskId/.test(bridge) && /runningTaskId && t\.id !== runningTaskId\) return 'replaced'/.test(bridge));
+
+  // 4) 新版 DOM（没有 UserCell）也能逐屏找到行；成功判定要看到变成 Follow
+  ok('执行器在没有 UserCell 时按「Following @handle」按钮反推行', /function rowMap\(\)/.test(bridge) &&
+    /function visibleCells\(\) \{ return rowMap\(\); \}/.test(bridge) && /ROW_BTN_RE/.test(bridge));
+  ok('取F成功判定：没有 Following 按钮且看到 Follow 才算成功', /sawFollow \|\| !!cell\.querySelector\('\[data-testid\$="-follow"\]'\)/.test(bridge));
+  ok('点击后重新定位这一行再判定（X 会重建行节点）', /var after = findCell\(handle\);/.test(bridge));
+
+  // 5) 不在扫描时不读整份名单；清理写入走串行队列
+  ok('采集 tick 先读状态，没在扫描时不读整份名单',
+    /return storeGet\(\[KEY_CAPTURE\]\)\.then\(function \(r\) \{[\s\S]{0,400}if \(!running\) return;\s*return readData\(\)/.test(bridge));
+  ok('全量清理写入放进 serial()，基于最新数据重算', /pruneWrite = serial\(function \(\) \{[\s\S]{0,200}Core\.finishFullScan\(latest/.test(bridge));
+  ok('浮层名单走内存缓存，storage 变化时更新', /var dataCache = null;/.test(overlayJs) &&
+    /if \(changes\[KEY\.data\]\) dataCache = /.test(overlayJs));
+  ok('浮层只在「F注中」页标未回F', /if \(source\(\) !== 'following'\) \{ clearMarks\(\); return; \}/.test(overlayJs));
+}
+
+
+persistenceChecks().then(overlayChecks).then(scanChecks).then(visualChecks).then(newDomChecks).then(autoMarkChecks).then(errorGuardChecks).then(sweepChecks).then(freshnessChecks).then(reviewFixChecks).then(function () {
   console.log('\n结果：' + passed + '/' + (passed + failed) +
     (failed ? ' 通过，' + failed + ' 条失败' : ' 全部通过 ✓'));
   process.exit(failed ? 1 : 0);

@@ -489,7 +489,7 @@
             v.currentTime = seg.start;
             await waitEvent(v, 'seeked', 2500);
           }
-        } catch (e) { /* F键帧不精确时仍能继续播放 */ }
+        } catch (e) { /* 关键帧不精确时仍能继续播放 */ }
         try { await v.play(); } catch (e) {}
         if (!started) {
           await nextFrame(v);

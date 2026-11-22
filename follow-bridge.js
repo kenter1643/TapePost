@@ -30,7 +30,7 @@
   if (!Core) return;
   /* 1.5.23：chrome://extensions「错误」面板三类红字统一兜底：
    *   1) 回调式 chrome.* API 未同步读取 lastError → Unchecked runtime.lastError；
-   *   2) 面板在长任务（取F / 读名单）完成前F闭，异步 sendResponse 端口已F
+   *   2) 面板在长任务（取F / 读名单）完成前关闭，异步 sendResponse 端口已F
    *      → Error handling response / Unchecked lastError；
    *   3) async 事件回调里未 catch 的 Promise → Uncaught (in promise)。
    * 这里只加防护，不改变采集 / 取F逻辑与安全不变量。 */
@@ -54,6 +54,7 @@
   var KEY_ANCHOR = 'followScanAnchor';
   var TICK_MS = 1500;
   var MAX_FAIL_STREAK = 3;
+  var SWEEP_WAIT_MS = 1200;
   var lastStoreError = '';
   var lastTickAt = 0;
   var memData = null;   // 内存副本：写入失败也能下批补写，不让已合并的名单丢掉
@@ -140,34 +141,14 @@
   }
 
   /* 实时落盘（1.5.20 修复）：旧版只在 cap.status === 'running' 且来源等于
-   * cap.target 时才写，采集一旦自动结束、或用户F掉面板让状态卡住，后续批次
+   * cap.target 时才写，采集一旦自动结束、或用户关掉面板让状态卡住，后续批次
    * 就被整批丢弃，重新打开面板只剩「上次抓到的一部分」。现在每批到达立即
    * merge 并写入 chrome.storage.local，与采集状态完全解耦；写入失败保留内存
    * 副本，下一批继续补写，并把失败原因暴露给面板。 */
-  function normalizeData(raw) {
-    var d = raw && typeof raw === 'object' ? raw : emptyData();
-    var u = d.updatedAt && typeof d.updatedAt === 'object' ? d.updatedAt : {};
-    return {
-      me: Core.lowerHandle(d.me || ''),
-      following: d.following && typeof d.following === 'object' ? d.following : {},
-      followers: d.followers && typeof d.followers === 'object' ? d.followers : {},
-      updatedAt: { following: Number(u.following) || 0, followers: Number(u.followers) || 0 },
-      savedAt: Number(d.savedAt) || 0,
-      version: 1, source: 'passive'
-    };
-  }
-
-  // storage 最新值 + 内存副本合并：面板写的 me 与桥接刚采到的用户都不丢
-  function mergeData(fromStore, fromMemory) {
-    var out = normalizeData(fromStore);
-    var mem = normalizeData(fromMemory);
-    ['following', 'followers'].forEach(function (src) {
-      Object.keys(mem[src]).forEach(function (k) { if (!out[src][k]) out[src][k] = mem[src][k]; });
-      out.updatedAt[src] = Math.max(out.updatedAt[src], mem.updatedAt[src]);
-    });
-    if (!out.me) out.me = mem.me;
-    return out;
-  }
+  /* 1.5.27：数据口径统一交给 FollowCore（面板与桥接层共用），新增墓碑 / 基线 /
+   * 变化记录字段。mergeData 不再把「已取F / 已清理」的人从内存副本复活。 */
+  function normalizeData(raw) { return Core.normalizeData(raw); }
+  function mergeData(fromStore, fromMemory) { return Core.mergeData(fromStore, fromMemory); }
 
   // 名单很大时裁掉超长简介，避免触及 storage.local 配额导致整个 set 静默失败
   function compactIfNeeded(d) {
@@ -218,12 +199,14 @@
           if (page && src !== page) return;
           var users = Array.isArray(b.users) ? b.users : [];
           if (!users.length) return;
-          var before = Object.keys(data[src] || {}).length;
-          data[src] = Core.mergeSnapshot(data[src], users);
+          // 1.5.27：打 seenAt / firstSeenAt，并撤销「又出现了」的人的墓碑
+          var res = Core.ingestUsers(data, src, users, Date.now());
+          var me0 = data.me;
+          data = res.data;
+          if (!data.me) data.me = me0;
           // 全量重扫时 X 返回的常常都是已存账号：人数不涨，但响应本身证明
           // X 还在往下翻页。人数真的涨了才更新 lastGainAt。
-          if (Object.keys(data[src]).length > before) lastGainAt = Date.now();
-          data.updatedAt[src] = Date.now();
+          if (res.gained > 0) lastGainAt = Date.now();
           if (b.me && !data.me) data.me = Core.lowerHandle(b.me);
           touched = true;
         });
@@ -330,16 +313,18 @@
   function captureTick() {
     if (captureBusy) return;
     captureBusy = true;
-    // 用「storage 最新值 + 内存副本」算人数，避免拿旧快照误判「无新增」提前结束
-    return readData().then(function (data) {
-      return storeGet([KEY_CAPTURE]).then(function (r) {
-        var cap = r[KEY_CAPTURE] || {};
-        var src = pageSource();
-        var running = cap.status === 'running' && cap.target && cap.target === src;
-        postToMain({ type: 'TAPEFOLLOW_CMD', action: running ? 'start' : 'stop' });
-        if (!running) return;
+    // 先只读采集状态：没在扫描时不读整份名单（名单可能好几 MB，每个 X 标签页
+    // 每 1.5 秒读一次会拖慢页面）。在扫描时再用「storage 最新值 + 内存副本」算人数。
+    return storeGet([KEY_CAPTURE]).then(function (r) {
+      var cap = r[KEY_CAPTURE] || {};
+      var src = pageSource();
+      var running = cap.status === 'running' && cap.target && cap.target === src;
+      postToMain({ type: 'TAPEFOLLOW_CMD', action: running ? 'start' : 'stop' });
+      if (!running) return;
+      return readData().then(function (data) {
 
         var now = Date.now();
+        var pruneWrite = null;
         var startedAt = Number(cap.startedAt) || now;
         // 换了一轮扫描只丢弃「早于本轮开始」的旧信号。注意别一刀切清零：
         // 用户点开始后 X 可能在第一个 tick 之前就返回响应，抹掉它会被误判成
@@ -411,6 +396,31 @@
             o.status = 'done';
             o.message = '采集完成：' + (src === 'followers' ? '粉丝' : 'F注中') +
               '共 ' + count + ' 人（列表已到底，X 连续一段时间没有再加载新页，已实时保存到本机）';
+            // 1.5.27：只有「全量扫描 + 真正到底」才清理本轮没出现的人并生成变化记录
+            if (cap.mode === 'full') {
+              var fin = Core.finishFullScan(data, src, startedAt, now);
+              // 这里只算结果用于提示文案；真正写入放进 serial()，基于最新数据重算，
+              // 避免和同时到达的一批数据互相覆盖。
+              o.prune = { pruned: fin.pruned, coverage: Math.round(fin.coverage * 1000) / 10,
+                removed: fin.removed.length, added: fin.added.length, firstBaseline: !!fin.firstBaseline };
+              if (fin.pruned) {
+                o.count = Object.keys(fin.data[src] || {}).length;
+                o.message += fin.firstBaseline
+                  ? '。已建立基线，下次全量扫描会自动对比出' + (src === 'followers' ? '「新粉丝 / 取F了你的人」' : '「新F注 / 已不在列表的人」') + '。'
+                  : '。对比上次：新增 ' + fin.added.length + ' 人，' +
+                    (src === 'followers' ? '取F了你 ' : '已不在列表 ') + fin.removed.length + ' 人（已从本机名单移除，明细见面板「变化记录」）。';
+                pruneWrite = serial(function () {
+                  return readData().then(function (latest) {
+                    var again = Core.finishFullScan(latest, src, startedAt, now);
+                    if (!again.pruned) return true;
+                    memData = again.data;
+                    return persistData();
+                  });
+                });
+              } else if (fin.reason === 'coverage') {
+                o.message += '。本轮只看到旧名单的 ' + o.prune.coverage + '%，可能没覆盖全，安全起见没有清理旧数据。';
+              }
+            }
           }
           postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
         } else if (verdict.action === 'limit') {
@@ -422,8 +432,10 @@
             '，已抓到 ' + count + ' 人并全部保存在本机。名单没丢，点「增量续扫」或面板里的「继续采集」接着补，已抓到的人不会重复。';
           postToMain({ type: 'TAPEFOLLOW_CMD', action: 'stop' });
         }
-        return storeSet(wrap(KEY_CAPTURE, o)).then(function () {
-          return writeAnchor(src, data, o);
+        return Promise.resolve(pruneWrite).then(function () {
+          return storeSet(wrap(KEY_CAPTURE, o));
+        }).then(function () {
+          return writeAnchor(src, memData || data, o);
         });
       });
     }).catch(function () {}).then(function () { captureBusy = false; });
@@ -441,34 +453,79 @@
     return '';
   }
 
-  function findCell(handle) {
+  /* 1.5.27：X 改版后的列表行不一定带 [data-testid="UserCell"]（浮层 1.5.24 已兼容，
+   * 执行器之前没兼容 —— 新版 DOM 下逐屏查找每屏都是 0 行，整批被记成「列表里没找到」）。
+   * 回退：从带 @handle 的F注按钮（aria-label「Following @x」等）向上找只含这一位
+   * 用户的最近容器当作行。只读 DOM，不改 X 结构。 */
+  var ROW_BTN_RE = /^(?:following|follow|unfollow|正在关注|关注中|已关注|取消关注|关注)\s*@([A-Za-z0-9_]{1,20})$/i;
+  function handlesIn(node) {
+    var out = [];
+    try {
+      var links = node.querySelectorAll ? node.querySelectorAll('a[href^="/"]') : [];
+      for (var i = 0; i < links.length; i++) {
+        var seg = String(links[i].getAttribute('href') || '').split('?')[0].split('/')[1];
+        var h = Core.lowerHandle(seg);
+        if (Core.validHandle(h) && out.indexOf(h) === -1) out.push(h);
+      }
+    } catch (e) {}
+    return out;
+  }
+  function rowMap() {
+    var map = {};
     var cells = document.querySelectorAll('[data-testid="UserCell"]');
     for (var i = 0; i < cells.length; i++) {
-      if (cellHandle(cells[i]) === handle) return cells[i];
+      var h = cellHandle(cells[i]);
+      if (h && !map[h]) map[h] = cells[i];
     }
-    // 回退 1：结构改版后 UserCell 可能没了，从主页链接向上找带按钮的行容器
-    var all = document.querySelectorAll('a[href^="/"]');
-    for (var j = 0; j < all.length; j++) {
-      var seg = String(all[j].getAttribute('href') || '').split('?')[0].split('/')[1];
-      if (Core.lowerHandle(seg) !== handle) continue;
-      var el = all[j].parentElement;
-      for (var k = 0; k < 7 && el; k++, el = el.parentElement) {
-        if (el.querySelector && el.querySelector('[role="button"],button')) return el;
+    if (cells.length) return map;
+    var btns = document.querySelectorAll('button[aria-label],[role="button"][aria-label]');
+    for (var j = 0; j < btns.length; j++) {
+      var m = ROW_BTN_RE.exec(String(btns[j].getAttribute('aria-label') || '').trim());
+      if (!m) continue;
+      var want = Core.lowerHandle(m[1]);
+      if (map[want]) continue;
+      var node = btns[j];
+      for (var up = 0; node && up < 8; up++, node = node.parentElement) {
+        var hs = handlesIn(node);
+        var nb = node.querySelectorAll ? node.querySelectorAll('button,[role="button"]').length : 0;
+        if (hs.indexOf(want) !== -1 && hs.length <= 4 && nb <= 6) { map[want] = node; break; }
       }
     }
-    return null;
+    return map;
+  }
+
+  function findCell(handle) {
+    return rowMap()[handle] || null;
+  }
+
+  function rowHandleOk(cell, handle) {
+    if (cellHandle(cell) === handle) return true;
+    return handlesIn(cell).indexOf(handle) !== -1 && handlesIn(cell).length <= 4;
   }
 
   var FOLLOWING_WORDS = /^(following|正在关注|关注中|已关注|following you|フォロー中|abonné|siguiendo|folge ich|订阅中)$/i;
   var FOLLOW_WORDS = /^(follow|关注|follow back|回关|フォロー|suivre|seguir|folgen)$/i;
   var CONFIRM_WORDS = /^(unfollow|取消关注|解除关注|确定取消关注|退订|unfollow @|フォロー解除)$/i;
 
+  function labelOf(el) {
+    return String((el.getAttribute && el.getAttribute('aria-label')) || '').trim();
+  }
+  function isFollowingBtn(el) {
+    if (FOLLOWING_WORDS.test(txt(el))) return true;
+    var m = ROW_BTN_RE.exec(labelOf(el));
+    return !!m && /^(following|正在关注|关注中|已关注)/i.test(labelOf(el));
+  }
+  function isFollowBtn(el) {
+    if (FOLLOW_WORDS.test(txt(el))) return true;
+    return /^(follow|关注)\s*@/i.test(labelOf(el));
+  }
+
   function findUnfollowButton(cell) {
     var b = cell.querySelector('[data-testid$="-unfollow"]');
     if (b) return b;
     var roles = cell.querySelectorAll('[role="button"],button');
     for (var i = 0; i < roles.length; i++) {
-      if (FOLLOWING_WORDS.test(txt(roles[i]))) return roles[i];
+      if (isFollowingBtn(roles[i])) return roles[i];
     }
     return null;
   }
@@ -483,21 +540,24 @@
     return null;
   }
 
+  /* 成功判定要「看到变成了 Follow」或「Following 按钮确实没了」，旧版只看
+   * 「-unfollow testid 不存在」—— 新版 DOM 本来就没有这个 testid，会把没点成功也记成功。 */
   function looksUnfollowed(cell) {
-    var b = cell.querySelector('[data-testid$="-unfollow"]');
-    if (!b) return true;
+    if (cell.querySelector('[data-testid$="-unfollow"]')) return false;
     var roles = cell.querySelectorAll('[role="button"],button');
+    var sawFollow = false;
     for (var i = 0; i < roles.length; i++) {
-      if (FOLLOW_WORDS.test(txt(roles[i]))) return true;
+      if (isFollowingBtn(roles[i])) return false;
+      if (isFollowBtn(roles[i])) sawFollow = true;
     }
-    return false;
+    return sawFollow || !!cell.querySelector('[data-testid$="-follow"]');
   }
 
   async function unfollowOne(handle) {
     if (pageSource() !== 'following') return { ok: false, reason: '不在「F注中」页面' };
     var cell = findCell(handle);
     if (!cell) return { ok: false, reason: '没找到这一行（列表未加载或页面结构变化）' };
-    if (cellHandle(cell) !== handle) return { ok: false, reason: '行与目标账号不匹配，已跳过' };
+    if (!rowHandleOk(cell, handle)) return { ok: false, reason: '行与目标账号不匹配，已跳过' };
     var btn = findUnfollowButton(cell);
     if (!btn) return { ok: false, reason: '没找到「正在F注」按钮，可能已取F' };
     try { btn.click(); } catch (e) { return { ok: false, reason: '点击失败：' + (e && e.message || e) }; }
@@ -509,7 +569,11 @@
     } else {
       await sleep(300);
     }
-    if (!looksUnfollowed(cell)) return { ok: false, reason: '按钮状态未变成「F注」，未确认成功' };
+    // X 虚拟列表点完后常会重建这一行：优先看重新找到的行，旧节点只作兜底
+    var after = findCell(handle);
+    if (!looksUnfollowed(after && after.isConnected !== false ? after : cell)) {
+      return { ok: false, reason: '按钮状态未变成「F注」，未确认成功' };
+    }
     return { ok: true, reason: '已取F' };
   }
 
@@ -531,10 +595,67 @@
 
   async function phaseOf() {
     var r = await storeGet([KEY_TASK]);
-    return (r[KEY_TASK] || {}).phase || 'idle';
+    var t = r[KEY_TASK] || {};
+    if (runningTaskId && t.id !== runningTaskId) return 'replaced';
+    return t.phase || 'idle';
   }
 
+  /* 1.5.27：批量取F改为「从列表顶部往下扫一遍」。
+   * 旧版只在当前屏幕已渲染的行里找人：X 的F注列表是虚拟滚动，6000 人里随便
+   * 勾 50 个，绝大多数不在屏上，连续 3 次「没找到这一行」就停机。现在：
+   *   ① 先回到列表顶部；② 每屏把「本屏可见且待处理」的人逐个处理；
+   *   ③ 本屏没有待处理的人就往下滚一屏，等 X 加载；④ 到底仍没出现的人记
+   *      「列表里没找到（可能已取F）」，不算定位失败、不触发停机。
+   * 断点续跑：已在 ok / fail 里的人不再处理；暂停 / 页面刷新后点「继续」，
+   * 从剩下的人接着来。暂停时循环直接退出（不再空等 5 分钟后静默卡死）。
+   * 安全不变量不变：确认后才执行、两层保护名单、只点 X 原生按钮、不调写接口、
+   * 「找到行但按钮不对 / 状态没变」连续 3 次自动停机。 */
   var taskBusy = false;
+  var HEARTBEAT_STALE_MS = 30000;
+  var SWEEP_MAX_STEPS = 3000;
+
+  function visibleCells() { return rowMap(); }
+
+  function listGeometry() {
+    var de = document.documentElement;
+    var h = Math.max(document.body ? document.body.scrollHeight : 0, de ? de.scrollHeight : 0);
+    var y = Number(window.scrollY) || 0;
+    var vh = Number(window.innerHeight) || 800;
+    return { height: h, y: y, vh: vh, atBottom: h > 0 && y + vh >= h - 240 };
+  }
+
+  async function sweepScroll() {
+    var g = listGeometry();
+    try { window.scrollBy(0, Math.max(400, Math.round(g.vh * 0.8))); } catch (e) {}
+    await sleep(SWEEP_WAIT_MS);
+    var g2 = listGeometry();
+    // X 正在加载下一页：再多等一会儿
+    var col = document.querySelector('[data-testid="primaryColumn"]') || document;
+    if (col.querySelector('[data-testid="spinner"], [aria-busy="true"]')) await sleep(SWEEP_WAIT_MS * 2);
+    return { moved: g2.y > g.y + 2 || g2.height > g.height + 2, atBottom: g2.atBottom };
+  }
+
+  var runningTaskId = '';
+  async function updateTask(fn) {
+    var cur = (await readTask()).task;
+    if (!cur) return null;
+    // 面板换了一批新任务：旧循环的结果绝不写进新任务，返回 stopped 让循环退出
+    if (runningTaskId && cur.id !== runningTaskId) return { phase: 'replaced' };
+    fn(cur);
+    cur.beatAt = Date.now();
+    await writeTask(cur);
+    return cur;
+  }
+
+  function dropFromLocalList(handles) {
+    return serial(function () {
+      return readData().then(function (data) {
+        memData = Core.removeHandles(data, 'following', handles, Date.now(), 'unfollow').data;
+        return persistData();
+      });
+    });
+  }
+
   async function runTask() {
     if (taskBusy) return { ok: false, error: '本页已有一个任务在运行' };
     taskBusy = true;
@@ -543,66 +664,148 @@
       var t = s.task;
       if (!t) return { ok: false, error: '没有待执行任务' };
       if (t.phase !== 'running') return { ok: false, error: '任务不是待运行状态' };
+      runningTaskId = t.id || '';
       if (t.dryRun !== false || t.confirmed !== true) {
         return { ok: false, error: '未经确认或仍是预演，拒绝执行（安全不变量）' };
       }
       if (pageSource() !== 'following') {
         return { ok: false, error: '请停留在自己的「F注中」页面再执行' };
       }
-      var handles = (t.handles || []).slice(0, t.settings ? t.settings.batchLimit : Core.DEFAULTS.batchLimit);
+      var limit = t.settings ? t.settings.batchLimit : Core.DEFAULTS.batchLimit;
+      var all = (t.handles || []).slice(0, limit);
+      var doneSet = {};
+      (t.ok || []).forEach(function (h) { doneSet[h] = true; });
+      (t.fail || []).forEach(function (f) { if (f && f.handle) doneSet[f.handle] = true; });
+      var pending = all.filter(function (h) { return !doneSet[h]; });
       var byHandle = {};
       Core.mapToList(s.data.following).forEach(function (u) { byHandle[u.handle] = u; });
-      var failStreak = 0;
-      for (var i = 0; i < handles.length; i++) {
+      var protOpts = Object.assign({}, s.settings, { whitelist: s.whitelist });
+
+      // 保护名单先在本地过滤掉，不用为它们滚整页
+      var prot = [];
+      pending = pending.filter(function (h) {
+        var reasons = Core.protectedReasons(byHandle[h] || { handle: h }, protOpts);
+        if (reasons.length) { prot.push({ handle: h, reason: '受保护：' + reasons.join(' / ') }); return false; }
+        return true;
+      });
+      if (prot.length) {
+        await updateTask(function (cur) {
+          cur.fail = (cur.fail || []).concat(prot);
+          cur.log = (cur.log || []).concat(prot.map(function (x) {
+            return { handle: x.handle, ok: false, reason: x.reason, at: Date.now() };
+          }));
+          cur.index = (cur.ok || []).length + cur.fail.length;
+        });
+      }
+
+      await updateTask(function (cur) {
+        cur.message = '正在回到列表顶部，从上往下逐屏查找 ' + pending.length + ' 个待取F账号…';
+      });
+      try { window.scrollTo(0, 0); } catch (e) {}
+      await sleep(SWEEP_WAIT_MS);
+
+      var failStreak = 0, steps = 0, stuck = 0, processed = 0, stopReason = '';
+      while (pending.length && steps < SWEEP_MAX_STEPS) {
         var ph = await phaseOf();
-        if (ph === 'stopped') break;
-        // 暂停：最多等 5 分钟，期间每 500ms 看一次用户指令
-        var waited = 0;
-        while (ph === 'paused' && waited < 300000) { await sleep(500); waited += 500; ph = await phaseOf(); }
-        if (ph === 'stopped') break;
-        if (ph !== 'running') break;
-        var h = handles[i];
-        var u = byHandle[h] || { handle: h };
-        var reasons = Core.protectedReasons(u, Object.assign({}, s.settings, { whitelist: s.whitelist }));
-        var res = reasons.length ? { ok: false, reason: '受保护：' + reasons.join(' / ') }
-          : await unfollowOne(h);
-        var cur = (await readTask()).task || t;
-        cur.index = i + 1;
-        cur.log = (cur.log || []).concat([{ handle: h, ok: !!res.ok, reason: res.reason, at: Date.now() }]);
-        if (res.ok) cur.ok = (cur.ok || []).concat([h]);
-        else cur.fail = (cur.fail || []).concat([{ handle: h, reason: res.reason }]);
+        if (ph !== 'running') { stopReason = ph; break; }
+        var cells = visibleCells();
+        var here = pending.filter(function (h) { return cells[h]; });
+        if (!here.length) {
+          steps++;
+          var mv = await sweepScroll();
+          stuck = mv.moved ? 0 : stuck + 1;
+          if (mv.atBottom && stuck >= 3) break;   // 到底且连续 3 次滚不动：整页扫完
+          if (steps % 10 === 0) {
+            await updateTask(function (cur) {
+              cur.message = '正在往下查找：还剩 ' + pending.length + ' 人待处理（已滚动 ' + steps + ' 屏）';
+            });
+          }
+          continue;
+        }
+        var h = here[0];
+        pending = pending.filter(function (x) { return x !== h; });
+        var res = await unfollowOne(h);
+        processed++;
         if (res.ok) failStreak = 0;
-        else if (/没找到|不匹配|状态未变/.test(res.reason)) failStreak++;
+        else if (/不匹配|按钮|状态未变/.test(res.reason)) failStreak++;
         else failStreak = 0;
+        var cur = await updateTask(function (c) {
+          c.log = (c.log || []).concat([{ handle: h, ok: !!res.ok, reason: res.reason, at: Date.now() }]);
+          if (res.ok) c.ok = (c.ok || []).concat([h]);
+          else c.fail = (c.fail || []).concat([{ handle: h, reason: res.reason }]);
+          c.index = (c.ok || []).length + (c.fail || []).length;
+          c.message = '执行中：还剩 ' + pending.length + ' 人';
+        });
+        if (res.ok) dropFromLocalList([h]).catch(swallow);
         if (failStreak >= MAX_FAIL_STREAK) {
-          cur.phase = 'stopped';
-          cur.message = '连续 3 次定位失败，已自动停止，避免 X 改版后误点。请检查页面后重试。';
-          await writeTask(cur);
+          await updateTask(function (c) {
+            c.phase = 'stopped';
+            c.message = '连续 3 次找到行却点不成功，已自动停止，避免 X 改版后误点。请检查页面后重试。';
+          });
+          stopReason = 'failstreak';
           break;
         }
-        await writeTask(cur);
-        if (i < handles.length - 1) await sleep(Core.delayFor(i, cur.settings || s.settings));
+        if (cur && cur.phase !== 'running') { stopReason = cur.phase; break; }
+        if (pending.length) await sleep(Core.delayFor(processed, (cur && cur.settings) || s.settings));
       }
+
+      if (!stopReason && pending.length) {
+        // 整页扫完仍没出现：多半已经取F过了，记为跳过，不算定位失败
+        var miss = pending.slice();
+        await updateTask(function (c) {
+          c.fail = (c.fail || []).concat(miss.map(function (x) {
+            return { handle: x, reason: '列表里没找到（可能已取F或不在F注列表）' };
+          }));
+          c.log = (c.log || []).concat(miss.map(function (x) {
+            return { handle: x, ok: false, reason: '列表里没找到（可能已取F或不在F注列表）', at: Date.now() };
+          }));
+          c.index = (c.ok || []).length + c.fail.length;
+        });
+        pending = [];
+      }
+
       var fin = (await readTask()).task;
-      if (fin && fin.phase === 'running') {
+      if (fin && runningTaskId && fin.id !== runningTaskId) fin = null;   // 已被新任务替换
+      if (fin && fin.phase === 'running' && !pending.length) {
         fin.phase = 'done';
         fin.finishedAt = Date.now();
-        fin.message = '本批完成：成功 ' + (fin.ok || []).length + ' / 失败 ' + (fin.fail || []).length;
+        fin.message = '本批完成：成功 ' + (fin.ok || []).length + ' / 失败或跳过 ' + (fin.fail || []).length;
+        fin.beatAt = Date.now();
+        await writeTask(fin);
+      } else if (fin && fin.phase === 'paused') {
+        fin.message = '已暂停：还剩 ' + pending.length + ' 人，点「继续」从剩下的人接着处理。';
+        fin.beatAt = Date.now();
         await writeTask(fin);
       }
-      return { ok: true };
+      return { ok: true, remaining: pending.length };
     } catch (e) {
       return { ok: false, error: String(e && e.message || e) };
     } finally {
       taskBusy = false;
+      runningTaskId = '';
     }
+  }
+
+  /* 页面刷新 / 关闭会让执行循环消失，但 followTask 还停在 running。
+   * 加载时发现心跳过期就改成「已暂停」，由用户点「继续」再跑，绝不自动续跑。 */
+  function recoverStaleTask() {
+    return storeGet([KEY_TASK]).then(function (r) {
+      var t = r[KEY_TASK];
+      if (!t || t.phase !== 'running' || taskBusy) return;
+      var beat = Number(t.beatAt || t.startedAt) || 0;
+      if (Date.now() - beat < HEARTBEAT_STALE_MS) return;
+      t.phase = 'paused';
+      t.message = '执行页面被刷新或关闭，任务已自动暂停（已处理 ' + ((t.ok || []).length + (t.fail || []).length) +
+        ' 人）。回到「F注中」页后点「继续」接着处理剩下的人。';
+      return writeTask(t);
+    }).catch(swallow);
   }
 
   // ---------------------------------------------------------------- 4. 扩展消息
   if (chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       if (!msg || String(msg.type || '').indexOf('FOLLOW_') !== 0) return false;
-      sendResponse = guardedResponse(sendResponse); // 1.5.23：端口F闭时不再留未检查错误
+      sendResponse = guardedResponse(sendResponse); // 1.5.23：端口关闭时不再留未检查错误
       if (msg.type === 'FOLLOW_PING') {
         readData().then(function (d) {
           sendResponse({ ok: true, source: pageSource(), me: detectMe(),
@@ -627,7 +830,7 @@
         return false;
       }
       if (msg.type === 'FOLLOW_TASK_START') {
-        // 批量取F可能跑几分钟，面板F掉后端口已失效；无论成功失败都只回一次包
+        // 批量取F可能跑几分钟，面板关掉后端口已失效；无论成功失败都只回一次包
         runTask().then(function (r) { sendResponse(r); }, function (e) {
           sendResponse({ ok: false, error: String(e && e.message || e) });
         }).catch(swallow);
@@ -656,7 +859,7 @@
     });
   }
 
-  // 首帧问一次 MAIN 状态，并按已保存的采集状态立刻补发开F（页面刷新后也能续上）
+  // 首帧问一次 MAIN 状态，并按已保存的采集状态立刻补发开关（页面刷新后也能续上）
   setTimeout(function () {
     postToMain({ type: 'TAPEFOLLOW_CMD', action: 'ping' });
     storeGet([KEY_CAPTURE, KEY_ANCHOR]).then(function (r) {
@@ -667,4 +870,5 @@
     }).catch(swallow);
   }, 800);
   setTimeout(captureTick, 600);
+  setTimeout(recoverStaleTask, 1500);
 })();

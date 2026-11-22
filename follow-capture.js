@@ -8,7 +8,8 @@
  * 明确的边界（与商店隐私政策、Dashboard 权限理由一致）：
  *   - 不主动发任何请求、不重放请求、不改请求参数；
  *   - 不读取 Authorization / ct0 / cookie / transaction-id 等任何凭证；
- *   - 只在用户点了面板「开始采集」后才启用（默认 disabled）；
+ *   - 只在用户点了面板「开始采集」后才向扩展传数据（默认 disabled）；
+ *     1.5.27 起本页已解析的公开资料会暂存在页面内存，开始采集时补发一次；
  *   - 只在 X 自己的 /i/api/ 响应且当前路径是 following / followers 时处理；
  *   - 不上传、不外发，数据只落到本机 chrome.storage.local。
  *
@@ -89,7 +90,7 @@
     } catch (e) {}
   }
 
-  // 页面被F闭 / 切到后台前把还没合并发出的尾批立即送出，避免卸载时丢最后一批
+  // 页面被关闭 / 切到后台前把还没合并发出的尾批立即送出，避免卸载时丢最后一批
   function flushNow() {
     try { if (postTimer) { clearTimeout(postTimer); postTimer = 0; } } catch (e) {}
     flush();
@@ -102,14 +103,48 @@
     });
   } catch (e) {}
 
+  /* 1.5.27：本页已解析过的用户只留在页面内存里（不落盘、不外发，关页即丢）。
+   * 原因：X 对已加载过的分页不会再请求，全量扫描回到顶部重新滚时，开始扫描
+   * 之前就已加载的那批人（列表最上面、也就是最新的F注 / 粉丝）不会再出现在
+   * 响应里，会被「全量清理」误判成取F了你。用户点开始后把这份缓存补发一次，
+   * 这批人就有了本轮的 seenAt。未开始采集时仍然不向扩展传任何数据。 */
+  var MAX_SEEN = 20000;
+  var seenCache = Object.create(null);   // key = me|source → { handle: user }
+  var seenCount = Object.create(null);
+  var live = false;
+  function cacheKey(info) { return (info.me || '') + '|' + info.source; }
+  function remember(users, info) {
+    var k = cacheKey(info);
+    var box = seenCache[k] || (seenCache[k] = Object.create(null));
+    for (var i = 0; i < users.length; i++) {
+      var u = users[i];
+      if (!u || !u.handle) continue;
+      if (!box[u.handle]) {
+        if ((seenCount[k] || 0) >= MAX_SEEN) continue;
+        seenCount[k] = (seenCount[k] || 0) + 1;
+      }
+      box[u.handle] = u;
+    }
+  }
+  function replaySeen() {
+    var info = pageInfo();
+    if (!info.source) return;
+    var box = seenCache[cacheKey(info)];
+    if (!box) return;
+    var users = Object.keys(box).map(function (h) { return box[h]; });
+    if (users.length) emit(users, info);
+  }
+
   function handleText(text, url) {
     if (!text || text.length < 40 || text.length > 8 * 1024 * 1024) return;
     var info = pageInfo();
-    if (!info.source || !stats.enabled || !apiUrl(url)) return;
+    if (!info.source || !apiUrl(url)) return;
+    var users;
+    try { users = Core.pickUsers(text); } catch (e) { if (stats.enabled) pulse(); return; }
+    remember(users, info);
+    if (!stats.enabled) return;
     stats.responses++;
     stats.source = info.source;
-    var users;
-    try { users = Core.pickUsers(text); } catch (e) { pulse(); return; }
     emit(users, info);
   }
 
@@ -166,13 +201,16 @@
     }
   } catch (e) {}
 
-  // ---- 接收 ISOLATED 桥的开F / 状态查询 ----
+  // ---- 接收 ISOLATED 桥的开关 / 状态查询 ----
   window.addEventListener('message', function (event) {
     if (event.source !== window) return;
     var d = event.data;
     if (!d || d[TAG] !== true || d.type !== 'TAPEFOLLOW_CMD') return;
-    if (d.action === 'start') { stats.enabled = true; stats.source = pageInfo().source; }
-    else if (d.action === 'stop') { stats.enabled = false; flush(); }
+    if (d.action === 'start') { stats.enabled = true; stats.source = pageInfo().source;
+      // 只在「关 → 开」时补发一次，桥接层每 1.5 秒的重复 start 不触发
+      if (!live) { live = true; replaySeen(); }
+    }
+    else if (d.action === 'stop') { stats.enabled = false; live = false; flush(); }
     else if (d.action === 'ping') {
       try {
         window.postMessage({ __tapeFollow: true, type: 'TAPEFOLLOW_PONG',
